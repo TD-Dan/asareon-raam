@@ -751,6 +751,50 @@
           "context"
         ]
       }
+    },
+    {
+      "action_name": "knowledgegraph.ACTION_RESULT",
+      "summary": "Broadcast notification published after a command-dispatchable knowledge graph action completes. Carries a lightweight summary for session feedback via CommandBot.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the domain action's payload. Null if not command-originated."
+          },
+          "requestAction": {
+            "type": "string",
+            "description": "The domain action name that produced this result, e.g. 'knowledgegraph.CREATE_HOLON'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable description of what happened."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable error message. Present when success is false."
+          }
+        },
+        "required": [
+          "requestAction",
+          "success"
+        ]
+      }
     }
   ]
 }

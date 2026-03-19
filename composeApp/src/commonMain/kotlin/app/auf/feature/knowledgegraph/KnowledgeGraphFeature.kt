@@ -251,14 +251,22 @@ class KnowledgeGraphFeature(
                 }))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_PERSONA -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val name = payload?.get("name")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_PERSONA: Missing required 'name' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'name' field.")
                     return
                 }
                 val timestamp = platformDependencies.currentTimeMillis()
                 val isoTimestamp = platformDependencies.formatIsoTimestamp(timestamp)
                 val fileSafeTimestamp = isoTimestamp.replace(":", "").replace("-", "")
-                val newId = normalizeHolonId("${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}")
+                val newId = try {
+                    normalizeHolonId("${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}")
+                } catch (e: IllegalArgumentException) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_PERSONA: Invalid name for ID generation: ${e.message}")
+                    publishActionResult(store, correlationId, action.name, false, error = "Invalid name for ID generation: ${e.message}")
+                    return
+                }
 
                 val newHolonHeader = HolonHeader(
                     id = newId, type = "AI_Persona_Root", name = name,
@@ -275,16 +283,24 @@ class KnowledgeGraphFeature(
 
                 store.dispatch("knowledgegraph", Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Created persona '$name'.") }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Persona '$name' ($newId) created.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_HOLON_CONTENT: Missing required 'holonId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'holonId' field.")
                     return
                 }
-                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
+                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
 
                 val holonToUpdate = kgState.holons[holonId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "UPDATE_HOLON_CONTENT: Holon '$holonId' not found in state. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Holon '$holonId' not found in state.")
                     return
                 }
                 val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
@@ -302,31 +318,42 @@ class KnowledgeGraphFeature(
                 findRootPersonaId(holonId, kgState)?.let {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Holon '$holonId' content updated.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_CREATE_HOLON -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val parentId = payload?.get("parentId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'parentId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'parentId' field.")
                     return
                 }
                 val typeName = payload["type"]?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'type' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'type' field.")
                     return
                 }
                 val name = payload["name"]?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'name' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'name' field.")
                     return
                 }
                 val newPayload = payload["payload"] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Missing required 'payload' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'payload' field.")
                     return
                 }
                 val summary = payload["summary"]?.jsonPrimitive?.contentOrNull
                 val newExecute = payload["execute"]
 
-                if (isModificationLocked(holonId = parentId, originator = originator, kgState = kgState, store = store)) return
+                if (isModificationLocked(holonId = parentId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
 
                 val parentHolon = kgState.holons[parentId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Parent holon '$parentId' not found in state. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Parent holon '$parentId' not found in state.")
                     return
                 }
 
@@ -338,6 +365,7 @@ class KnowledgeGraphFeature(
                     normalizeHolonId("${name.lowercase().replace(" ", "-")}-${fileSafeTimestamp}")
                 } catch (e: IllegalArgumentException) {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Invalid name for ID generation: ${e.message}")
+                    publishActionResult(store, correlationId, action.name, false, error = "Invalid name for ID generation: ${e.message}")
                     return
                 }
 
@@ -346,6 +374,7 @@ class KnowledgeGraphFeature(
                 // New child at: {personaId}/.../parentId/newId/newId.json
                 val parentDir = platformDependencies.getParentDirectory(parentHolon.header.filePath) ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "CREATE_HOLON: Could not resolve parent directory for '$parentId'. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Could not resolve parent directory for '$parentId'.")
                     return
                 }
                 val newFilePath = "$parentDir/$newId/$newId.json"
@@ -394,21 +423,30 @@ class KnowledgeGraphFeature(
                 findRootPersonaId(parentId, kgState)?.let {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Holon '$name' ($newId) created under '$parentId'.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_REPLACE_HOLON -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "REPLACE_HOLON: Missing required 'holonId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'holonId' field.")
                     return
                 }
                 val newPayload = payload["payload"] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "REPLACE_HOLON: Missing required 'payload' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'payload' field.")
                     return
                 }
 
-                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
+                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
 
                 val existingHolon = kgState.holons[holonId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "REPLACE_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Holon '$holonId' not found in state.")
                     return
                 }
 
@@ -416,16 +454,12 @@ class KnowledgeGraphFeature(
 
                 // --- Build replaced header, preserving structural fields ---
                 val replacedHeader = existingHolon.header.copy(
-                    // Structural (NEVER overwritten by agent):
-                    //   id, filePath, parentId, depth, subHolons, createdAt
-                    // Agent-replaceable:
                     type = payload["type"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.type,
                     name = payload["name"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.name,
                     summary = payload["summary"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.summary,
                     version = payload["version"]?.jsonPrimitive?.contentOrNull ?: existingHolon.header.version,
                     relationships = payload["relationships"]?.let { json.decodeFromJsonElement<List<Relationship>>(it) }
                         ?: existingHolon.header.relationships,
-                    // System-managed:
                     modifiedAt = newTimestamp
                 )
 
@@ -481,20 +515,29 @@ class KnowledgeGraphFeature(
                 findRootPersonaId(holonId, kgState)?.let {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Holon '$holonId' replaced.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_RENAME_HOLON -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Missing required 'holonId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'holonId' field.")
                     return
                 }
-                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
+                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
 
                 val newName = payload["newName"]?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Missing required 'newName' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'newName' field.")
                     return
                 }
                 val holonToUpdate = kgState.holons[holonId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "RENAME_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Holon '$holonId' not found in state.")
                     return
                 }
                 val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
@@ -508,13 +551,20 @@ class KnowledgeGraphFeature(
                 findRootPersonaId(holonId, kgState)?.let {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
                 }
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Holon '$holonId' renamed to '$newName'.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_PERSONA: Missing required 'personaId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'personaId' field.")
                     return
                 }
-                if (isModificationLocked(personaId = personaId, originator = originator, kgState = kgState, store = store)) return
+                if (isModificationLocked(personaId = personaId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY, buildJsonObject {
                     put("path", personaId)
@@ -522,16 +572,24 @@ class KnowledgeGraphFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_PERSONA, buildJsonObject {
                     put("personaId", personaId)
                 }))
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Persona '$personaId' deleted.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_HOLON: Missing required 'holonId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'holonId' field.")
                     return
                 }
-                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) return
+                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
 
                 val holonToDelete = kgState.holons[holonId] ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELETE_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Holon '$holonId' not found in state.")
                     return
                 }
                 val parentId = holonToDelete.header.parentId
@@ -560,6 +618,8 @@ class KnowledgeGraphFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_CONFIRM_DELETE_HOLON, buildJsonObject {
                     put("holonId", holonId)
                 }))
+
+                publishActionResult(store, correlationId, action.name, true, summary = "Holon '$holonId' deleted.")
             }
         }
     }
@@ -582,6 +642,37 @@ class KnowledgeGraphFeature(
             }
         }
         return contextMap
+    }
+
+    // ========================================================================
+    // ACTION_RESULT broadcast helper
+    // ========================================================================
+
+    /**
+     * Publishes a lightweight broadcast notification after completing a
+     * command-dispatchable action. CommandBot matches via `correlationId`
+     * to post feedback to the originating session.
+     *
+     * Follows the same contract as `AgentRuntimeFeature.publishActionResult`.
+     */
+    private fun publishActionResult(
+        store: Store,
+        correlationId: String?,
+        requestAction: String,
+        success: Boolean,
+        summary: String? = null,
+        error: String? = null
+    ) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.KNOWLEDGEGRAPH_ACTION_RESULT,
+            payload = buildJsonObject {
+                correlationId?.let { put("correlationId", it) }
+                put("requestAction", requestAction)
+                put("success", success)
+                summary?.let { put("summary", it) }
+                error?.let { put("error", it) }
+            }
+        ))
     }
 
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
