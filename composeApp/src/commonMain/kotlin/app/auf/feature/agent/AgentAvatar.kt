@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -544,74 +545,80 @@ fun AgentControlCard(
 
             // ── Extended Info Drawer ─────────────────────────────────────
             AnimatedVisibility(visible = showExtendedInfo) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
-                    val sessionSummary = when {
-                        sessionNames.isEmpty() -> "Not Subscribed"
-                        sessionNames.size == 1 -> sessionNames.first()
-                        else -> sessionNames.joinToString(", ")
-                    }
-                    Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
+                SelectionContainer {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val sessionNames = agent.subscribedSessionIds.mapNotNull { agentState.subscribableSessionNames[it] }
+                        val sessionSummary = when {
+                            sessionNames.isEmpty() -> "Not Subscribed"
+                            sessionNames.size == 1 -> sessionNames.first()
+                            else -> sessionNames.joinToString(", ")
+                        }
+                        Text("Subscribed: $sessionSummary", style = MaterialTheme.typography.bodyMedium)
 
-                    if (agent.outputSessionId != null) {
-                        val outputSessionName = identityRegistry.findByUUID(agent.outputSessionId)?.name
-                            ?: agentState.subscribableSessionNames[agent.outputSessionId]
-                            ?: agent.outputSessionId.uuid
-                        Text("Primary Session: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
-                    }
+                        if (agent.outputSessionId != null) {
+                            val outputSessionName = identityRegistry.findByUUID(agent.outputSessionId)?.name
+                                ?: agentState.subscribableSessionNames[agent.outputSessionId]
+                                ?: agent.outputSessionId.uuid
+                            val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+                            val label = if (strategy.hasAutoManagedOutputSession) "Private Session" else "Primary Session"
+                            Text("$label: $outputSessionName", style = MaterialTheme.typography.bodyMedium)
+                        }
 
-                    val kgId = agent.strategyConfig["knowledgeGraphId"]
-                        ?.let { it as? JsonPrimitive }
-                        ?.contentOrNull
-                    if (kgId != null) {
-                        val hkgName = agentState.knowledgeGraphNames[kgId] ?: "Unknown"
-                        Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
-                    }
+                        val kgId = agent.strategyConfig["knowledgeGraphId"]
+                            ?.let { it as? JsonPrimitive }
+                            ?.contentOrNull
+                        if (kgId != null) {
+                            val hkgName = agentState.knowledgeGraphNames[kgId] ?: "Unknown"
+                            Text("Knowledge Graph: $hkgName", style = MaterialTheme.typography.bodyMedium)
+                        }
 
-                    Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
+                        Text("Model: ${agent.modelProvider}/${agent.modelName}", style = MaterialTheme.typography.bodyMedium)
+                        Text("Strategy: ${agent.cognitiveStrategyId}", style = MaterialTheme.typography.bodyMedium)
 
-                    // Token usage from last request
-                    val lastInput = statusInfo.lastInputTokens
-                    val lastOutput = statusInfo.lastOutputTokens
-                    if (lastInput != null || lastOutput != null) {
-                        Text(
-                            text = buildString {
-                                append("Last request: ")
-                                if (lastInput != null) append("${formatTokenCount(lastInput)} input")
-                                if (lastInput != null && lastOutput != null) append(", ")
-                                if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
-                                append(" tokens")
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
+                        // Token usage from last request
+                        val lastInput = statusInfo.lastInputTokens
+                        val lastOutput = statusInfo.lastOutputTokens
+                        if (lastInput != null || lastOutput != null) {
+                            Text(
+                                text = buildString {
+                                    append("Last request: ")
+                                    if (lastInput != null) append("${formatTokenCount(lastInput)} input")
+                                    if (lastInput != null && lastOutput != null) append(", ")
+                                    if (lastOutput != null) append("${formatTokenCount(lastOutput)} output")
+                                    append(" tokens")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
                     }
                 }
             }
 
             // ── NVRAM Drawer ─────────────────────────────────────────────
             AnimatedVisibility(visible = isViewingNvram) {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(
-                        "Cognitive State (NVRAM)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    val nvramText = remember(agent.cognitiveState) {
-                        prettyJson.encodeToString(agent.cognitiveState)
+                SelectionContainer {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(
+                            "Cognitive State (NVRAM)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        val nvramText = remember(agent.cognitiveState) {
+                            prettyJson.encodeToString(agent.cognitiveState)
+                        }
+                        CodeEditor(
+                            value = nvramText,
+                            onValueChange = {},
+                            readOnly = true,
+                            modifier = Modifier.height(150.dp)
+                        )
                     }
-                    CodeEditor(
-                        value = nvramText,
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier.height(150.dp)
-                    )
                 }
             }
         }  // Column

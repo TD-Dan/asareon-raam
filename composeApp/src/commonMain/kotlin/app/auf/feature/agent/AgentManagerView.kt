@@ -484,7 +484,7 @@ private fun AgentEditorView(
                         StrategyConfigFieldType.KNOWLEDGE_GRAPH ->
                             KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
                         StrategyConfigFieldType.OUTPUT_SESSION ->
-                            OutputSessionSelector(draftAgent, agentState, onDraftChanged)
+                            OutputSessionSelector(draftAgent, agentState, onDraftChanged, field, currentStrategy)
                     }
                 }
             }
@@ -1002,48 +1002,96 @@ private fun KnowledgeGraphSelector(agent: AgentInstance, agentState: AgentRuntim
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OutputSessionSelector(agent: AgentInstance, agentState: AgentRuntimeState, onUpdate: (AgentInstance) -> Unit) {
-    val subscribedSessions = remember(agent.subscribedSessionIds, agentState.subscribableSessionNames) {
-        agent.subscribedSessionIds.mapNotNull { id ->
-            agentState.subscribableSessionNames[id]?.let { name -> id to name }
-        }
-    }
-    // Show the explicitly set output session, or indicate the effective default
-    val currentOutputName = when {
-        agent.outputSessionId != null ->
-            agentState.subscribableSessionNames[agent.outputSessionId] ?: agent.outputSessionId.uuid
-        subscribedSessions.isNotEmpty() ->
-            "${subscribedSessions.first().second} (default)"
-        else -> "No sessions subscribed"
-    }
-    var isExpanded by remember { mutableStateOf(false) }
+private fun OutputSessionSelector(
+    agent: AgentInstance,
+    agentState: AgentRuntimeState,
+    onUpdate: (AgentInstance) -> Unit,
+    field: StrategyConfigField,
+    strategy: CognitiveStrategy?
+) {
+    val isAutoManaged = strategy?.hasAutoManagedOutputSession == true
 
-    ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
-        OutlinedTextField(
-            value = currentOutputName,
-            onValueChange = {}, readOnly = true, label = { Text("Primary Session") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
-            enabled = subscribedSessions.isNotEmpty()
-        )
-        ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
-            subscribedSessions.forEach { (sessionId, sessionName) ->
-                val isSelected = sessionId == agent.outputSessionId
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isSelected) {
-                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
+    if (isAutoManaged) {
+        // Auto-managed private session — read-only info display.
+        // The session is created by ensureInfrastructure and linked via SESSION_CREATED handler.
+        val sessionStatus = when {
+            agent.outputSessionId != null -> {
+                // Linked — resolve display name from subscribable names or identity registry fallback.
+                // Private sessions are excluded from subscribableSessionNames, so we show the UUID
+                // with a "linked" indicator. The session name would need registry lookup at runtime.
+                agentState.subscribableSessionNames[agent.outputSessionId]
+                    ?: "${agent.outputSessionId.uuid.take(12)}… (private)"
+            }
+            else -> null
+        }
+
+        Column(Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = sessionStatus ?: "Not yet created",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(field.displayName) },
+                enabled = false,
+                trailingIcon = {
+                    Icon(
+                        imageVector = if (sessionStatus != null) Icons.Default.Lock else Icons.Default.HourglassEmpty,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = if (sessionStatus != null) "Auto-managed. Linked and active."
+                else "Auto-managed. Will be created when the agent is activated.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+            )
+        }
+    } else {
+        // Standard editable dropdown — operator selects from subscribed sessions.
+        val subscribedSessions = remember(agent.subscribedSessionIds, agentState.subscribableSessionNames) {
+            agent.subscribedSessionIds.mapNotNull { id ->
+                agentState.subscribableSessionNames[id]?.let { name -> id to name }
+            }
+        }
+        val currentOutputName = when {
+            agent.outputSessionId != null ->
+                agentState.subscribableSessionNames[agent.outputSessionId] ?: agent.outputSessionId.uuid
+            subscribedSessions.isNotEmpty() ->
+                "${subscribedSessions.first().second} (default)"
+            else -> "No sessions subscribed"
+        }
+        var isExpanded by remember { mutableStateOf(false) }
+
+        ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+            OutlinedTextField(
+                value = currentOutputName,
+                onValueChange = {}, readOnly = true, label = { Text(field.displayName) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                enabled = subscribedSessions.isNotEmpty()
+            )
+            ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+                subscribedSessions.forEach { (sessionId, sessionName) ->
+                    val isSelected = sessionId == agent.outputSessionId
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isSelected) {
+                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(sessionName)
                             }
-                            Text(sessionName)
+                        },
+                        onClick = {
+                            onUpdate(agent.copy(outputSessionId = sessionId))
+                            isExpanded = false
                         }
-                    },
-                    onClick = {
-                        onUpdate(agent.copy(outputSessionId = sessionId))
-                        isExpanded = false
-                    }
-                )
+                    )
+                }
             }
         }
     }

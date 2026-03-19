@@ -30,6 +30,7 @@ import kotlinx.serialization.json.put
 object PrivateSessionStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.privatesession")
     override val displayName: String = "Private Session"
+    override val hasAutoManagedOutputSession: Boolean = true
 
     private const val SLOT_SYSTEM_INSTRUCTION = "system_instruction"
     private const val LOG_TAG = "PrivateSessionStrategy"

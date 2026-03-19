@@ -72,6 +72,20 @@ interface CognitiveStrategy {
      */
     val displayName: String
 
+    /**
+     * True if this strategy creates and manages its own output session
+     * (e.g., a private cognition session) via [ensureInfrastructure].
+     *
+     * When true:
+     * - The Agent Manager UI renders the output session field as read-only
+     *   (the operator cannot select or change it).
+     * - The avatar card labels it "Private Session" instead of "Primary Session".
+     *
+     * Strategies that let the operator pick the output session from subscribed
+     * sessions return false (the default).
+     */
+    val hasAutoManagedOutputSession: Boolean get() = false
+
     // =========================================================================
     // Core methods
     // =========================================================================

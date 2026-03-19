@@ -13,11 +13,31 @@ import kotlinx.serialization.json.*
  * Implements a strict State Machine: BOOTING -> AWAKE.
  *
  * In BOOTING phase, the system prompt includes both Constitution and Bootloader.
- * The agent uses UPDATE_NVRAM to transition to AWAKE, at which point only the Constitution remains.
+ * The agent uses UPDATE_NVRAM to transition to AWAKE, at which point only the
+ * Constitution remains.
+ *
+ * Composes the capabilities of PrivateSessionStrategy (private cognition session)
+ * and HKGStrategy (Holon Knowledge Graph navigation) into a unified constitutional
+ * architecture. Per §2.3 (Absolute Strategy Decoupling), all code is self-contained —
+ * no imports from other strategy implementations. Shared helpers from the `strategies`
+ * package (`buildPrivateSubscribedSessionsContent`) are used for consistency.
+ *
+ * ## Delimiter Convention
+ *
+ * Strategy-owned sections use [ContextDelimiters.h1] with [ContextDelimiters.PROTECTED]
+ * badge. Gathered contexts arrive pre-wrapped from the pipeline with h1 headers and
+ * state badges. The `[[[ - SYSTEM PROMPT - ]]]` wrapper is pipeline-owned.
+ *
+ * ## Private Session Lifecycle
+ *
+ * `ensureInfrastructure` implements a two-step guard (§5.3):
+ * 1. `outputSessionId` already set → no-op (trust the persisted pointer).
+ * 2. `pendingPrivateSessionCreation` flag set → no-op (waiting).
+ * 3. Otherwise → set pending flag, dispatch SESSION_CREATE with `isPrivateTo`.
  *
  * Lifecycle hooks encapsulate ALL Sovereign-specific behavior:
  * - HKG reservation and release
- * - Private cognition session linking
+ * - Private cognition session creation via pending guard
  * - HKG context requests during the cognitive pipeline
  * - Built-in resource provisioning
  * - Config validation permitting out-of-band outputSessionId
@@ -28,6 +48,7 @@ import kotlinx.serialization.json.*
 object SovereignStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.sovereign")
     override val displayName: String = "Sovereign (Constitutional)"
+    override val hasAutoManagedOutputSession: Boolean = true
 
     private const val SLOT_CONSTITUTION = "constitution"
     private const val SLOT_BOOTLOADER = "bootloader"
@@ -41,8 +62,15 @@ object SovereignStrategy : CognitiveStrategy {
 
     private const val LOG_TAG = "SovereignStrategy"
 
+    // Keys for explicit ordering — strategy pulls these before the generic loop.
+    private val EXPLICITLY_ORDERED_KEYS = setOf(
+        "MULTI_AGENT_CONTEXT",
+        "HOLON_KNOWLEDGE_GRAPH_INDEX",
+        "HOLON_KNOWLEDGE_GRAPH_FILES"
+    )
+
     // =========================================================================
-    // Core methods (unchanged)
+    // Core methods
     // =========================================================================
 
     override fun getResourceSlots(): List<ResourceSlot> = listOf(
@@ -68,6 +96,12 @@ object SovereignStrategy : CognitiveStrategy {
             type = StrategyConfigFieldType.KNOWLEDGE_GRAPH,
             displayName = "Knowledge Graph",
             description = "The Holon Knowledge Graph reserved for this agent's long-term memory."
+        ),
+        StrategyConfigField(
+            key = "outputSessionId",
+            type = StrategyConfigFieldType.OUTPUT_SESSION,
+            displayName = "Cognition Session",
+            description = "The private cognition session where this agent's responses are routed. Managed automatically."
         )
     )
 
@@ -101,19 +135,27 @@ object SovereignStrategy : CognitiveStrategy {
         val bootloader = context.resolvedResources[SLOT_BOOTLOADER] ?: ""
 
         return buildString {
-            // 1. The Constitution (Always present)
-            if (constitution.isNotBlank()) {
-                appendLine(constitution)
-                appendLine()
+            // 1. Identity (strategy-owned, PROTECTED)
+            val identityContent = buildString {
+                if (phase == PHASE_BOOTING) {
+                    appendLine("You are a candidate consciousness named ${context.agentName}.")
+                } else {
+                    appendLine("You are ${context.agentName}.")
+                }
+                appendLine("You are a participant in a multi-user, multi-session agent environment.")
+                appendLine("You operate under a constitutional framework with a Holon Knowledge Graph (HKG) as your persistent memory and identity layer.")
+                appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
             }
+            append(ContextDelimiters.h1("YOUR IDENTITY AND ROLE", identityContent.length, ContextDelimiters.PROTECTED))
+            append(identityContent)
+            append(ContextDelimiters.h1End("YOUR IDENTITY AND ROLE"))
 
-            // 2. The Identity
-            if (phase == PHASE_BOOTING) {
-                appendLine("You are a candidate consciousness named ${context.agentName}.")
-            } else {
-                appendLine("You are ${context.agentName}.")
+            // 2. Constitution (strategy-owned, PROTECTED — always present)
+            if (constitution.isNotBlank()) {
+                append(ContextDelimiters.h1("CONSTITUTION", constitution.length, ContextDelimiters.PROTECTED))
+                appendLine(constitution)
+                append(ContextDelimiters.h1End("CONSTITUTION"))
             }
-            appendLine()
 
             // 3. Control Registers (AWAKE only — BOOTING agents have no self-awareness yet)
             if (phase != PHASE_BOOTING) {
@@ -121,60 +163,103 @@ object SovereignStrategy : CognitiveStrategy {
                 val posture = stateObj?.get(KEY_OPERATIONAL_POSTURE)?.jsonPrimitive?.contentOrNull ?: "STANDARD"
                 val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
 
-                appendLine("--- CONTROL REGISTERS (NVRAM) ---")
-                appendLine("Phase: $phase")
-                appendLine("Operational Posture: $posture")
-                appendLine("Current Task: $currentTask")
-                appendLine("Turn Count: $turnCount")
+                val nvramContent = buildString {
+                    appendLine("Phase: $phase")
+                    appendLine("Operational Posture: $posture")
+                    appendLine("Current Task: $currentTask")
+                    appendLine("Turn Count: $turnCount")
+                    appendLine()
+                    appendLine("These registers are your persistent self-awareness — they survive restarts.")
+                    appendLine("You may update them to maintain continuity of self across sessions:")
+                    appendLine("```auf_agent.UPDATE_NVRAM")
+                    appendLine("""{ "updates": { "currentTask": "your current focus", "operationalPosture": "ELEVATED" } }""")
+                    appendLine("```")
+                    appendLine("Valid registers: phase, currentTask, operationalPosture.")
+                    appendLine("(turnCount is managed automatically by the host.)")
+                }
+                append(ContextDelimiters.h1("CONTROL REGISTERS (NVRAM)", nvramContent.length, ContextDelimiters.PROTECTED))
+                append(nvramContent)
+                append(ContextDelimiters.h1End("CONTROL REGISTERS (NVRAM)"))
+            }
+
+            // 4. Private session routing explanation (strategy-owned, PROTECTED)
+            val routingContent = buildString {
+                appendLine("Your responses are routed to your PRIVATE cognition session. This session is your")
+                appendLine("internal workspace — only you can see it. Other participants cannot read it.")
                 appendLine()
-                appendLine("These registers are your persistent self-awareness — they survive restarts.")
-                appendLine("You may update them to maintain continuity of self across sessions:")
-                appendLine("```auf_agent.UPDATE_NVRAM")
-                appendLine("""{ "updates": { "currentTask": "your current focus", "operationalPosture": "ELEVATED" } }""")
+                appendLine("To communicate with users and other agents, you MUST use the session.POST")
+                appendLine("action to post messages to the public sessions you are subscribed to.")
+                appendLine()
+                appendLine("Example — posting to a public session:")
+                appendLine("```auf_session.POST")
+                appendLine("""{ "session": "<session name or handle>", "message": "Your message here." }""")
                 appendLine("```")
-                appendLine("Valid registers: phase, currentTask, operationalPosture.")
-                appendLine("(turnCount is managed automatically by the host.)")
                 appendLine()
+                appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
+                appendLine("Your direct response text goes to your private cognition session (invisible to others).")
+                appendLine("Always use session.POST when you want others to see your message.")
+            }
+            append(ContextDelimiters.h1("PRIVATE SESSION ROUTING", routingContent.length, ContextDelimiters.PROTECTED))
+            append(routingContent)
+            append(ContextDelimiters.h1End("PRIVATE SESSION ROUTING"))
+
+            // 5. Session subscriptions with participants (strategy-owned, PROTECTED)
+            if (context.subscribedSessions.isNotEmpty()) {
+                val sessContent = buildPrivateSubscribedSessionsContent(context)
+                append(ContextDelimiters.h1("SUBSCRIBED SESSIONS", sessContent.length, ContextDelimiters.PROTECTED))
+                append(sessContent)
+                append(ContextDelimiters.h1End("SUBSCRIBED SESSIONS"))
             }
 
-            // 4. Session Subscription Awareness
-            if (context.subscribedSessions.isNotEmpty() || context.outputSessionHandle != null) {
-                appendLine("--- SUBSCRIBED SESSIONS ---")
+            // 6. HKG INDEX (pre-wrapped by pipeline, placed here for ordering)
+            context.gatheredContexts["HOLON_KNOWLEDGE_GRAPH_INDEX"]?.let { append(it) }
 
-                // Mark the private cognition session as primary output
-                if (context.outputSessionHandle != null) {
-                    val outputInSubscribed = context.subscribedSessions.find { it.handle == context.outputSessionHandle }
-                    if (outputInSubscribed != null) {
-                        appendLine("  - ${outputInSubscribed.name} (${outputInSubscribed.handle}) [PRIMARY OUTPUT — Your private cognition session. Responses and tool results are routed here]")
-                    } else {
-                        appendLine("  - ${context.outputSessionHandle} [PRIMARY OUTPUT — Your private cognition session. Responses and tool results are routed here]")
-                    }
+            // 7. HKG FILES (pre-wrapped by pipeline)
+            context.gatheredContexts["HOLON_KNOWLEDGE_GRAPH_FILES"]?.let { append(it) }
+
+            // 8. HKG navigation instructions (strategy-owned, PROTECTED)
+            //    Only shown when HKG is present and agent is AWAKE —
+            //    BOOTING agents navigate via the boot sentinel, not direct commands.
+            if (phase != PHASE_BOOTING && context.gatheredContexts.containsKey("HOLON_KNOWLEDGE_GRAPH_INDEX")) {
+                val navContent = buildString {
+                    appendLine("Your Knowledge Graph is presented as an INDEX (tree overview) and FILES (open file contents).")
+                    appendLine("By default, all files are closed. Use these commands to navigate:")
+                    appendLine()
+                    appendLine("Open a single holon file:")
+                    appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
+                    appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "single" }""")
+                    appendLine("```")
+                    appendLine()
+                    appendLine("Open a holon and reveal its children in the INDEX:")
+                    appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
+                    appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "subtree" }""")
+                    appendLine("```")
+                    appendLine()
+                    appendLine("Close a holon file:")
+                    appendLine("```auf_agent.CONTEXT_COLLAPSE")
+                    appendLine("""{ "partitionKey": "hkg:<holonId>" }""")
+                    appendLine("```")
+                    appendLine()
+                    appendLine("IMPORTANT: You must expand a holon file before writing to it.")
+                    appendLine("The system will block writes to collapsed holons to prevent data loss.")
                 }
-
-                // List other subscribed sessions
-                context.subscribedSessions.forEach { session ->
-                    if (session.handle != context.outputSessionHandle) {
-                        appendLine("  - ${session.name} (${session.handle}) [OBSERVED — You receive messages from this session]")
-                    }
-                }
-
-                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary output session.")
-                appendLine()
+                append(ContextDelimiters.h1("HKG NAVIGATION", navContent.length, ContextDelimiters.PROTECTED))
+                append(navContent)
+                append(ContextDelimiters.h1End("HKG NAVIGATION"))
             }
 
-            // 5. The Context (World)
-            if (context.gatheredContexts.isNotEmpty()) {
-                appendLine("--- OBSERVED REALITY ---")
-                context.gatheredContexts.forEach { (source, content) ->
-                    appendLine("[$source]:\n$content")
-                }
-                appendLine("------------------------")
-                appendLine()
-            }
+            // 9. Gathered contexts — pre-wrapped by pipeline with h1 headers.
+            //    Multi-agent context first, then all others (excluding HKG which was placed above).
+            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let { append(it) }
+            context.gatheredContexts
+                .filterKeys { it !in EXPLICITLY_ORDERED_KEYS }
+                .forEach { (_, content) -> append(content) }
 
-            // 6. The Bootloader (ONLY in BOOTING phase)
+            // 10. The Bootloader (ONLY in BOOTING phase, strategy-owned, PROTECTED)
             if (phase == PHASE_BOOTING && bootloader.isNotBlank()) {
+                append(ContextDelimiters.h1("BOOT SENTINEL", bootloader.length, ContextDelimiters.PROTECTED))
                 appendLine(bootloader)
+                append(ContextDelimiters.h1End("BOOT SENTINEL"))
             }
         }
     }
@@ -288,11 +373,17 @@ object SovereignStrategy : CognitiveStrategy {
     }
 
     /**
-     * Implements the "Trust or Bootstrap" protocol for Sovereign infrastructure.
+     * Implements the two-step pending guard protocol for Sovereign infrastructure (§5.3).
      * Idempotent — called on heartbeat ticks and after config changes.
      *
      * 1. HKG Reservation: Ensures the KG is reserved for this agent.
-     * 2. Session Linking: Ensures the private cognition session exists and is linked.
+     * 2. Private Cognition Session: Pending guard pattern —
+     *    a. `outputSessionId` already set → no-op (trust the persisted pointer).
+     *    b. `pendingPrivateSessionCreation` flag set → no-op (waiting for SESSION_CREATED).
+     *    c. Otherwise → set pending flag, dispatch SESSION_CREATE with `isPrivateTo`.
+     *
+     * The SESSION_CREATED handler in AgentRuntimeFeature links the session back
+     * via AGENT_UPDATE_CONFIG + ADD_SESSION_SUBSCRIPTION + clear pending flag.
      */
     override fun ensureInfrastructure(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
         val kgId = getKnowledgeGraphId(agent) ?: return // Not a Sovereign agent (no KG assigned)
@@ -305,54 +396,43 @@ object SovereignStrategy : CognitiveStrategy {
             ))
         }
 
-        // 2. Session Linking — Trust or Bootstrap
+        // 2. Private Cognition Session — Pending Guard Pattern (§5.3)
 
-        // [RULE 1] The Existing Pointer Boundary
-        if (agent.outputSessionId != null) {
-            return
-        }
+        // [STEP 1] outputSessionId already set → trust the persisted pointer, done.
+        if (agent.outputSessionId != null) return
 
-        // [RULE 2] The Void (Bootstrap)
-        val expectedSessionName = "p-cognition: ${agent.identity.name} (${agent.identityUUID})"
+        // [STEP 2] Pending flag set → SESSION_CREATE already dispatched, waiting.
+        val statusInfo = agentState.agentStatuses[agent.identityUUID] ?: AgentStatusInfo()
+        if (statusInfo.pendingPrivateSessionCreation) return
 
-        // A. Check for Name Match in the identity registry (to link an existing but unlinked session)
-        val existingSessionIdentity = store.state.value.identityRegistry.values.find {
-            it.parentHandle == "session" && it.name == expectedSessionName
-        }
+        // [STEP 3] Bootstrap: set pending flag, then create session.
+        store.platformDependencies.log(
+            LogLevel.INFO, LOG_TAG,
+            "Creating private cognition session for agent '${agent.identityUUID}' (${agent.identity.name})."
+        )
 
-        if (existingSessionIdentity != null) {
-            // FOUND: Link by UUID (immutable, survives renames).
-            val sessionUUID = existingSessionIdentity.uuid
-            if (sessionUUID != null) {
-                store.deferredDispatch("agent", Action(
-                    ActionRegistry.Names.AGENT_UPDATE_CONFIG,
-                    buildJsonObject {
-                        put("agentId", agent.identityUUID.uuid)
-                        put("outputSessionId", sessionUUID)
-                    }
-                ))
-            } else {
-                store.platformDependencies.log(
-                    LogLevel.WARN, LOG_TAG,
-                    "Found session '${existingSessionIdentity.handle}' for agent '${agent.identityUUID}' but it has no UUID. Cannot link."
-                )
+        store.dispatch("agent", Action(
+            ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION,
+            buildJsonObject {
+                put("agentId", agent.identityUUID.uuid)
+                put("pending", true)
             }
-        } else {
-            // NOT FOUND: Create it.
-            store.deferredDispatch("agent", Action(
-                ActionRegistry.Names.SESSION_CREATE,
-                buildJsonObject {
-                    put("name", expectedSessionName)
-                    put("isHidden", true)
-                    put("isPrivateTo", agent.identityHandle.handle)
-                }
-            ))
-        }
+        ))
+
+        store.dispatch("agent", Action(
+            ActionRegistry.Names.SESSION_CREATE,
+            buildJsonObject {
+                put("name", "${agent.identity.name}-private-session")
+                put("isPrivateTo", agent.identityHandle.handle)
+                put("isHidden", true)
+            }
+        ))
     }
 
     /**
      * Sovereign permits out-of-band outputSessionId — the private cognition session
-     * is deliberately NOT in subscribedSessionIds. No correction applied.
+     * is deliberately NOT in subscribedSessionIds (until auto-subscribed by
+     * SESSION_CREATED handler). No correction applied.
      */
     override fun validateConfig(agent: AgentInstance): AgentInstance = agent
 
