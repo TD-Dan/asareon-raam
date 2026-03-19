@@ -295,7 +295,11 @@ class SessionFeature(
 
             ActionRegistry.Names.SESSION_UPDATE_CONFIG -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, "UPDATE_CONFIG") ?: return
+                val localHandle = requireSessionId(identifier, sessionState, "UPDATE_CONFIG") ?: run {
+                    publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                        action.name, false, error = "Session '$identifier' not found.")
+                    return
+                }
                 val prevSession = (previousState as? SessionState)?.sessions?.get(localHandle)
                 val newSession = sessionState.sessions[localHandle]
 
@@ -313,6 +317,8 @@ class SessionFeature(
                 // Persist (with current — possibly intermediate — state)
                 persistSession(localHandle, sessionState, store)
                 broadcastSessionNames(sessionState, store)
+                publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                    action.name, true, summary = "Session config updated for '${newSession?.identity?.name ?: localHandle}'.")
             }
 
             // Phase 4: Side effects for RETURN_UPDATE_IDENTITY — file rename + persist
@@ -345,6 +351,7 @@ class SessionFeature(
                 if (localHandleToDelete != null) {
                     val prevSession = (previousState as? SessionState)?.sessions?.get(localHandleToDelete)
                     val uuid = prevSession?.identity?.uuid
+                    val sessionName = prevSession?.identity?.name ?: localHandleToDelete
 
                     // Delete the session folder (uuid-named)
                     if (uuid != null) {
@@ -362,9 +369,13 @@ class SessionFeature(
                             put("handle", "session.$localHandleToDelete")
                         }
                     ))
+                    publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                        action.name, true, summary = "Session '$sessionName' deleted.")
                 } else {
                     val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                     platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_DELETE ignored: Session '$identifier' not found in state.")
+                    publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                        action.name, false, error = "Session '$identifier' not found.")
                 }
             }
 
@@ -434,7 +445,11 @@ class SessionFeature(
 
             ActionRegistry.Names.SESSION_POST -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, "POST") ?: return
+                val localHandle = requireSessionId(identifier, sessionState, "POST") ?: run {
+                    publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                        action.name, false, error = "Session '$identifier' not found.")
+                    return
+                }
 
                 persistSession(localHandle, sessionState, store)
                 val updatedSession = sessionState.sessions[localHandle] ?: return
@@ -452,8 +467,12 @@ class SessionFeature(
                         put("entry", json.encodeToJsonElement(postedEntry))
                     }))
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
+                    publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                        action.name, true, summary = "Message posted to '${updatedSession.identity.name}'.")
                 } else {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "SESSION_POST failed: Ledger entry not found after reducer update.")
+                    publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
+                        action.name, false, error = "Ledger entry not found after reducer update.")
                 }
 
                 // For user posts: cancel the debounce and write input.json immediately
@@ -470,28 +489,50 @@ class SessionFeature(
 
             ActionRegistry.Names.SESSION_UPDATE_MESSAGE -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, "UPDATE_MESSAGE") ?: return
-                val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val localHandle = requireSessionId(identifier, sessionState, "UPDATE_MESSAGE") ?: run {
+                    publishActionResult(store, correlationId, action.name, false, error = "Session '$identifier' not found.")
+                    return
+                }
+                val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: run {
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing messageId.")
+                    return
+                }
                 val prevSessionState = previousState as? SessionState
-                if (isMessageLockedGuard(localHandle, messageId, "UPDATE_MESSAGE", prevSessionState ?: sessionState, store)) return
+                if (isMessageLockedGuard(localHandle, messageId, "UPDATE_MESSAGE", prevSessionState ?: sessionState, store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "Message '$messageId' is locked.")
+                    return
+                }
 
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
+                publishActionResult(store, correlationId, action.name, true, summary = "Message updated.")
             }
 
             ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED, ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
                 val identifier = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
                     ?: action.payload?.get("session")?.jsonPrimitive?.contentOrNull
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
 
-                val localHandle = requireSessionId(identifier, sessionState, action.name) ?: return
+                val localHandle = requireSessionId(identifier, sessionState, action.name) ?: run {
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Session '$identifier' not found")
+                    return
+                }
 
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
+                publishActionResult(store, correlationId, action.name, success = true,
+                    summary = "Message UI state toggled")
             }
 
             ActionRegistry.Names.SESSION_DELETE_MESSAGE -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, "DELETE_MESSAGE") ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val localHandle = requireSessionId(identifier, sessionState, "DELETE_MESSAGE") ?: run {
+                    publishActionResult(store, correlationId, action.name, false, error = "Session '$identifier' not found.")
+                    return
+                }
 
                 // --- SLICE 4 CHANGE: Support both messageId (internal) and senderId+timestamp (agent-facing) ---
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull
@@ -513,10 +554,16 @@ class SessionFeature(
                     null
                 }
 
-                if (resolvedMessageId == null) return
+                if (resolvedMessageId == null) {
+                    publishActionResult(store, correlationId, action.name, false, error = "Message not found.")
+                    return
+                }
 
                 val prevSessionStateForDelete = previousState as? SessionState
-                if (isMessageLockedGuard(localHandle, resolvedMessageId, "DELETE_MESSAGE", prevSessionStateForDelete ?: sessionState, store)) return
+                if (isMessageLockedGuard(localHandle, resolvedMessageId, "DELETE_MESSAGE", prevSessionStateForDelete ?: sessionState, store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "Message '$resolvedMessageId' is locked.")
+                    return
+                }
 
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_MESSAGE_DELETED, buildJsonObject {
@@ -525,6 +572,7 @@ class SessionFeature(
                     put("messageId", resolvedMessageId)
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
+                publishActionResult(store, correlationId, action.name, true, summary = "Message deleted.")
             }
 
             ActionRegistry.Names.SESSION_SET_EDITING_MESSAGE -> {
@@ -545,11 +593,14 @@ class SessionFeature(
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Payload invalid.")
                     return
                 }
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
 
                 val localHandle = resolveSessionId(payload.sessionId, sessionState)
                 val session = localHandle?.let { sessionState.sessions[it] }
                 if (session == null) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "REQUEST_LEDGER_CONTENT failed: Could not resolve session '${payload.sessionId}'.")
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Session '${payload.sessionId}' not found")
                     return
                 }
 
@@ -564,26 +615,49 @@ class SessionFeature(
                     payload = responsePayload,
                     targetRecipient = action.originator ?: "unknown"
                 ))
+                publishActionResult(store, correlationId, action.name, success = true,
+                    summary = "Ledger returned (${messages.size} entries)")
             }
 
             ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, "TOGGLE_SESSION_HIDDEN") ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val localHandle = requireSessionId(identifier, sessionState, "TOGGLE_SESSION_HIDDEN") ?: run {
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Session '$identifier' not found")
+                    return
+                }
                 persistSession(localHandle, sessionState, store)
+                val isNowHidden = sessionState.sessions[localHandle]?.isHidden ?: false
+                publishActionResult(store, correlationId, action.name, success = true,
+                    summary = if (isNowHidden) "Session hidden" else "Session unhidden")
             }
 
             ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_LOCKED -> {
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull
-                val resolvedId = requireSessionId(sessionId, sessionState, "TOGGLE_MESSAGE_LOCKED") ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val resolvedId = requireSessionId(sessionId, sessionState, "TOGGLE_MESSAGE_LOCKED") ?: run {
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Session '$sessionId' not found")
+                    return
+                }
                 persistSession(resolvedId, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", resolvedId) }))
+                publishActionResult(store, correlationId, action.name, success = true,
+                    summary = "Message lock toggled")
             }
 
             ActionRegistry.Names.SESSION_CLEAR -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, "CLEAR") ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val localHandle = requireSessionId(identifier, sessionState, "CLEAR") ?: run {
+                    publishActionResult(store, correlationId, action.name, false, error = "Session '$identifier' not found.")
+                    return
+                }
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
+                val sessionName = sessionState.sessions[localHandle]?.identity?.name ?: localHandle
+                publishActionResult(store, correlationId, action.name, true, summary = "Session '$sessionName' cleared.")
             }
 
             ActionRegistry.Names.SESSION_SET_ORDER, ActionRegistry.Names.SESSION_REORDER -> {
@@ -597,6 +671,7 @@ class SessionFeature(
 
             // --- SLICE 4: LIST_SESSIONS handler ---
             ActionRegistry.Names.SESSION_LIST_SESSIONS -> {
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val sessions = sessionState.sessions.values
                     .filter { !it.isHidden }
                     .map { "• ${it.identity.name} (handle: ${it.identity.localHandle})" }
@@ -613,15 +688,24 @@ class SessionFeature(
                         put("senderId", "system")
                         put("message", responseMessage)
                     }))
+                    publishActionResult(store, correlationId, action.name, success = true,
+                        summary = "Listed ${sessionState.sessions.values.count { !it.isHidden }} sessions")
                 } else {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "LIST_SESSIONS: No response session specified.")
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "No response session specified")
                 }
             }
 
             // --- SLICE 4: LOCK_MESSAGE / UNLOCK_MESSAGE handlers ---
             ActionRegistry.Names.SESSION_LOCK_MESSAGE, ActionRegistry.Names.SESSION_UNLOCK_MESSAGE -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                val localHandle = requireSessionId(identifier, sessionState, action.name) ?: return
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val localHandle = requireSessionId(identifier, sessionState, action.name) ?: run {
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Session '$identifier' not found")
+                    return
+                }
 
                 // Check if the reducer flagged a resolution error
                 val prevState = previousState as? SessionState
@@ -638,11 +722,16 @@ class SessionFeature(
                     if (result.entry == null && result.errorMessage != null) {
                         postResolutionError(localHandle, result.errorMessage, action.originator, store)
                     }
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Message not found or resolution failed")
                     return
                 }
 
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
+                val verb = if (action.name == ActionRegistry.Names.SESSION_LOCK_MESSAGE) "locked" else "unlocked"
+                publishActionResult(store, correlationId, action.name, success = true,
+                    summary = "Message $verb")
             }
         }
     }
@@ -662,6 +751,32 @@ class SessionFeature(
             put("senderId", "system")
             put("message", formattedError)
         }))
+    }
+
+    /**
+     * Publishes a lightweight broadcast notification after completing a command-dispatchable
+     * session action. CommandBot matches via correlationId to post feedback to the originating
+     * session. Follows the same pattern as FileSystemFeature.publishActionResult and
+     * KnowledgeGraphFeature.publishActionResult.
+     */
+    private fun publishActionResult(
+        store: Store,
+        correlationId: String?,
+        requestAction: String,
+        success: Boolean,
+        summary: String? = null,
+        error: String? = null
+    ) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.SESSION_ACTION_RESULT,
+            payload = buildJsonObject {
+                correlationId?.let { put("correlationId", it) }
+                put("requestAction", requestAction)
+                put("success", success)
+                summary?.let { put("summary", it) }
+                error?.let { put("error", it) }
+            }
+        ))
     }
 
     private fun resolveSessionIdFromGenericPayload(payload: JsonObject?, state: SessionState): String? {

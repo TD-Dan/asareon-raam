@@ -878,6 +878,50 @@
       }
     },
     {
+      "action_name": "session.ACTION_RESULT",
+      "summary": "Broadcast notification published after a command-dispatchable session action completes. Carries a lightweight summary for session feedback via CommandBot. CommandBot matches via correlationId to post feedback to the originating session.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the domain action's payload. Null if not command-originated."
+          },
+          "requestAction": {
+            "type": "string",
+            "description": "The domain action name that produced this result, e.g. 'session.POST'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable description of what happened."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable error message on failure."
+          }
+        },
+        "required": [
+          "requestAction",
+          "success"
+        ]
+      }
+    },
+    {
       "action_name": "session.SESSION_CREATED",
       "summary": "Broadcast when a new session is fully created and registered. Agents listen for this to detect their private cognition session via the isPrivateTo field.",
       "public": false,

@@ -59,7 +59,7 @@ class CommandBotFeature(
 
     companion object {
         /** TTL for pending result entries: 5 minutes. */
-        const val PENDING_RESULT_TTL_MS = 5 * 60 * 1000L
+        const val PENDING_RESULT_TTL_MS = 30 * 1000L
     }
 
     /**
