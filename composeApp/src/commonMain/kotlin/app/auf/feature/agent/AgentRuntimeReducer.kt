@@ -573,22 +573,14 @@ object AgentRuntimeReducer {
         val senderId = entry["senderId"]?.jsonPrimitive?.contentOrNull
         val currentTime = platformDependencies.currentTimeMillis()
 
-        // Filter out avatar updates (metadata: render_as_partial) to prevent cycles
+        // Filter out avatar updates (metadata: render_as_partial) to prevent cycles.
+        // Avatar card state is managed exclusively by AGENT_AVATAR_MOVED — the
+        // "commit intention" dispatch from updateAgentAvatars. If MESSAGE_POSTED
+        // also updates agentAvatarCardIds, a late-arriving broadcast from an old
+        // POST can overwrite a newer AVATAR_MOVED entry, orphaning the current card.
         val metadata = entry["metadata"]?.jsonObject
         val isAvatar = metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
         if (isAvatar) {
-            // Track avatar cards: Map<IdentityUUID, Map<IdentityUUID, String>>
-            val avatarAgentId = entry["senderId"]?.jsonPrimitive?.contentOrNull
-            if (avatarAgentId != null) {
-                // Resolve to UUID: senderId may be UUID (old) or handle (new)
-                val resolvedUuid = state.agents[IdentityUUID(avatarAgentId)]?.identityUUID  // direct UUID key match
-                    ?: state.agents.values.find { it.identityHandle.handle == avatarAgentId }?.identityUUID
-                if (resolvedUuid != null) {
-                    val currentSessionMap = state.agentAvatarCardIds[resolvedUuid] ?: emptyMap()
-                    val newSessionMap = currentSessionMap + (sessionId to messageId)
-                    return state.copy(agentAvatarCardIds = state.agentAvatarCardIds + (resolvedUuid to newSessionMap))
-                }
-            }
             return state
         }
 
