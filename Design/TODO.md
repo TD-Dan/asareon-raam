@@ -64,7 +64,11 @@
 
 - WORKSPACE_INDEX should default to uncollapsed?
 
+- Session is saving the input draft on evey keystroke or with a really fast debounce. This should be longer say 3 seconds and fire only in 3 second intervals.
+
 ## HIGH PRIORITY:
+
+- !! Need context collapse management tools to the preview turn view to debug and fix agent internal state
 
 - AUTOMATIC INCREMENTAL BACKUP at app start! And a backup central.
 
