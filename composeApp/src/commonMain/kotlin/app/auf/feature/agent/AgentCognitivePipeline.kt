@@ -861,13 +861,10 @@ object AgentCognitivePipeline {
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
         """.trimIndent() + tokenUsageContext)
 
-        // AVAILABLE_ACTIONS
+        // AVAILABLE_ACTIONS — structured Group with per-feature children
         val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
         if (agentIdentity != null) {
-            contextMap["AVAILABLE_ACTIONS"] = stringToSection(
-                "AVAILABLE_ACTIONS",
-                ExposedActionsContextProvider.generateContext(store, agentIdentity)
-            )
+            contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.buildSections(store, agentIdentity)
         }
 
         // Workspace two-partition view (INDEX + FILES)
@@ -886,16 +883,13 @@ object AgentCognitivePipeline {
                     "WORKSPACE_INDEX",
                     WorkspaceContextFormatter.buildIndexTree(wsEntries, mergedOverrides)
                 )
-                // Always create WORKSPACE_FILES Group when files exist in listing.
-                // Children are created for ALL files (collapsed by default).
+                // Always create WORKSPACE_FILES Group when entries exist in listing.
+                // Directories become Groups, files become Sections. All default collapsed.
                 // Expanded files get real content; others get a placeholder.
                 val fileContents = statusInfo.transientWorkspaceFileContents
-                val hasFiles = wsEntries.any { !it.isDirectory }
-                if (hasFiles) {
-                    contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSections(
-                        wsEntries, fileContents, mergedOverrides, platformDependencies
-                    )
-                }
+                contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSections(
+                    wsEntries, fileContents, mergedOverrides, platformDependencies
+                )
             }
         }
 

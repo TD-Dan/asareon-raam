@@ -237,22 +237,30 @@ object WorkspaceContextFormatter {
             .sortedWith(compareBy({ !it.isDirectory }, { it.name }))
 
         val totalFiles = entries.count { !it.isDirectory }
+        val totalDirs = entries.count { it.isDirectory }
         val expandedCount = entries.count { entry ->
             !entry.isDirectory && resolveCollapseState(entry.relativePath, collapseOverrides) == CollapseState.EXPANDED
         }
 
+        // Build summary strings that describe files and/or directories
+        val contentDesc = buildString {
+            if (totalFiles > 0) append("$totalFiles file${if (totalFiles != 1) "s" else ""}")
+            if (totalDirs > 0) {
+                if (totalFiles > 0) append(", ")
+                append("$totalDirs director${if (totalDirs != 1) "ies" else "y"}")
+            }
+        }.ifEmpty { "empty" }
+
         return PromptSection.Group(
             key = "WORKSPACE_FILES",
-            header = if (totalFiles > 0)
-                "Workspace: $totalFiles files, ${entries.count { it.isDirectory }} directories | $expandedCount files open"
-            else "",
+            header = "Workspace: $contentDesc | $expandedCount files open",
             children = rootEntries.map { entry ->
                 buildEntrySection(entry, entries, childrenMap, expandedFileContents, platformDependencies)
             },
             isCollapsible = true,
             priority = 10,
-            collapsedSummary = "[Workspace files collapsed — $totalFiles files. " +
-                    "Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
+            collapsedSummary = "[Workspace collapsed — $contentDesc. " +
+                    "Use agent.CONTEXT_UNCOLLAPSE to open.]"
         )
     }
 

@@ -55,7 +55,7 @@ object ConversationLogFormatter {
      * [PromptSection.Section], enabling per-session budget management and
      * visibility in the Context Manager UI.
      *
-     * The child key convention is `session:<uuid>`, matching the
+     * The child key convention is `session:<handle>`, matching the
      * `contextCollapseOverrides` key space.
      */
     fun buildSections(
@@ -85,7 +85,7 @@ object ConversationLogFormatter {
             val messageCount = session.messages.size
 
             PromptSection.Section(
-                key = "session:${session.sessionUUID}",
+                key = "session:${session.sessionHandle}",
                 content = content,
                 isProtected = false,
                 isCollapsible = true,

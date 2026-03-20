@@ -23,13 +23,127 @@ import app.auf.core.generated.ActionRegistry
 object ExposedActionsContextProvider {
 
     /**
-     * Generates a formatted context block describing all actions available to
-     * the specified agent identity, filtered by its effective permissions.
+     * Builds a [PromptSection.Group] with per-feature children for the unified
+     * partition model. Each feature namespace (agent, filesystem, session, etc.)
+     * becomes an individually collapsible child [PromptSection.Section].
+     *
+     * The shared preamble (syntax instructions, examples, constraints) lives in
+     * the Group header. Feature groups are sorted alphabetically.
      *
      * @param store The Store instance for resolving effective permissions
      * @param agentIdentity The agent's Identity from the registry
      */
+    fun buildSections(store: Store, agentIdentity: Identity): PromptSection.Group {
+        val preamble = buildPreamble()
+        val agentActions = resolveAgentActions(store, agentIdentity)
+
+        if (agentActions.isEmpty()) {
+            return PromptSection.Group(
+                key = "AVAILABLE_ACTIONS",
+                header = preamble,
+                children = listOf(
+                    PromptSection.Section(
+                        key = "AVAILABLE_ACTIONS:empty",
+                        content = "No system actions are currently available.",
+                        isProtected = true,
+                        isCollapsible = false
+                    )
+                ),
+                isCollapsible = true,
+                priority = 10,
+                collapsedSummary = "[Available actions collapsed — no actions available]"
+            )
+        }
+
+        // Group actions by feature prefix (everything before the first '.')
+        val byFeature = agentActions.groupBy { desc ->
+            desc.fullName.substringBefore('.', "other")
+        }.toSortedMap()
+
+        val children = byFeature.map { (feature, actions) ->
+            val content = buildString {
+                actions.forEach { desc ->
+                    appendLine("### ${desc.fullName}")
+                    appendLine(desc.summary)
+                    if (desc.payloadFields.isNotEmpty()) {
+                        appendLine("Payload fields:")
+                        desc.payloadFields.forEach { field ->
+                            val requiredTag = if (field.required) " (REQUIRED)" else ""
+                            val defaultTag = field.default?.let { " [default: $it]" } ?: ""
+                            appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
+                        }
+                    } else {
+                        appendLine("Payload: none (empty code block body)")
+                    }
+                    appendLine()
+                }
+            }
+            PromptSection.Section(
+                key = "actions:$feature",
+                content = content,
+                isProtected = false,
+                isCollapsible = true,
+                priority = 10,
+                collapsedSummary = "[$feature — ${actions.size} action${if (actions.size != 1) "s" else ""} collapsed]"
+            )
+        }
+
+        val totalActions = agentActions.size
+        return PromptSection.Group(
+            key = "AVAILABLE_ACTIONS",
+            header = preamble + "\nAVAILABLE ACTIONS (${totalActions} across ${byFeature.size} features):\n",
+            children = children,
+            isCollapsible = true,
+            priority = 10,
+            collapsedSummary = "[Available actions collapsed — $totalActions actions across ${byFeature.size} features. " +
+                    "Use agent.CONTEXT_UNCOLLAPSE to expand.]"
+        )
+    }
+
+    /**
+     * Generates a formatted context block describing all actions available to
+     * the specified agent identity, filtered by its effective permissions.
+     *
+     * @deprecated Use [buildSections] for the structured partition model.
+     *   Retained during migration for backward compatibility.
+     */
     fun generateContext(store: Store, agentIdentity: Identity): String = buildString {
+        append(buildPreamble())
+
+        val agentActions = resolveAgentActions(store, agentIdentity)
+
+        if (agentActions.isEmpty()) {
+            appendLine("No system actions are currently available.")
+            return@buildString
+        }
+
+        appendLine("AVAILABLE ACTIONS:")
+        appendLine()
+
+        agentActions.forEach { desc ->
+            appendLine("### ${desc.fullName}")
+            appendLine(desc.summary)
+
+            if (desc.payloadFields.isNotEmpty()) {
+                appendLine("Payload fields:")
+                desc.payloadFields.forEach { field ->
+                    val requiredTag = if (field.required) " (REQUIRED)" else ""
+                    val defaultTag = field.default?.let { " [default: $it]" } ?: ""
+                    appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
+                }
+            } else {
+                appendLine("Payload: none (empty code block body)")
+            }
+            appendLine()
+        }
+    }
+
+    // =========================================================================
+    // Internal helpers
+    // =========================================================================
+
+    /** Builds the shared preamble: syntax instructions, examples, constraints. */
+    private fun buildPreamble(): String = buildString {
         appendLine("--- AVAILABLE SYSTEM ACTIONS ---")
         appendLine()
         appendLine("You can invoke system actions by including a fenced code block in your response.")
@@ -57,49 +171,20 @@ object ExposedActionsContextProvider {
         appendLine("}")
         appendLine("```")
         appendLine()
-
-        // Resolve the agent's effective permissions through the inheritance chain
-        val effectivePerms = store.resolveEffectivePermissions(agentIdentity)
-
-        // Filter to public actions where the agent has all required permissions
-        val agentActions = ActionRegistry.byActionName.values
-            .filter { desc ->
-                // Must be public (agents dispatch cross-feature)
-                desc.public &&
-                        // Must not be hidden (feature-to-feature only, not agent-invocable)
-                        !desc.hidden &&
-                        // Must have declared required_permissions
-                        desc.requiredPermissions != null &&
-                        // Agent must have YES for all required permissions
-                        desc.requiredPermissions!!.all { permKey ->
-                            effectivePerms[permKey]?.level == PermissionLevel.YES
-                        }
-            }
-            .sortedBy { it.fullName }
-
-        if (agentActions.isEmpty()) {
-            appendLine("No system actions are currently available.")
-            return@buildString
-        }
-
-        appendLine("AVAILABLE ACTIONS:")
-        appendLine()
-
-        agentActions.forEach { desc ->
-            appendLine("### ${desc.fullName}")
-            appendLine(desc.summary)
-
-            if (desc.payloadFields.isNotEmpty()) {
-                appendLine("Payload fields:")
-                desc.payloadFields.forEach { field ->
-                    val requiredTag = if (field.required) " (REQUIRED)" else ""
-                    val defaultTag = field.default?.let { " [default: $it]" } ?: ""
-                    appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
-                }
-            } else {
-                appendLine("Payload: none (empty code block body)")
-            }
-            appendLine()
-        }
     }
+
+    /** Resolves and filters the actions available to the given agent identity. */
+    private fun resolveAgentActions(store: Store, agentIdentity: Identity) =
+        store.resolveEffectivePermissions(agentIdentity).let { effectivePerms ->
+            ActionRegistry.byActionName.values
+                .filter { desc ->
+                    desc.public &&
+                            !desc.hidden &&
+                            desc.requiredPermissions != null &&
+                            desc.requiredPermissions!!.all { permKey ->
+                                effectivePerms[permKey]?.level == PermissionLevel.YES
+                            }
+                }
+                .sortedBy { it.fullName }
+        }
 }
