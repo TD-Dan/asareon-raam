@@ -6,6 +6,7 @@ import app.auf.core.generated.ActionRegistry
 import app.auf.test.TestEnvironment
 import app.auf.util.BasePath
 import app.auf.util.FileEntry
+import app.auf.util.LogLevel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -754,6 +755,465 @@ class FileSystemFeatureT2CoreTest {
             )
             val errorLog = platform.capturedLogs.find { it.message.contains("Failed to open workspace folder") }
             assertNotNull(errorLog, "An error should be logged when openFolderInExplorer fails.")
+        }
+    }
+
+    // ========================================================================
+    // OPEN_SYSTEM_FOLDER Tests (System-level folder opening with prefix resolution)
+    // ========================================================================
+
+    // --- Prefix resolution: app: ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with app prefix resolves to APP_ZONE base path`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE)
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"app:\" should resolve to APP_ZONE root. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with app subdirectory resolves to APP_ZONE plus subdirectory`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"app:logs\" should resolve to APP_ZONE/logs. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with app colon-slash variant resolves correctly`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:/logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"app:/logs\" should resolve to APP_ZONE/logs. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with app colon-backslash variant resolves correctly`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:\\logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"app:\\\\logs\" should resolve to APP_ZONE/logs. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    // --- Prefix resolution: user: ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with user prefix resolves to USER_ZONE base path`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.USER_ZONE)
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "user:")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"user:\" should resolve to USER_ZONE root. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with user subdirectory resolves to USER_ZONE plus subdirectory`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.USER_ZONE) + "/Documents"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "user:Documents")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"user:Documents\" should resolve to USER_ZONE/Documents. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with user colon-slash variant resolves correctly`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.USER_ZONE) + "/Documents"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "user:/Documents")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"user:/Documents\" should resolve to USER_ZONE/Documents. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with user colon-backslash variant resolves correctly`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.USER_ZONE) + "/Documents"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "user:\\Documents")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "\"user:\\\\Documents\" should resolve to USER_ZONE/Documents. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    // --- Absolute path passthrough ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with unix absolute path passes through unchanged`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val absolutePath = "/dev/sda1"
+        platform.createDirectories(absolutePath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", absolutePath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == absolutePath },
+                "Unix absolute path should pass through unchanged. Expected: $absolutePath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with windows drive letter path passes through unchanged`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val windowsPath = "C:\\Users\\dan\\AppData"
+        platform.createDirectories(windowsPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", windowsPath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == windowsPath },
+                "Windows drive letter path should pass through unchanged. Expected: $windowsPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with lowercase windows drive letter passes through unchanged`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val windowsPath = "c:\\temp"
+        platform.createDirectories(windowsPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", windowsPath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == windowsPath },
+                "Lowercase windows drive path should pass through unchanged. Expected: $windowsPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    // --- Fault tolerance ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with path traversal is allowed for system call`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val traversalPath = "/var/log/../../etc"
+        platform.createDirectories(traversalPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", traversalPath)
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == traversalPath },
+                "Path traversal should be allowed for system folder calls. Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with app prefix and path traversal is allowed`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/.."
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:..")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "Path traversal after app: prefix should be allowed for system calls. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with empty path defaults to app zone root`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE)
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "Empty path should default to APP_ZONE root. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER with blank path defaults to app zone root`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE)
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "   ")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.any { it == expectedPath },
+                "Blank path should default to APP_ZONE root. Expected: $expectedPath, Got: ${platform.openedFolderPaths}"
+            )
+        }
+    }
+
+    // --- Non-existent path handling ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER shows toast when directory does not exist`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        // Do NOT create the directory
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:nonexistent-folder")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val toastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertNotNull(toastAction, "A toast should be shown when the directory does not exist.")
+            assertTrue(
+                toastAction.payload?.get("message")?.jsonPrimitive?.content?.contains("does not exist") == true,
+                "Toast message should indicate the directory does not exist."
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER logs error when directory does not exist`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        // Do NOT create the directory
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:nonexistent-folder")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val errorLog = platform.capturedLogs.find {
+                it.level == LogLevel.ERROR && it.message.contains("does not exist")
+            }
+            assertNotNull(errorLog, "An ERROR-level log should be recorded when the directory does not exist.")
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER does not call openFolderInExplorer when directory does not exist`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        // Do NOT create the directory
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:nonexistent-folder")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            assertTrue(
+                platform.openedFolderPaths.isEmpty(),
+                "openFolderInExplorer should NOT be called when the directory does not exist."
+            )
+        }
+    }
+
+    // --- Error handling (openFolderInExplorer throws) ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER shows toast when openFolderInExplorer throws`() {
+        val platform = FakePlatformDependencies("test")
+        platform.openFolderShouldThrow = true
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val toastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
+            assertNotNull(toastAction, "A toast should be shown when openFolderInExplorer fails.")
+            assertTrue(
+                toastAction.payload?.get("message")?.jsonPrimitive?.content?.contains("Failed to open") == true,
+                "Toast message should describe the failure."
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER logs error when openFolderInExplorer throws`() {
+        val platform = FakePlatformDependencies("test")
+        platform.openFolderShouldThrow = true
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val errorLog = platform.capturedLogs.find {
+                it.level == LogLevel.ERROR && it.message.contains("Failed to open")
+            }
+            assertNotNull(errorLog, "An ERROR-level log should be recorded when openFolderInExplorer throws.")
         }
     }
 }
