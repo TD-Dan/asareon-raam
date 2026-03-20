@@ -430,13 +430,11 @@
     },
     {
       "action_name": "filesystem.COPY_SELECTION_TO_CLIPBOARD",
-      "summary": "Initiates the process of reading selected files and copying their formatted content to the clipboard.",
-      "public": true,
-      "broadcast": true,
+      "summary": "[INTERNAL] Initiates the process of reading selected files and copying their formatted content to the clipboard.",
+      "public": false,
+      "broadcast": false,
       "targeted": false,
-      "required_permissions": [
-        "filesystem:workspace"
-      ]
+      "required_permissions": []
     },
     {
       "action_name": "filesystem.LOAD_CHILDREN",

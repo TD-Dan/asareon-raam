@@ -420,7 +420,7 @@ object AgentRuntimeReducer {
             }
 
             // ================================================================
-            // Phase A: Context Collapse Actions (§3.6)
+            // Context Collapse Actions
             // ================================================================
             ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE -> {
                 val payload = action.payload ?: run {
@@ -485,7 +485,7 @@ object AgentRuntimeReducer {
             }
 
             // ================================================================
-            // Phase A: Pending Private Session Guard (§5.2)
+            // Pending Private Session Guard
             // ================================================================
             ActionRegistry.Names.AGENT_SET_PENDING_PRIVATE_SESSION -> {
                 val payload = action.payload ?: return state

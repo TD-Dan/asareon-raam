@@ -511,6 +511,11 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.agentUUID() ?: return
                 AgentCognitivePipeline.evaluateFullContext(agentId, store)
             }
+            // Trigger initial API preview when managed context is first set (view opened)
+            ActionRegistry.Names.AGENT_SET_MANAGED_CONTEXT -> {
+                val agentId = action.payload?.agentUUID() ?: return
+                resetDebouncedPreview(agentId, store)
+            }
             ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING -> {
                 // Listing received — evaluateFullContext checks if file reads are pending.
                 // If no expanded files, workspace is ready and the gate proceeds.
@@ -690,7 +695,7 @@ class AgentRuntimeFeature(
                 }
 
                 // ============================================================
-                // Workspace subtree scope expansion (§ Two-Axis Collapse Model)
+                // Workspace subtree scope expansion (Two-Axis Collapse Model)
                 //
                 // When scope == "subtree" and the partitionKey targets a workspace
                 // directory ("ws:src/"), expand all nested sub-directories so the
@@ -745,7 +750,7 @@ class AgentRuntimeFeature(
 
                 saveContextState(agent, agentState, store)
 
-                // If Manage Context is open for this agent, reassemble instantly (§6.4)
+                // If Manage Context is open for this agent, reassemble instantly
                 val updatedAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState
                 val updatedStatusInfo = updatedAgentState?.agentStatuses?.get(agentId)
                 if (updatedStatusInfo?.managedContext != null) {
@@ -859,7 +864,7 @@ class AgentRuntimeFeature(
                 }
 
                 // ============================================================
-                // Phase C: HKG Write Guard (§4.5)
+                // HKG Write Guard
                 //
                 // For agent-dispatched KG write actions, apply appropriate
                 // guards based on the action type:
@@ -1033,7 +1038,7 @@ class AgentRuntimeFeature(
     }
 
     // =========================================================================
-    // Managed Context: Instant Reassembly + Debounced Preview (§6.4–6.5)
+    // Managed Context: Instant Reassembly + Debounced Preview
     // =========================================================================
 
     /**
@@ -1097,10 +1102,10 @@ class AgentRuntimeFeature(
      * Currently a no-op stub. Phase 5 will implement:
      * - Per-agent filter by on_action_filter manifest
      * - Pre-computed observable action sets
-     * - Rate limiting per §7.3
-     * - Sandboxed execution per §11.2
+     * - Rate limiting
+     * - Sandboxed execution
      *
-     * See: §8.3 (on_action Routing) of the context architecture redesign doc.
+     * See: on_action Routing in the context architecture redesign doc.
      */
     @Suppress("UNUSED_PARAMETER")
     private fun forwardToLuaStrategies(action: Action, agentState: AgentRuntimeState, store: Store) {
@@ -1256,7 +1261,7 @@ class AgentRuntimeFeature(
     }
 
     /**
-     * Persists the agent's context collapse overrides to context.json (§3.8).
+     * Persists the agent's context collapse overrides to context.json.
      * Written on change (same pattern as nvram.json).
      */
     private fun saveContextState(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
@@ -1649,7 +1654,7 @@ class AgentRuntimeFeature(
                     platformDependencies.log(LogLevel.WARN, identity.handle, "Failed to load NVRAM from $path (agent will use initial state): ${e.message}")
                 }
             }
-            // Phase A: Context collapse overrides (§3.8)
+            // Context collapse overrides
             path.endsWith("/$contextFILENAME") -> {
                 val agentIdStr = path.substringBeforeLast("/")
                 try {

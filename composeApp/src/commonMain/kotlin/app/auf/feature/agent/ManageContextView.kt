@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -18,9 +18,12 @@ import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,7 +38,7 @@ import kotlinx.serialization.json.put
 import kotlin.math.roundToInt
 
 /**
- * Context Manager UI — replaces PreviewContextView (§6).
+ * Context Manager UI.
  *
  * Three tabs:
  * - Tab 0: Context Management — budget bar + partition cards (instant reassembly)
@@ -146,7 +149,7 @@ fun ManageContextView(store: Store) {
         }
     }
 
-    // Content viewer dialog (local state per §6.6 Phase 1 alternative)
+    // Content viewer dialog (local dialog state)
     viewingContent?.let { (title, content) ->
         ContentViewerDialog(
             title = title,
@@ -188,7 +191,7 @@ private fun ContextManagementPane(
             )
         }
 
-        // Persistence notice (§6.7)
+        // Persistence notice
         item {
             Text(
                 "Collapse settings persist across turns for this agent.",
@@ -200,7 +203,7 @@ private fun ContextManagementPane(
 
         // Partition cards — top-level only (children rendered inside groups)
         val topLevel = partitions.filter { it.parentKey == null }
-        items(topLevel, key = { it.key }) { partition ->
+        itemsIndexed(topLevel, key = { _, it -> it.key }) { index, partition ->
             val children = partitions.filter { it.parentKey == partition.key }
             PartitionCard(
                 partition = partition,
@@ -209,16 +212,18 @@ private fun ContextManagementPane(
                 agentId = agentId,
                 store = store,
                 onViewContent = onViewContent,
-                depth = 0
+                depth = 0,
+                topLevelIndex = index
             )
         }
     }
 }
 
 // =============================================================================
-// Budget Bar (§6.2)
+// Budget Bar
 // =============================================================================
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun BudgetBar(
     partitions: List<ContextCollapseLogic.ContextPartition>,
@@ -233,6 +238,9 @@ private fun BudgetBar(
 
     val utilizationPct = if (maxBudgetChars > 0) (totalChars.toFloat() / maxBudgetChars * 100).roundToInt() else 0
     val isOverSoft = totalChars > softBudgetChars
+
+    // Track which segment the pointer is hovering over (-1 = none)
+    var hoveredIndex by remember { mutableStateOf(-1) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -255,7 +263,7 @@ private fun BudgetBar(
             }
             Spacer(Modifier.height(8.dp))
 
-            // Stacked segment bar — golden-angle hue rotation (§6.2)
+            // Stacked segment bar — golden-angle hue rotation
             if (topLevel.isNotEmpty() && totalChars > 0) {
                 Row(
                     Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp))
@@ -269,11 +277,32 @@ private fun BudgetBar(
                                     .weight(weight)
                                     .fillMaxHeight()
                                     .background(hslToColor(hue, 0.55f, 0.55f))
+                                    .onPointerEvent(PointerEventType.Enter) { hoveredIndex = index }
+                                    .onPointerEvent(PointerEventType.Exit) { if (hoveredIndex == index) hoveredIndex = -1 }
                             )
                         }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
+
+                // Hover detail label — shows the partition the pointer is over
+                if (hoveredIndex in topLevel.indices) {
+                    val hovered = topLevel[hoveredIndex]
+                    val hTokens = hovered.effectiveCharCount / ContextDelimiters.CHARS_PER_TOKEN
+                    val hPct = (hovered.effectiveCharCount.toFloat() / totalChars * 100).roundToInt()
+                    val hue = (hoveredIndex * GOLDEN_ANGLE) % 360f
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).background(hslToColor(hue, 0.55f, 0.55f), RoundedCornerShape(2.dp)))
+                        Spacer(Modifier.width(4.dp))
+                        Text("${hovered.key}: ~${formatTokenCount(hTokens)} tokens ($hPct%)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                } else {
+                    // Invisible placeholder to reserve the line height
+                    Text(" ",
+                        style = MaterialTheme.typography.labelSmall)
+                }
 
                 // Soft budget marker
                 val softPct = if (maxBudgetChars > 0) softBudgetChars.toFloat() / maxBudgetChars else 0.5f
@@ -286,7 +315,7 @@ private fun BudgetBar(
 }
 
 // =============================================================================
-// Partition Card (§6.3)
+// Partition Card
 // =============================================================================
 
 @Composable
@@ -297,7 +326,8 @@ private fun PartitionCard(
     agentId: IdentityUUID,
     store: Store,
     onViewContent: (String, String) -> Unit,
-    depth: Int
+    depth: Int,
+    topLevelIndex: Int = 0
 ) {
     val tokens = partition.effectiveCharCount / ContextDelimiters.CHARS_PER_TOKEN
     val isCollapsed = partition.state == CollapseState.COLLAPSED
@@ -309,98 +339,111 @@ private fun PartitionCard(
         else -> "EXPANDED"
     }
 
+    val accentHue = (topLevelIndex * GOLDEN_ANGLE) % 360f
+    val accentColor = hslToColor(accentHue, 0.55f, 0.55f)
+
     OutlinedCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = (depth * 16).dp)
     ) {
-        Column(Modifier.padding(12.dp)) {
-            // Header row: key + token count
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    partition.key,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("~${formatTokenCount(tokens)} tokens",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.height(4.dp))
-
-            // Controls row: toggle + view content
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Toggle button or plain label (§6.3)
-                if (!isProtected && partition.isAutoCollapsible) {
-                    TextButton(
-                        onClick = {
-                            val actionName = if (isCollapsed)
-                                ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE
-                            else
-                                ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE
-                            store.dispatch("agent", Action(actionName, buildJsonObject {
-                                put("agentId", agentId.uuid)
-                                put("partitionKey", partition.key)
-                            }))
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            if (isCollapsed) Icons.Default.UnfoldMore else Icons.Default.UnfoldLess,
-                            contentDescription = stateBadge,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (isCollapsed) "COLLAPSED ▸" else "EXPANDED ▾",
-                            style = MaterialTheme.typography.labelSmall)
-                    }
-                } else {
-                    Text(stateBadge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 8.dp))
-                }
-
-                // View content button
-                TextButton(onClick = {
-                    val content = if (isCollapsed) partition.collapsedContent else partition.fullContent
-                    onViewContent(partition.key, content)
-                }) {
-                    Text("View Content", style = MaterialTheme.typography.labelSmall)
-                }
-            }
-
-            // Children (only when parent is expanded and has children)
-            if (!isCollapsed && children.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-                children.forEach { child ->
-                    val grandchildren = allPartitions.filter { it.parentKey == child.key }
-                    PartitionCard(
-                        partition = child,
-                        children = grandchildren,
-                        allPartitions = allPartitions,
-                        agentId = agentId,
-                        store = store,
-                        onViewContent = onViewContent,
-                        depth = depth + 1
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            // Colored left edge matching the budget bar segment
+            Box(
+                Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(accentColor)
+            )
+            Column(Modifier.weight(1f).padding(12.dp)) {
+                // Header row: key + token count
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        partition.key,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Text("~${formatTokenCount(tokens)} tokens",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-        }
+                Spacer(Modifier.height(4.dp))
+
+                // Controls row: toggle + view content
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Toggle button or plain label
+                    if (!isProtected && partition.isAutoCollapsible) {
+                        TextButton(
+                            onClick = {
+                                val actionName = if (isCollapsed)
+                                    ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE
+                                else
+                                    ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE
+                                store.dispatch("agent", Action(actionName, buildJsonObject {
+                                    put("agentId", agentId.uuid)
+                                    put("partitionKey", partition.key)
+                                }))
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                if (isCollapsed) Icons.Default.UnfoldMore else Icons.Default.UnfoldLess,
+                                contentDescription = stateBadge,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isCollapsed) "COLLAPSED ▸" else "EXPANDED ▾",
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                    } else {
+                        Text(stateBadge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 8.dp))
+                    }
+
+                    // View content button
+                    TextButton(onClick = {
+                        val content = if (isCollapsed) partition.collapsedContent else partition.fullContent
+                        onViewContent(partition.key, content)
+                    }) {
+                        Text("View Content", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                // Children (only when parent is expanded and has children)
+                if (!isCollapsed && children.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                    children.forEach { child ->
+                        val grandchildren = allPartitions.filter { it.parentKey == child.key }
+                        PartitionCard(
+                            partition = child,
+                            children = grandchildren,
+                            allPartitions = allPartitions,
+                            agentId = agentId,
+                            store = store,
+                            onViewContent = onViewContent,
+                            depth = depth + 1,
+                            topLevelIndex = topLevelIndex
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            } // Column
+        } // Row
     }
 }
 
@@ -539,7 +582,7 @@ private fun RawJsonPane(statusInfo: AgentStatusInfo, store: Store) {
 }
 
 // =============================================================================
-// Content Viewer Dialog (§6.6 — local dialog state)
+// Content Viewer Dialog
 // =============================================================================
 
 @Composable

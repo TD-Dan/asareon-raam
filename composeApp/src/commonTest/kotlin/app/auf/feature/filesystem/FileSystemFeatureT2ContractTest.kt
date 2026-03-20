@@ -152,22 +152,6 @@ class FileSystemFeatureT2ContractTest {
                 val appZone = platform.getBasePathFor(BasePath.APP_ZONE)
                 platform.createDirectories("$appZone/logs")
             }
-        ),
-        HappyCase(
-            label = "COPY_SELECTION_TO_CLIPBOARD",
-            actionName = ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD,
-            originator = "filesystem",
-            payload = buildJsonObject { },
-            setup = { platform ->
-                platform.createDirectories("/docs")
-                platform.writeFileContent("/docs/a.txt", "content-a")
-            },
-            initialState = FileSystemState(
-                currentPath = "/docs",
-                rootItems = listOf(
-                    FileSystemItem("/docs/a.txt", "a.txt", false, isSelected = true)
-                )
-            )
         )
     )
 
