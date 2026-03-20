@@ -19,7 +19,6 @@ import kotlinx.serialization.json.put
  * Rate limit retries apply to ALL agents (not just automatic mode) because any
  * agent — manual or automatic — may hit a rate limit during generation.
  *
- * [PHASE 1] Uses typed [IdentityUUID] for map key lookups.
  */
 object AgentAutoTriggerLogic {
 
