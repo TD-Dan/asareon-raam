@@ -138,6 +138,51 @@ object StateMachineStrategy : CognitiveStrategy {
         }
     }
 
+    override fun buildPrompt(context: AgentTurnContext, state: JsonElement): PromptBuilder {
+        val stateObj = state as? JsonObject
+        val phase = stateObj?.get(KEY_PHASE)?.jsonPrimitive?.contentOrNull ?: INITIAL_PHASE
+
+        return PromptBuilder(context).apply {
+            identity()
+            instructions()
+            section("STATE MACHINE", buildStateMachineContent(context, stateObj, phase))
+            section("PHASE TRANSITION", buildPhaseTransitionContent(phase))
+            sessions()
+            place("MULTI_AGENT_CONTEXT")
+            everythingElse()
+        }
+    }
+
+    private fun buildStateMachineContent(context: AgentTurnContext, stateObj: JsonObject?, phase: String): String {
+        val previousPhase = stateObj?.get(KEY_PREVIOUS_PHASE)?.jsonPrimitive?.contentOrNull ?: "none"
+        val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
+        val stateMachineDoc = context.resolvedResources[SLOT_STATE_MACHINE] ?: ""
+        return buildString {
+            appendLine("Current Phase: $phase")
+            appendLine("Previous Phase: $previousPhase")
+            appendLine("Turn Count: $turnCount")
+            appendLine()
+            if (stateMachineDoc.isNotBlank()) {
+                appendLine("The following document defines your operational phases and transition rules.")
+                appendLine("Follow the rules for your current phase. When you determine a transition is")
+                appendLine("warranted according to the rules, update your phase using the command below.")
+                appendLine()
+                appendLine(stateMachineDoc)
+            } else {
+                appendLine("No state machine definition loaded. Operate in your current phase until instructed otherwise.")
+            }
+        }
+    }
+
+    private fun buildPhaseTransitionContent(phase: String): String = buildString {
+        appendLine("To change your operational phase, include this command block in your response:")
+        appendLine("```auf_agent.UPDATE_NVRAM")
+        appendLine("""{ "updates": { "phase": "NEW_PHASE_NAME", "previousPhase": "$phase" } }""")
+        appendLine("```")
+        appendLine("Replace NEW_PHASE_NAME with the target phase from the state machine definition.")
+        appendLine("Only transition when the rules for your current phase indicate you should.")
+    }
+
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
         val stateObj = currentState as? JsonObject
             ?: return PostProcessResult(currentState, SentinelAction.PROCEED)

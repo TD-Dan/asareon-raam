@@ -54,6 +54,13 @@ object MinimalStrategy : CognitiveStrategy {
         }
     }
 
+    override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =
+        PromptBuilder(context).apply {
+            identity()
+            instructions()
+            everythingElse()
+        }
+
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
         return PostProcessResult(currentState, SentinelAction.PROCEED)
     }

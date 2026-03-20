@@ -146,6 +146,18 @@ object HKGStrategy : CognitiveStrategy {
         }
     }
 
+    override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =
+        PromptBuilder(context).apply {
+            identity("You have access to a Holon Knowledge Graph (HKG) — your persistent memory and identity layer.")
+            instructions()
+            place("HOLON_KNOWLEDGE_GRAPH_INDEX")
+            place("HOLON_KNOWLEDGE_GRAPH_FILES")
+            hkgNavigation()
+            sessions()
+            place("MULTI_AGENT_CONTEXT")
+            everythingElse()
+        }
+
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
         val stateObj = currentState as? JsonObject
             ?: return PostProcessResult(currentState, SentinelAction.PROCEED)

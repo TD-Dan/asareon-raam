@@ -5,11 +5,13 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
 // =============================================================================
-// Phase 1: Unified Partition Model + Builder API + Assembly Result Types
+// Unified Partition Model + Builder API + Assembly Result Types
 //
 // This file defines the foundation types for the context architecture redesign.
-// Phase 1 status: defined but not yet consumed by pipeline or strategy code.
-// The default CognitiveStrategy.buildPrompt() bridges to prepareSystemPrompt().
+// Phase 1: types defined, default CognitiveStrategy.buildPrompt() bridges to
+//   prepareSystemPrompt() as a single opaque Section.
+// Phase 2: all 6 strategies override buildPrompt() natively.
+// Phase 3: pipeline switches to consume buildPrompt(); prepareSystemPrompt() removed.
 //
 // Contents:
 //   §1  PromptSection        — sealed class hierarchy (§3.1 of design doc)
@@ -117,15 +119,7 @@ data class FormatOverrides(
  * express *what* content exists and *where* it goes. The pipeline handles *how*
  * (collapse, budgeting, wrapping, assembly).
  *
- * ## Phase 1 Status
- *
- * Fully defined. The default [CognitiveStrategy.buildPrompt] wraps the legacy
- * [CognitiveStrategy.prepareSystemPrompt] output as a single opaque section.
- * Phase 2 migrates strategies one-at-a-time to use this builder natively.
- *
- * ## Duplicate Detection (Red Team C3)
- *
- * [emittedKeys] tracks all keys. Duplicate keys are silently skipped.
+ * Duplicate detection (Red Team C3): [emittedKeys] tracks all keys; duplicates skipped.
  */
 class PromptBuilder(private val context: AgentTurnContext) {
     internal val sections = mutableListOf<PromptSection>()
@@ -410,9 +404,6 @@ fun buildPrivateSubscribedSessionsContent(context: AgentTurnContext): String = b
  *
  * Contains partitions, collapse result, budget report, assembled system prompt,
  * gateway request, and a frozen transient data snapshot.
- *
- * Phase 1: defined, returned by [AgentCognitivePipeline.assembleContext].
- * Phase 4: consumed by the Manage Context UI.
  */
 data class ContextAssemblyResult(
     val partitions: List<ContextCollapseLogic.ContextPartition>,
@@ -428,7 +419,6 @@ data class ContextAssemblyResult(
 
 /**
  * Fast-path result: partition metadata only (no string assembly).
- *
  * Used by the Context Manager UI (Tab 0) for instant reassembly on toggle.
  */
 data class PartitionAssemblyResult(
@@ -441,7 +431,6 @@ data class PartitionAssemblyResult(
 
 /**
  * Frozen copy of transient data needed for reassembly.
- *
  * Captured at manage-context entry. Decoupled from [AgentStatusInfo]'s mutable
  * lifecycle so IDLE transitions don't destroy it (Red Team Fix F2).
  */

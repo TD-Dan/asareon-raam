@@ -119,6 +119,16 @@ object PrivateSessionStrategy : CognitiveStrategy {
         }
     }
 
+    override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =
+        PromptBuilder(context).apply {
+            identity()
+            instructions()
+            privateSessionRouting()
+            sessions(SessionFormat.PRIVATE)
+            place("MULTI_AGENT_CONTEXT")
+            everythingElse()
+        }
+
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
         return PostProcessResult(currentState, SentinelAction.PROCEED)
     }

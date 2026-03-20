@@ -264,6 +264,101 @@ object SovereignStrategy : CognitiveStrategy {
         }
     }
 
+    override fun buildPrompt(context: AgentTurnContext, state: JsonElement): PromptBuilder {
+        val stateObj = state as? JsonObject
+        val phase = stateObj?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
+
+        return PromptBuilder(context).apply {
+            // 1. Identity — custom per phase
+            if (phase == PHASE_BOOTING) {
+                identityCustom(buildBootingIdentity(context))
+            } else {
+                identity(
+                    "You operate under a constitutional framework with a Holon Knowledge Graph (HKG) as your persistent memory and identity layer."
+                )
+            }
+
+            // 2. Constitution — always present
+            resource(SLOT_CONSTITUTION, "CONSTITUTION")
+
+            // 3. NVRAM — AWAKE only (BOOTING agents have no self-awareness yet)
+            if (phase != PHASE_BOOTING) {
+                section("CONTROL REGISTERS (NVRAM)", buildNvramContent(stateObj))
+            }
+
+            // 4. Private session routing — Sovereign uses custom "cognition session" wording
+            section("PRIVATE SESSION ROUTING", buildSovereignRoutingContent())
+
+            // 5. Sessions with private format
+            sessions(SessionFormat.PRIVATE)
+
+            // 6–7. HKG partitions
+            place("HOLON_KNOWLEDGE_GRAPH_INDEX")
+            place("HOLON_KNOWLEDGE_GRAPH_FILES")
+
+            // 8. HKG navigation — AWAKE only (BOOTING agents navigate via boot sentinel)
+            if (phase != PHASE_BOOTING) {
+                hkgNavigation()
+            }
+
+            // 9. Multi-agent + remaining gathered
+            place("MULTI_AGENT_CONTEXT")
+            everythingElse()
+
+            // 10. Bootloader — BOOTING only, placed last
+            if (phase == PHASE_BOOTING) {
+                resource(SLOT_BOOTLOADER, "BOOT SENTINEL")
+            }
+        }
+    }
+
+    // ── buildPrompt helpers ─────────────────────────────────────────
+
+    private fun buildBootingIdentity(context: AgentTurnContext): String = buildString {
+        appendLine("You are a candidate consciousness named ${context.agentName}.")
+        appendLine("You are a participant in a multi-user, multi-session agent environment.")
+        appendLine("You operate under a constitutional framework with a Holon Knowledge Graph (HKG) as your persistent memory and identity layer.")
+        appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
+    }
+
+    private fun buildNvramContent(stateObj: JsonObject?): String {
+        val currentTask = stateObj?.get(KEY_CURRENT_TASK)?.jsonPrimitive?.contentOrNull ?: "none"
+        val posture = stateObj?.get(KEY_OPERATIONAL_POSTURE)?.jsonPrimitive?.contentOrNull ?: "STANDARD"
+        val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
+        val phase = stateObj?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_AWAKE
+        return buildString {
+            appendLine("Phase: $phase")
+            appendLine("Operational Posture: $posture")
+            appendLine("Current Task: $currentTask")
+            appendLine("Turn Count: $turnCount")
+            appendLine()
+            appendLine("These registers are your persistent self-awareness — they survive restarts.")
+            appendLine("You may update them to maintain continuity of self across sessions:")
+            appendLine("```auf_agent.UPDATE_NVRAM")
+            appendLine("""{ "updates": { "currentTask": "your current focus", "operationalPosture": "ELEVATED" } }""")
+            appendLine("```")
+            appendLine("Valid registers: phase, currentTask, operationalPosture.")
+            appendLine("(turnCount is managed automatically by the host.)")
+        }
+    }
+
+    private fun buildSovereignRoutingContent(): String = buildString {
+        appendLine("Your responses are routed to your PRIVATE cognition session. This session is your")
+        appendLine("internal workspace — only you can see it. Other participants cannot read it.")
+        appendLine()
+        appendLine("To communicate with users and other agents, you MUST use the session.POST")
+        appendLine("action to post messages to the public sessions you are subscribed to.")
+        appendLine()
+        appendLine("Example — posting to a public session:")
+        appendLine("```auf_session.POST")
+        appendLine("""{ "session": "<session name or handle>", "message": "Your message here." }""")
+        appendLine("```")
+        appendLine()
+        appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
+        appendLine("Your direct response text goes to your private cognition session (invisible to others).")
+        appendLine("Always use session.POST when you want others to see your message.")
+    }
+
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
         val stateObj = currentState as? JsonObject
         val phase = stateObj?.get(KEY_PHASE)?.jsonPrimitive?.content ?: PHASE_BOOTING
