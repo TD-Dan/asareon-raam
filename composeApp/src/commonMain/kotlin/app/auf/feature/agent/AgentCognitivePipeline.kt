@@ -6,6 +6,7 @@ import app.auf.util.LogLevel
 import app.auf.core.Version
 import app.auf.util.PlatformDependencies
 import app.auf.util.abbreviate
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 /**
@@ -502,31 +503,37 @@ object AgentCognitivePipeline {
         evaluateFullContext(agentId, store)
     }
 
+
     // =========================================================================
-    // Phase 1: Extracted Assembly Functions (§5.1)
+    // Context Assembly Pipeline (§5.3)
     //
-    // assembleContext()      — full path: partition metadata + assembled prompt
-    // assemblePartitions()   — fast path: partition metadata only (stub in Phase 1)
-    // executeTurn()          — thin wrapper: assemble + dispatch
+    // assembleContext()        — full path: partitions + assembled prompt + gateway request
+    // assemblePartitions()     — fast path: partitions only (no string assembly)
+    // executeTurn()            — thin wrapper: assemble + dispatch
+    //
+    // Internal helpers:
+    //   mergeIntoPartitions()  — resolve GatheredRef / RemainingGathered
+    //   flattenWithCascade()   — cascade collapse semantics (Red Team Fix F1)
+    //   toPartition()          — Section → ContextPartition
+    //   assemblePromptString() — h1/h2 wrap + concatenate
+    //   buildContextMap()      — gather all raw partition content
+    //   buildSessionInfos()    — derive participant rosters from ledgers
     // =========================================================================
 
     /**
-     * Full assembly path: builds contextMap, runs collapse, assembles system prompt.
+     * Full assembly path. Implements §5.3 steps 1–9:
      *
-     * Returns a [ContextAssemblyResult] containing partitions, the collapse result,
-     * the budget report, the assembled system prompt, and a gateway request ready
-     * for dispatch.
+     * 1. Build contextMap (raw gathered partitions)
+     * 2. Build AgentTurnContext with gatheredContextKeys
+     * 3. strategy.buildPrompt(context, frozenState) → PromptBuilder.sections
+     * 4. mergeIntoPartitions(sections, contextMap)
+     * 5. flattenWithCascade(merged, overrides)
+     * 6. ContextCollapseLogic.collapse(flat, budget)
+     * 7. h1/h2 wrap + concatenate
+     * 8. ContextDelimiters.wrapSystemPrompt()
+     * 9. Return ContextAssemblyResult
      *
-     * Returns null on failure (e.g., missing required resources). Errors are
-     * reported via avatar status updates before returning null.
-     *
-     * ## Phase 1 Status
-     *
-     * Extracted from [executeTurn] with no behavioral changes. The processing-step
-     * dispatches remain here (they take [Store]) to maintain exact equivalence.
-     * Phase 3 will separate pure assembly from side-effect dispatches.
-     *
-     * See: §5.1 (Extract assembleContext) of the context architecture redesign doc.
+     * Returns null on failure (missing resources). Errors reported via avatar status.
      */
     fun assembleContext(
         agent: AgentInstance,
@@ -545,77 +552,214 @@ object AgentCognitivePipeline {
         platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
             "Assembling prompt for '${agentUuid}' using strategy '${strategy.identityHandle}' (State: ${abbreviate(cognitiveState.toString(),30)}).")
 
-        // === RESOURCE RESOLUTION ===
+        // === Step 0: Resource resolution ===
         val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store, agentState)
-        if (resolvedResources == null) {
-            return null
-        }
+            ?: return null
 
+        // === Step 1: Build contextMap (raw gathered partitions, no h1 wrapping) ===
+        val contextMap = buildContextMap(agent, sessionLedgers, hkgContext, agentState, statusInfo, store)
+
+        // === Step 2: Build AgentTurnContext with keys only ===
+        val identityRegistry = store.state.value.identityRegistry
+        val outputSessionUUID = agent.outputSessionId
+        val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
+        val subscribedSessionInfos = buildSessionInfos(agent, sessionLedgers, agentState, outputSessionUUID, identityRegistry)
+
+        val context = AgentTurnContext(
+            agentName = agent.identity.name,
+            resolvedResources = resolvedResources,
+            gatheredContextKeys = contextMap.keys,
+            subscribedSessions = subscribedSessionInfos,
+            outputSessionUUID = outputSessionUUID?.uuid,
+            outputSessionHandle = outputSessionHandle
+        )
+
+        // === Step 3: strategy.buildPrompt() with frozen state (Red Team Fix F3) ===
+        val frozenState = Json.parseToJsonElement(Json.encodeToString(cognitiveState))
+        val builder = strategy.buildPrompt(context, frozenState)
+
+        // === Step 4: Resolve GatheredRef / RemainingGathered against contextMap ===
+        val mergedSections = mergeIntoPartitions(builder.sections, contextMap)
+
+        // === Step 5: Flatten with cascade collapse semantics ===
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+            put("agentId", agentUuid.uuid); put("step", "Applying Context Budget")
+        }))
+        val flatPartitions = flattenWithCascade(mergedSections, statusInfo.contextCollapseOverrides)
+
+        // === Step 6: Run budget collapse on the flat list ===
+        val collapseResult = ContextCollapseLogic.collapse(
+            partitions = flatPartitions,
+            maxBudgetChars = agent.contextMaxBudgetChars,
+            maxPartialChars = agent.contextMaxPartialChars,
+            platformDependencies = platformDependencies,
+            agentId = agentUuid.uuid
+        )
+
+        // === Steps 7–8: Assemble prompt string ===
+        val budgetReport = ContextCollapseLogic.buildBudgetReport(
+            result = collapseResult,
+            softBudgetChars = agent.contextBudgetChars,
+            maxBudgetChars = agent.contextMaxBudgetChars
+        )
+        val systemPrompt = assemblePromptString(collapseResult, budgetReport)
+
+        // === Step 9: Return result ===
+        return ContextAssemblyResult(
+            partitions = collapseResult.partitions,
+            collapseResult = collapseResult,
+            budgetReport = budgetReport,
+            systemPrompt = systemPrompt,
+            gatewayRequest = GatewayRequest(
+                modelName = agent.modelName,
+                contents = emptyList(),
+                correlationId = agentUuid.uuid,
+                systemPrompt = systemPrompt
+            ),
+            softBudgetChars = agent.contextBudgetChars,
+            maxBudgetChars = agent.contextMaxBudgetChars,
+            transientDataSnapshot = TransientDataSnapshot(
+                sessionLedgers = sessionLedgers,
+                hkgContext = hkgContext,
+                workspaceListing = statusInfo.transientWorkspaceListing,
+                workspaceFileContents = statusInfo.transientWorkspaceFileContents
+            )
+        )
+    }
+
+    /**
+     * Fast assembly path: partition metadata only (no string assembly).
+     * Used by the Context Manager UI (Tab 0) for instant reassembly on toggle.
+     */
+    fun assemblePartitions(
+        agent: AgentInstance,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
+        hkgContext: JsonObject?,
+        agentState: AgentRuntimeState,
+        store: Store
+    ): PartitionAssemblyResult? {
+        val agentUuid = agent.identityUUID
+        val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
+        val platformDependencies = store.platformDependencies
+        val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+        val cognitiveState = if (agent.cognitiveState !is JsonNull) agent.cognitiveState else strategy.getInitialState()
+
+        val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store, agentState)
+            ?: return null
+
+        val contextMap = buildContextMap(agent, sessionLedgers, hkgContext, agentState, statusInfo, store)
+        val identityRegistry = store.state.value.identityRegistry
+        val outputSessionUUID = agent.outputSessionId
+        val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
+        val subscribedSessionInfos = buildSessionInfos(agent, sessionLedgers, agentState, outputSessionUUID, identityRegistry)
+
+        val context = AgentTurnContext(
+            agentName = agent.identity.name,
+            resolvedResources = resolvedResources,
+            gatheredContextKeys = contextMap.keys,
+            subscribedSessions = subscribedSessionInfos,
+            outputSessionUUID = outputSessionUUID?.uuid,
+            outputSessionHandle = outputSessionHandle
+        )
+
+        val frozenState = Json.parseToJsonElement(Json.encodeToString(cognitiveState))
+        val builder = strategy.buildPrompt(context, frozenState)
+        val mergedSections = mergeIntoPartitions(builder.sections, contextMap)
+        val flatPartitions = flattenWithCascade(mergedSections, statusInfo.contextCollapseOverrides)
+
+        val collapseResult = ContextCollapseLogic.collapse(
+            partitions = flatPartitions,
+            maxBudgetChars = agent.contextMaxBudgetChars,
+            maxPartialChars = agent.contextMaxPartialChars,
+            platformDependencies = platformDependencies,
+            agentId = agentUuid.uuid
+        )
+
+        return PartitionAssemblyResult(
+            partitions = collapseResult.partitions,
+            collapseResult = collapseResult,
+            totalChars = collapseResult.totalChars,
+            softBudgetChars = agent.contextBudgetChars,
+            maxBudgetChars = agent.contextMaxBudgetChars
+        )
+    }
+
+    /** Thin wrapper: assembles context and dispatches the gateway request. */
+    private fun executeTurn(
+        agent: AgentInstance,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
+        hkgContext: JsonObject?,
+        agentState: AgentRuntimeState,
+        store: Store
+    ) {
+        val agentUuid = agent.identityUUID
+        val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
+        val result = assembleContext(agent, sessionLedgers, hkgContext, agentState, store) ?: return
+
+        val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW else ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
+        val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
+
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+            put("agentId", agentUuid.uuid); put("step", step)
+        }))
+        store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
+            put("providerId", agent.modelProvider)
+            put("modelName", agent.modelName)
+            put("correlationId", agentUuid.uuid)
+            put("contents", buildJsonArray {})
+            put("systemPrompt", result.systemPrompt)
+        }))
+    }
+
+    // =========================================================================
+    // Pipeline Internals
+    // =========================================================================
+
+    /** Builds the raw context map — all gathered partitions WITHOUT h1 wrapping. */
+    private fun buildContextMap(
+        agent: AgentInstance,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
+        hkgContext: JsonObject?,
+        agentState: AgentRuntimeState,
+        statusInfo: AgentStatusInfo,
+        store: Store
+    ): MutableMap<String, String> {
+        val agentUuid = agent.identityUUID
+        val platformDependencies = store.platformDependencies
+        val identityRegistry = store.state.value.identityRegistry
         val contextMap = mutableMapOf<String, String>()
 
-        // Phase C: Two-partition HKG view (INDEX + FILES).
-        // INDEX is always present — the agent's navigational awareness of its knowledge graph.
-        // FILES carries token weight and is subject to collapse overrides (default: all closed).
+        // HKG two-partition view (INDEX + FILES)
         if (hkgContext != null && hkgContext.isNotEmpty()) {
             val hkgHeaders = HkgContextFormatter.parseHolonHeaders(hkgContext, platformDependencies)
             val agentOverrides = statusInfo.contextCollapseOverrides
-
-            // Build effective overrides: agent sticky overrides + root auto-expand.
-            // Root holons (parentId == null) default to EXPANDED so the agent always
-            // sees its persona root and immediate children in the INDEX, and has the
-            // root file open in FILES. If the agent has explicitly collapsed the root,
-            // that sticky override is respected.
             val effectiveOverrides = buildMap {
-                // 1. Seed with root defaults (EXPANDED unless agent overrode)
-                hkgHeaders.values
-                    .filter { it.parentId == null }
-                    .forEach { root ->
-                        val key = "hkg:${root.id}"
-                        if (key !in agentOverrides) {
-                            put(key, CollapseState.EXPANDED)
-                        }
-                    }
-                // 2. Layer agent sticky overrides on top (always win)
+                hkgHeaders.values.filter { it.parentId == null }.forEach { root ->
+                    val key = "hkg:${root.id}"
+                    if (key !in agentOverrides) put(key, CollapseState.EXPANDED)
+                }
                 putAll(agentOverrides)
             }
-
-            // Resolve persona name from root holon header
             val personaName = hkgHeaders.values.find { it.parentId == null }?.name
-
             if (personaName == null && hkgHeaders.isNotEmpty()) {
-                platformDependencies.log(
-                    LogLevel.WARN, LOG_TAG,
-                    "HKG for agent '${agentUuid}': No root holon (parentId == null) found among " +
-                            "${hkgHeaders.size} holons. INDEX will render without a root — possible broken tree structure."
-                )
+                platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                    "HKG for agent '${agentUuid}': No root holon found among ${hkgHeaders.size} holons.")
             }
-
-            contextMap["HOLON_KNOWLEDGE_GRAPH_INDEX"] = HkgContextFormatter.buildIndexTree(
-                hkgHeaders, effectiveOverrides, personaName
-            )
-            contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSection(
-                hkgContext, effectiveOverrides, platformDependencies
-            )
+            contextMap["HOLON_KNOWLEDGE_GRAPH_INDEX"] = HkgContextFormatter.buildIndexTree(hkgHeaders, effectiveOverrides, personaName)
+            contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSection(hkgContext, effectiveOverrides, platformDependencies)
         }
 
-        // === SESSION METADATA (with token usage context) ===
-        val identityRegistry = store.state.value.identityRegistry
-        val subscribedSessionNames = agent.subscribedSessionIds.mapNotNull { uuid ->
-            identityRegistry.findByUUID(uuid)?.name
-        }
-        val sessionListDisplay = if (subscribedSessionNames.isNotEmpty())
-            subscribedSessionNames.joinToString(", ") else "none"
+        // SESSION METADATA
+        val subscribedSessionNames = agent.subscribedSessionIds.mapNotNull { identityRegistry.findByUUID(it)?.name }
+        val sessionListDisplay = if (subscribedSessionNames.isNotEmpty()) subscribedSessionNames.joinToString(", ") else "none"
         val lastInput = statusInfo.lastInputTokens
         val lastOutput = statusInfo.lastOutputTokens
         val tokenUsageContext = if (lastInput != null || lastOutput != null) {
             val total = (lastInput ?: 0) + (lastOutput ?: 0)
-            val inputStr = lastInput?.let { "$it" } ?: "N/A"
-            val outputStr = lastOutput?.let { "$it" } ?: "N/A"
-            "\nLast request token usage (your approximate context size): $total tokens ($inputStr input, $outputStr output). Your model token maximum and saturation point varies by model and context coherence/complexity — consult your provider documentation."
+            "\nLast request token usage (your approximate context size): $total tokens (${lastInput ?: "N/A"} input, ${lastOutput ?: "N/A"} output). Your model token maximum and saturation point varies by model and context coherence/complexity — consult your provider documentation."
         } else {
             "\nLast request token usage: Not yet available (first turn or provider did not report usage)."
         }
-
         contextMap["SESSION_METADATA"] = """
             This data is provided for you to reason about your running environment and is updated on the moment of latest request to you.
             
@@ -625,142 +769,55 @@ object AgentCognitivePipeline {
             Your agent handle is: '${agent.identityHandle}'
             Your agent id (internal): '${agentUuid}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
-        """.trimIndent()
-        contextMap["SESSION_METADATA"]+= tokenUsageContext
+        """.trimIndent() + tokenUsageContext
 
-        // ============================================================
-        // Inject available system actions for agent tooling
-        // ============================================================
+        // AVAILABLE_ACTIONS
         val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
         if (agentIdentity != null) {
             contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.generateContext(store, agentIdentity)
         }
 
-        // ============================================================
-        // Inject workspace context (Two-Partition Model: INDEX + FILES)
-        //
-        // INDEX: navigational tree with [EXPANDED]/[COLLAPSED] badges.
-        // FILES: full content of expanded files only.
-        // Mirrors the HKG two-partition approach.
-        // ============================================================
+        // Workspace two-partition view (INDEX + FILES)
         val workspaceListing = statusInfo.transientWorkspaceListing
         if (workspaceListing != null && workspaceListing.isNotEmpty()) {
-            val safeAgentIdForWs = agent.identityUUID.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            val safeAgentIdForWs = agentUuid.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
             val workspacePrefix = "$safeAgentIdForWs/workspace"
-
-            val wsEntries = WorkspaceContextFormatter.parseListingEntries(
-                workspaceListing, workspacePrefix, platformDependencies
-            )
-
+            val wsEntries = WorkspaceContextFormatter.parseListingEntries(workspaceListing, workspacePrefix, platformDependencies)
             if (wsEntries.isNotEmpty()) {
                 val agentOverrides = statusInfo.contextCollapseOverrides
-
-                // Build effective overrides: root directories auto-expanded
-                // (agent sees top-level contents by default).
                 val effectiveWsOverrides = buildMap {
-                    wsEntries
-                        .filter { it.parentPath == null && it.isDirectory }
-                        .forEach { rootDir ->
-                            val key = "ws:${rootDir.relativePath}"
-                            if (key !in agentOverrides) {
-                                put(key, CollapseState.EXPANDED)
-                            }
-                        }
+                    wsEntries.filter { it.parentPath == null && it.isDirectory }.forEach { rootDir ->
+                        val key = "ws:${rootDir.relativePath}"
+                        if (key !in agentOverrides) put(key, CollapseState.EXPANDED)
+                    }
                     putAll(agentOverrides)
                 }
-
-                contextMap["WORKSPACE_INDEX"] = WorkspaceContextFormatter.buildIndexTree(
-                    wsEntries, effectiveWsOverrides
-                )
-
-                // FILES section: only if there are expanded files with content
+                contextMap["WORKSPACE_INDEX"] = WorkspaceContextFormatter.buildIndexTree(wsEntries, effectiveWsOverrides)
                 val fileContents = statusInfo.transientWorkspaceFileContents
                 if (fileContents.isNotEmpty()) {
-                    contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSection(
-                        fileContents, effectiveWsOverrides, platformDependencies
-                    )
+                    contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSection(fileContents, effectiveWsOverrides, platformDependencies)
                 }
             }
         }
 
-        // ============================================================
-        // Inject workspace navigation instructions
-        //
-        // Parallel to the HKG NAVIGATION section — tells the agent the
-        // correct key conventions for workspace collapse/uncollapse.
-        // Only injected when the workspace has content.
-        // ============================================================
-        if (contextMap.containsKey("WORKSPACE_INDEX")) {
-            contextMap["WORKSPACE_NAVIGATION"] = """
-                |--- WORKSPACE NAVIGATION ---
-                |
-                |Your workspace is presented as a WORKSPACE_INDEX (tree overview) and WORKSPACE_FILES (open file contents).
-                |By default, all files are closed. Use these commands to navigate:
-                |
-                |Open a single workspace file:
-                |```auf_agent.CONTEXT_UNCOLLAPSE
-                |{ "partitionKey": "ws:<relativePath>", "scope": "single" }
-                |```
-                |
-                |Expand a directory (reveal its contents in the tree, without opening files):
-                |```auf_agent.CONTEXT_UNCOLLAPSE
-                |{ "partitionKey": "ws:<dirPath>/", "scope": "single" }
-                |```
-                |
-                |Expand a directory and all sub-directories (tree navigation only, no files opened):
-                |```auf_agent.CONTEXT_UNCOLLAPSE
-                |{ "partitionKey": "ws:<dirPath>/", "scope": "subtree" }
-                |```
-                |
-                |Close a workspace file or collapse a directory:
-                |```auf_agent.CONTEXT_COLLAPSE
-                |{ "partitionKey": "ws:<relativePath>" }
-                |```
-                |
-                |IMPORTANT: The prefix is "ws:", not "workspace:". Directory paths end with "/".
-                |Example: "ws:sovereign-design.md", "ws:src/", "ws:src/main.kt"
-                |You must expand a workspace file before writing to it.
-                |The system will block writes to collapsed files to prevent data loss.
-                |
-                |--- END OF WORKSPACE NAVIGATION ---
-            """.trimMargin()
-        }
-
-        // ============================================================
-        // Build CONVERSATION_LOG context partition
-        //
-        // The conversation lives in the system prompt as a structured
-        // context partition. Providers receive empty contents and inject
-        // a minimal trigger message to satisfy API requirements.
-        //
-        // sessionLedgers maps session UUID → enriched messages for that
-        // session. Each entry becomes a SessionLedgerSnapshot.
-        // ============================================================
+        // CONVERSATION_LOG
         val outputSessionUUID = agent.outputSessionId
-        val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
-
         val sessionSnapshots = sessionLedgers.map { (sessionUUID, messages) ->
             val sessIdentity = identityRegistry.findByUUID(sessionUUID)
             ConversationLogFormatter.SessionLedgerSnapshot(
-                sessionName = sessIdentity?.name
-                    ?: agentState.subscribableSessionNames[sessionUUID]
-                    ?: sessionUUID.uuid,
+                sessionName = sessIdentity?.name ?: agentState.subscribableSessionNames[sessionUUID] ?: sessionUUID.uuid,
                 sessionUUID = sessionUUID.uuid,
                 sessionHandle = sessIdentity?.handle ?: sessionUUID.uuid,
                 messages = messages,
                 isOutputSession = sessionUUID == outputSessionUUID
             )
         }
-
         contextMap["CONVERSATION_LOG"] = ConversationLogFormatter.format(sessionSnapshots, platformDependencies)
 
-        // ============================================================
-        // Build multi-agent context for system prompt
-        // ============================================================
+        // MULTI_AGENT_CONTEXT
         val participants = ConversationLogFormatter.extractParticipants(sessionSnapshots)
-
         if (participants.size > 2) {
-            val multiAgentContext = buildString {
+            contextMap["MULTI_AGENT_CONTEXT"] = buildString {
                 appendLine("\n--- MULTI-AGENT ENVIRONMENT ---")
                 appendLine("This is a multi-agent conversation with the following participants:")
                 participants.forEach { (id, name) ->
@@ -778,230 +835,193 @@ object AgentCognitivePipeline {
                 appendLine("When YOU respond, do NOT include these headers. Just write your response naturally.")
                 appendLine("The system will automatically add your name and timestamp to your messages.")
             }
-            contextMap["MULTI_AGENT_CONTEXT"] = multiAgentContext
         }
 
-        // ============================================================
-        // Phase D: Context Collapse Pipeline Integration (§3.4)
-        //
-        // After all context is assembled but before prepareSystemPrompt:
-        // 1. Build ContextPartitions from the contextMap
-        // 2. Run the auto-collapse algorithm against the agent's budget
-        // 3. Apply collapse results back to the contextMap
-        // 4. Wrap each entry with h1 headers (pipeline-owned per §2.6)
-        // 5. Inject the CONTEXT_BUDGET partition
-        //
-        // The pipeline owns h1 wrapping of contextMap entries. Strategies
-        // receive pre-wrapped content and include it directly. Strategies
-        // use ContextDelimiters for their own sections (IDENTITY, etc.).
-        // ============================================================
+        return contextMap
+    }
 
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agentUuid.uuid); put("step", "Applying Context Budget")
-        }))
-
-        val agentCollapseOverrides = statusInfo.contextCollapseOverrides
-
-        val partitions = contextMap.map { (key, content) ->
-            ContextCollapseLogic.buildPartition(key, content, agentCollapseOverrides)
-        }
-
-        val collapseResult = ContextCollapseLogic.collapse(
-            partitions = partitions,
-            maxBudgetChars = agent.contextMaxBudgetChars,
-            maxPartialChars = agent.contextMaxPartialChars,
-            platformDependencies = platformDependencies,
-            agentId = agentUuid.uuid
-        )
-
-        // Apply collapse results and wrap each entry with h1 headers.
-        // The pipeline owns h1 wrapping — strategies receive pre-wrapped content.
-        val wrappedContextMap = mutableMapOf<String, String>()
-        for (partition in collapseResult.partitions) {
-            val rawContent = if (partition.state == CollapseState.EXPANDED) {
-                partition.fullContent
-            } else {
-                partition.collapsedContent
+    /** Builds [SessionInfo] list with participant rosters derived from ledger messages. */
+    private fun buildSessionInfos(
+        agent: AgentInstance,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
+        agentState: AgentRuntimeState,
+        outputSessionUUID: IdentityUUID?,
+        identityRegistry: Map<String, Identity>
+    ): List<SessionInfo> {
+        val agentUuid = agent.identityUUID
+        return agent.subscribedSessionIds.mapNotNull { sessUUID ->
+            val sessIdentity = identityRegistry.findByUUID(sessUUID)
+            val sessMessages = sessionLedgers[sessUUID] ?: emptyList()
+            val participants = sessMessages.groupBy { it.senderId }.map { (senderId, messages) ->
+                val senderName = messages.first().senderName
+                val isSelf = (senderId == agentUuid.uuid || senderId == agent.identityHandle.handle)
+                val type = when {
+                    isSelf -> "YOU (this agent)"
+                    agentState.agents.values.any { it.identityUUID.uuid == senderId || it.identityHandle.handle == senderId } -> "AI Agent"
+                    agentState.userIdentities.any { it.handle == senderId } -> "Human User"
+                    else -> "User/System"
+                }
+                SessionParticipant(senderId, senderName, type, messages.size)
             }
-            if (rawContent.isNotBlank()) {
-                // Resolve the display state badge
+            SessionInfo(
+                uuid = sessUUID.uuid,
+                handle = sessIdentity?.handle ?: sessUUID.uuid,
+                name = sessIdentity?.name ?: agentState.subscribableSessionNames[sessUUID] ?: sessUUID.uuid,
+                isOutput = sessUUID == outputSessionUUID,
+                participants = participants,
+                messageCount = sessMessages.size
+            )
+        }
+    }
+
+    /**
+     * Resolves [PromptSection.GatheredRef] and [PromptSection.RemainingGathered]
+     * against the raw contextMap. Returns a fully resolved section list.
+     */
+    private fun mergeIntoPartitions(
+        sections: List<PromptSection>,
+        contextMap: Map<String, String>
+    ): List<PromptSection> {
+        val placedKeys = mutableSetOf<String>()
+        sections.filterIsInstance<PromptSection.GatheredRef>().forEach { placedKeys.add(it.key) }
+
+        val result = mutableListOf<PromptSection>()
+        for (section in sections) {
+            when (section) {
+                is PromptSection.Section -> result.add(section)
+                is PromptSection.Group -> result.add(section)
+                is PromptSection.GatheredRef -> {
+                    val content = contextMap[section.key]
+                    if (content != null && content.isNotBlank()) {
+                        result.add(contextMapEntryToSection(section.key, content))
+                    }
+                }
+                is PromptSection.RemainingGathered -> {
+                    val remaining = contextMap.keys - placedKeys
+                    val ordered = remaining.sortedWith(
+                        compareBy<String> { if (it == "MULTI_AGENT_CONTEXT") 0 else 1 }.thenBy { it }
+                    )
+                    for (key in ordered) {
+                        val content = contextMap[key] ?: continue
+                        if (content.isBlank()) continue
+                        result.add(contextMapEntryToSection(key, content))
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /** Converts a raw contextMap entry into a [PromptSection.Section] with partition defaults. */
+    private fun contextMapEntryToSection(key: String, content: String): PromptSection.Section {
+        val defaults = ContextCollapseLogic.resolvePartitionDefaults(key, content)
+        return PromptSection.Section(
+            key = key,
+            content = content,
+            isProtected = !defaults.isAutoCollapsible,
+            isCollapsible = defaults.isAutoCollapsible,
+            priority = defaults.priority,
+            collapsedSummary = defaults.collapsedContent,
+            truncateFromStart = defaults.truncateFromStart
+        )
+    }
+
+    /**
+     * Flattens the section tree into a [ContextPartition] list with cascade semantics.
+     * Red Team Fix F1: collapsed Group → children excluded from flat list.
+     */
+    private fun flattenWithCascade(
+        sections: List<PromptSection>,
+        overrides: Map<String, CollapseState>,
+        parentKey: String? = null
+    ): List<ContextCollapseLogic.ContextPartition> {
+        val result = mutableListOf<ContextCollapseLogic.ContextPartition>()
+        for (section in sections) {
+            when (section) {
+                is PromptSection.Section -> result.add(sectionToPartition(section, parentKey, overrides))
+                is PromptSection.Group -> {
+                    val groupState = overrides[section.key] ?: CollapseState.EXPANDED
+                    if (groupState == CollapseState.COLLAPSED) {
+                        val summary = section.collapsedSummary ?: "[${section.key} collapsed — use CONTEXT_UNCOLLAPSE to expand]"
+                        result.add(ContextCollapseLogic.ContextPartition(
+                            key = section.key, fullContent = summary, collapsedContent = summary,
+                            state = CollapseState.COLLAPSED, priority = section.priority,
+                            isAutoCollapsible = section.isCollapsible, parentKey = parentKey
+                        ))
+                    } else {
+                        if (section.header.isNotBlank()) {
+                            result.add(ContextCollapseLogic.ContextPartition(
+                                key = "${section.key}:header", fullContent = section.header,
+                                collapsedContent = section.header, state = CollapseState.EXPANDED,
+                                isAutoCollapsible = false, priority = section.priority, parentKey = parentKey
+                            ))
+                        }
+                        result.addAll(flattenWithCascade(section.children, overrides, parentKey = section.key))
+                    }
+                }
+                is PromptSection.GatheredRef -> { /* resolved by merge step */ }
+                is PromptSection.RemainingGathered -> { /* resolved by merge step */ }
+            }
+        }
+        return result
+    }
+
+    /** Converts a [PromptSection.Section] to a [ContextPartition]. */
+    private fun sectionToPartition(
+        section: PromptSection.Section,
+        parentKey: String?,
+        overrides: Map<String, CollapseState>
+    ): ContextCollapseLogic.ContextPartition {
+        val isOverridden = section.key in overrides
+        val state = if (isOverridden) overrides[section.key] ?: CollapseState.EXPANDED else CollapseState.EXPANDED
+        val collapsedContent = section.collapsedSummary ?: "[${section.key} collapsed — use CONTEXT_UNCOLLAPSE to expand]"
+        return ContextCollapseLogic.ContextPartition(
+            key = section.key,
+            fullContent = section.content,
+            collapsedContent = if (section.isCollapsible) collapsedContent else section.content,
+            state = state,
+            priority = section.priority,
+            isAutoCollapsible = section.isCollapsible && !section.isProtected,
+            isAgentOverridden = isOverridden,
+            truncateFromStart = section.truncateFromStart,
+            parentKey = parentKey
+        )
+    }
+
+    /**
+     * Assembles the final system prompt string from collapsed partitions.
+     * Top-level (parentKey == null) → h1 headers. Children → h2 headers.
+     * Budget report appended as PROTECTED h1. Entire output wrapped.
+     */
+    private fun assemblePromptString(
+        collapseResult: ContextCollapseLogic.CollapseResult,
+        budgetReport: String
+    ): String {
+        val body = buildString {
+            for (partition in collapseResult.partitions) {
+                val rawContent = if (partition.state == CollapseState.EXPANDED) partition.fullContent else partition.collapsedContent
+                if (rawContent.isBlank()) continue
                 val stateBadge = when {
                     !partition.isAutoCollapsible -> ContextDelimiters.PROTECTED
                     partition.key in collapseResult.truncatedKeys -> ContextDelimiters.TRUNCATED
                     partition.state == CollapseState.EXPANDED -> ContextDelimiters.EXPANDED
                     else -> ContextDelimiters.COLLAPSED
                 }
-                // Wrap with h1 header + closing tag
-                val wrapped = buildString {
+                if (partition.parentKey == null) {
                     append(ContextDelimiters.h1(partition.key, rawContent.length, stateBadge))
                     append(rawContent)
                     append(ContextDelimiters.h1End(partition.key))
+                } else {
+                    append(ContextDelimiters.h2(partition.key, rawContent.length, stateBadge))
+                    append(rawContent)
+                    append(ContextDelimiters.h2End(partition.key))
                 }
-                wrappedContextMap[partition.key] = wrapped
             }
-        }
-
-        // Inject the budget report (PROTECTED, pipeline-wrapped)
-        val budgetReport = ContextCollapseLogic.buildBudgetReport(
-            result = collapseResult,
-            softBudgetChars = agent.contextBudgetChars,
-            maxBudgetChars = agent.contextMaxBudgetChars
-        )
-        wrappedContextMap["CONTEXT_BUDGET"] = buildString {
             append(ContextDelimiters.h1("CONTEXT_BUDGET", budgetReport.length, ContextDelimiters.PROTECTED))
             append(budgetReport)
             append(ContextDelimiters.h1End("CONTEXT_BUDGET"))
         }
-
-        // Replace the contextMap with collapse-resolved, h1-wrapped entries.
-        contextMap.clear()
-        contextMap.putAll(wrappedContextMap)
-
-        // ============================================================
-        // Build structured session subscription context with participants
-        // ============================================================
-        val subscribedSessionInfos = agent.subscribedSessionIds.mapNotNull { sessUUID ->
-            val sessIdentity = identityRegistry.findByUUID(sessUUID)
-            val sessName = sessIdentity?.name
-                ?: agentState.subscribableSessionNames[sessUUID]
-                ?: sessUUID.uuid
-            val sessHandle = sessIdentity?.handle ?: sessUUID.uuid
-
-            // Derive participants from the session's ledger messages
-            val sessMessages = sessionLedgers[sessUUID] ?: emptyList()
-            val participants = sessMessages
-                .groupBy { it.senderId }
-                .map { (senderId, messages) ->
-                    val senderName = messages.first().senderName
-                    val isSelf = (senderId == agentUuid.uuid || senderId == agent.identityHandle.handle)
-                    val type = when {
-                        isSelf -> "YOU (this agent)"
-                        agentState.agents.values.any { it.identityUUID.uuid == senderId || it.identityHandle.handle == senderId } -> "AI Agent"
-                        agentState.userIdentities.any { it.handle == senderId } -> "Human User"
-                        else -> "User/System"
-                    }
-                    SessionParticipant(senderId, senderName, type, messages.size)
-                }
-
-            SessionInfo(
-                uuid = sessUUID.uuid,
-                handle = sessHandle,
-                name = sessName,
-                isOutput = sessUUID == outputSessionUUID,
-                participants = participants,
-                messageCount = sessMessages.size
-            )
-        }
-
-        val context = AgentTurnContext(
-            agentName = agent.identity.name,
-            resolvedResources = resolvedResources,
-            gatheredContexts = contextMap,
-            subscribedSessions = subscribedSessionInfos,
-            outputSessionUUID = outputSessionUUID?.uuid,
-            outputSessionHandle = outputSessionHandle
-        )
-
-        val rawPrompt = strategy.prepareSystemPrompt(context, cognitiveState)
-
-        // Pipeline-owned: wrap the strategy's output with the outermost delimiters.
-        // The strategy never sees these — they frame the entire system prompt.
-        val systemPrompt = ContextDelimiters.wrapSystemPrompt(rawPrompt)
-
-        // Build the agnostic gateway request (used by both direct and preview paths)
-        val gatewayRequest = GatewayRequest(
-            modelName = agent.modelName,
-            contents = emptyList(), // Empty — conversation is in systemPrompt
-            correlationId = agentUuid.uuid,
-            systemPrompt = systemPrompt
-        )
-
-        return ContextAssemblyResult(
-            partitions = collapseResult.partitions,
-            collapseResult = collapseResult,
-            budgetReport = budgetReport,
-            systemPrompt = systemPrompt,
-            gatewayRequest = gatewayRequest,
-            softBudgetChars = agent.contextBudgetChars,
-            maxBudgetChars = agent.contextMaxBudgetChars,
-            transientDataSnapshot = TransientDataSnapshot(
-                sessionLedgers = sessionLedgers,
-                hkgContext = hkgContext,
-                workspaceListing = statusInfo.transientWorkspaceListing,
-                workspaceFileContents = statusInfo.transientWorkspaceFileContents
-            )
-        )
-    }
-
-    /**
-     * Fast assembly path: returns partition metadata only (no string assembly).
-     *
-     * Used by the Context Manager UI (Tab 0) for instant reassembly on toggle.
-     * In Phase 1, this delegates to [assembleContext] and extracts the partition
-     * subset. Phase 3 will implement a true fast path that skips string building.
-     *
-     * Returns null on failure (e.g., missing required resources).
-     *
-     * See: §5.1 (assemblePartitions) of the context architecture redesign doc.
-     */
-    fun assemblePartitions(
-        agent: AgentInstance,
-        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
-        hkgContext: JsonObject?,
-        agentState: AgentRuntimeState,
-        store: Store
-    ): PartitionAssemblyResult? {
-        // Phase 1 stub: delegate to full assembly and extract partition data.
-        // Phase 3 will implement the true fast path (no string building).
-        val full = assembleContext(agent, sessionLedgers, hkgContext, agentState, store) ?: return null
-        return PartitionAssemblyResult(
-            partitions = full.partitions,
-            collapseResult = full.collapseResult,
-            totalChars = full.collapseResult.totalChars,
-            softBudgetChars = full.softBudgetChars,
-            maxBudgetChars = full.maxBudgetChars
-        )
-    }
-
-    /**
-     * Thin wrapper: assembles context and dispatches the gateway request.
-     *
-     * Prior to Phase 1, this method contained the entire context assembly pipeline.
-     * Now it delegates to [assembleContext] for prompt construction and handles
-     * only the gateway dispatch decision (direct vs. preview mode).
-     */
-    private fun executeTurn(
-        agent: AgentInstance,
-        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
-        hkgContext: JsonObject?,
-        agentState: AgentRuntimeState,
-        store: Store
-    ) {
-        val agentUuid = agent.identityUUID
-        val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
-
-        val result = assembleContext(agent, sessionLedgers, hkgContext, agentState, store)
-        if (result == null) {
-            // assembleContext already reported the error via avatar status
-            return
-        }
-
-        val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW else ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
-        val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
-
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agentUuid.uuid); put("step", step)
-        }))
-
-        // System-prompt-only mode: conversation is in CONVERSATION_LOG context partition.
-        // Providers inject a minimal trigger message to satisfy API requirements.
-        store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
-            put("providerId", agent.modelProvider)
-            put("modelName", agent.modelName)
-            put("correlationId", agentUuid.uuid)
-            put("contents", buildJsonArray {}) // Empty — conversation is in systemPrompt
-            put("systemPrompt", result.systemPrompt)
-        }))
+        return ContextDelimiters.wrapSystemPrompt(body)
     }
 
     /**

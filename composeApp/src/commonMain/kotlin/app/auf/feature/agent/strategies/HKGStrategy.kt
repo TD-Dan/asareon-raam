@@ -29,13 +29,6 @@ object HKGStrategy : CognitiveStrategy {
     private const val KEY_KNOWLEDGE_GRAPH_ID = "knowledgeGraphId"
     private const val LOG_TAG = "HKGStrategy"
 
-    // Keys for explicit ordering — strategy pulls these before the generic loop.
-    private val EXPLICITLY_ORDERED_KEYS = setOf(
-        "MULTI_AGENT_CONTEXT",
-        "HOLON_KNOWLEDGE_GRAPH_INDEX",
-        "HOLON_KNOWLEDGE_GRAPH_FILES"
-    )
-
     // =========================================================================
     // Core methods
     // =========================================================================
@@ -67,83 +60,6 @@ object HKGStrategy : CognitiveStrategy {
 
     override fun getInitialState(): JsonElement = buildJsonObject {
         put(KEY_TURN_COUNT, 0)
-    }
-
-    override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {
-        val stateObj = state as? JsonObject
-        val turnCount = stateObj?.get(KEY_TURN_COUNT)?.jsonPrimitive?.intOrNull ?: 0
-        val instructions = context.resolvedResources[SLOT_SYSTEM_INSTRUCTION] ?: ""
-
-        return buildString {
-            // 1. Identity (strategy-owned, PROTECTED)
-            val identityContent = buildString {
-                appendLine("You are ${context.agentName}.")
-                appendLine("You are a participant in a multi-user, multi-session agent environment.")
-                appendLine("You have access to a Holon Knowledge Graph (HKG) — your persistent memory and identity layer.")
-                appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
-            }
-            append(ContextDelimiters.h1("YOUR IDENTITY AND ROLE", identityContent.length, ContextDelimiters.PROTECTED))
-            append(identityContent)
-            append(ContextDelimiters.h1End("YOUR IDENTITY AND ROLE"))
-
-            // 2. System instructions (strategy-owned, PROTECTED)
-            if (instructions.isNotBlank()) {
-                append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", instructions.length, ContextDelimiters.PROTECTED))
-                appendLine(instructions)
-                append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
-            }
-
-            // 3. HKG INDEX (pre-wrapped by pipeline, placed here for ordering)
-            context.gatheredContexts["HOLON_KNOWLEDGE_GRAPH_INDEX"]?.let { append(it) }
-
-            // 4. HKG FILES (pre-wrapped by pipeline)
-            context.gatheredContexts["HOLON_KNOWLEDGE_GRAPH_FILES"]?.let { append(it) }
-
-            // 5. HKG navigation instructions (strategy-owned, PROTECTED)
-            if (context.gatheredContexts.containsKey("HOLON_KNOWLEDGE_GRAPH_INDEX")) {
-                val navContent = buildString {
-                    appendLine("Your Knowledge Graph is presented as an INDEX (tree overview) and FILES (open file contents).")
-                    appendLine("By default, all files are closed. Use these commands to navigate:")
-                    appendLine()
-                    appendLine("Open a single holon file:")
-                    appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
-                    appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "single" }""")
-                    appendLine("```")
-                    appendLine()
-                    appendLine("Open a holon and reveal its children in the INDEX:")
-                    appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
-                    appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "subtree" }""")
-                    appendLine("```")
-                    appendLine()
-                    appendLine("Close a holon file:")
-                    appendLine("```auf_agent.CONTEXT_COLLAPSE")
-                    appendLine("""{ "partitionKey": "hkg:<holonId>" }""")
-                    appendLine("```")
-                    appendLine()
-                    appendLine("IMPORTANT: You must expand a holon file before writing to it.")
-                    appendLine("The system will block writes to collapsed holons to prevent data loss.")
-                }
-                append(ContextDelimiters.h1("HKG NAVIGATION", navContent.length, ContextDelimiters.PROTECTED))
-                append(navContent)
-                append(ContextDelimiters.h1End("HKG NAVIGATION"))
-            }
-
-            // 6. Session subscription awareness (strategy-owned, PROTECTED)
-            if (context.subscribedSessions.isNotEmpty()) {
-                val sessContent = buildSubscribedSessionsContent(context)
-                append(ContextDelimiters.h1("SUBSCRIBED SESSIONS", sessContent.length, ContextDelimiters.PROTECTED))
-                append(sessContent)
-                append(ContextDelimiters.h1End("SUBSCRIBED SESSIONS"))
-            }
-
-            // 7. Multi-agent context (pre-wrapped, placed before other contexts)
-            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let { append(it) }
-
-            // 8. Remaining gathered contexts (pre-wrapped, excluding explicitly ordered ones)
-            context.gatheredContexts
-                .filterKeys { it !in EXPLICITLY_ORDERED_KEYS }
-                .forEach { (_, content) -> append(content) }
-        }
     }
 
     override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =

@@ -15,8 +15,8 @@ import app.auf.util.PlatformDependencies
  *   all other partitions truncate from the END.
  *
  * Lives in `app.auf.feature.agent` (pipeline package), NOT in `strategies`.
- * Called by [AgentCognitivePipeline.executeTurn] after all context is gathered,
- * before [CognitiveStrategy.prepareSystemPrompt].
+ * Called by [AgentCognitivePipeline.assembleContext] after context is gathered
+ * and [CognitiveStrategy.buildPrompt] has declared the prompt structure.
  *
  * The pipeline owns h1 wrapping of partitions (via [ContextDelimiters]).
  * This utility returns raw content and metadata — the pipeline adds headers.
@@ -287,10 +287,11 @@ object ContextCollapseLogic {
     }
 
     // =========================================================================
-    // Internal
+    // =========================================================================
+    // Partition Defaults
     // =========================================================================
 
-    private data class PartitionDefaults(
+    data class PartitionDefaults(
         val priority: Int,
         val isAutoCollapsible: Boolean,
         val collapsedContent: String,
@@ -300,6 +301,10 @@ object ContextCollapseLogic {
     /**
      * Resolves defaults for well-known partition keys.
      *
+     * Used by [buildPartition] (internal) and by [AgentCognitivePipeline.mergeIntoPartitions]
+     * to assign collapse/priority properties when converting contextMap entries to
+     * [PromptSection.Section] objects.
+     *
      * Priority scale:
      * - 1000: Never-collapse (INDEX, SESSION_METADATA) — isAutoCollapsible = false
      * - 100:  High priority (CONVERSATION_LOG, MULTI_AGENT_CONTEXT)
@@ -307,7 +312,7 @@ object ContextCollapseLogic {
      * - 10:   Standard (AVAILABLE_ACTIONS, WORKSPACE_FILES)
      * - 0:    Low priority — collapse first (HKG FILES, unknown partitions)
      */
-    private fun resolvePartitionDefaults(key: String, content: String): PartitionDefaults {
+    fun resolvePartitionDefaults(key: String, content: String): PartitionDefaults {
         val tokens = ContextDelimiters.approxTokens(content.length)
         return when (key) {
             // Never auto-collapse

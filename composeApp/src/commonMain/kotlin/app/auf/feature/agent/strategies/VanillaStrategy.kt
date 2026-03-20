@@ -49,44 +49,6 @@ object VanillaStrategy : CognitiveStrategy {
 
     override fun getInitialState(): JsonElement = JsonNull
 
-    override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {
-        val instructions = context.resolvedResources[SLOT_SYSTEM_INSTRUCTION] ?: ""
-
-        return buildString {
-            // 1. Identity (strategy-owned, PROTECTED)
-            val identityContent = buildString {
-                appendLine("You are ${context.agentName}.")
-                appendLine("You are a participant in a multi-user, multi-session agent environment.")
-                appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
-            }
-            append(ContextDelimiters.h1("YOUR IDENTITY AND ROLE", identityContent.length, ContextDelimiters.PROTECTED))
-            append(identityContent)
-            append(ContextDelimiters.h1End("YOUR IDENTITY AND ROLE"))
-
-            // 2. System instructions (strategy-owned, PROTECTED)
-            if (instructions.isNotBlank()) {
-                append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", instructions.length, ContextDelimiters.PROTECTED))
-                appendLine(instructions)
-                append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
-            }
-
-            // 3. Session subscription awareness (strategy-owned, PROTECTED)
-            if (context.subscribedSessions.isNotEmpty()) {
-                val sessContent = buildSubscribedSessionsContent(context)
-                append(ContextDelimiters.h1("SUBSCRIBED SESSIONS", sessContent.length, ContextDelimiters.PROTECTED))
-                append(sessContent)
-                append(ContextDelimiters.h1End("SUBSCRIBED SESSIONS"))
-            }
-
-            // 4. Gathered contexts — pre-wrapped by pipeline with h1 headers.
-            // Multi-agent context first, then all others.
-            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let { append(it) }
-            context.gatheredContexts
-                .filterKeys { it != "MULTI_AGENT_CONTEXT" }
-                .forEach { (_, content) -> append(content) }
-        }
-    }
-
     override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =
         PromptBuilder(context).apply {
             identity()

@@ -34,26 +34,6 @@ object MinimalStrategy : CognitiveStrategy {
 
     override fun getInitialState(): JsonElement = JsonNull
 
-    override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {
-        val instructions = context.resolvedResources[SLOT_SYSTEM_INSTRUCTION]
-            ?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_SYSTEM_INSTRUCTION
-
-        return buildString {
-            val content = buildString {
-                appendLine("You are ${context.agentName}.")
-                appendLine()
-                appendLine(instructions)
-            }
-            append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", content.length, ContextDelimiters.PROTECTED))
-            append(content)
-            append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
-
-            // Gathered contexts — pre-wrapped by pipeline (unlikely for Minimal, but safe)
-            context.gatheredContexts.forEach { (_, wrappedContent) -> append(wrappedContent) }
-        }
-    }
-
     override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =
         PromptBuilder(context).apply {
             identity()

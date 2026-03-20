@@ -561,7 +561,7 @@ class AgentRuntimeFeature(
                     previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId.uuid) }))
-                store.deferredDispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Previewed turn executed for agent '${agent.identity.name}'.")
             }
@@ -575,7 +575,7 @@ class AgentRuntimeFeature(
                         put("agentId", agentId.uuid); put("step", JsonNull)
                     }))
                 }
-                store.deferredDispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
                 publishActionResult(store, correlationId, action.name, true, summary = "Preview discarded for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
@@ -1013,6 +1013,22 @@ class AgentRuntimeFeature(
                 )
             }
         }
+    }
+
+    /**
+     * Phase 5 extension point: forward broadcast actions to Lua strategy listeners.
+     *
+     * Currently a no-op stub. Phase 5 will implement:
+     * - Per-agent filter by on_action_filter manifest
+     * - Pre-computed observable action sets
+     * - Rate limiting per §7.3
+     * - Sandboxed execution per §11.2
+     *
+     * See: §8.3 (on_action Routing) of the context architecture redesign doc.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun forwardToLuaStrategies(action: Action, agentState: AgentRuntimeState, store: Store) {
+        // No-op — Phase 5 implementation
     }
 
     /**

@@ -60,65 +60,6 @@ object PrivateSessionStrategy : CognitiveStrategy {
 
     override fun getInitialState(): JsonElement = JsonNull
 
-    override fun prepareSystemPrompt(context: AgentTurnContext, state: JsonElement): String {
-        val instructions = context.resolvedResources[SLOT_SYSTEM_INSTRUCTION] ?: ""
-
-        return buildString {
-            // 1. Identity (strategy-owned, PROTECTED)
-            val identityContent = buildString {
-                appendLine("You are ${context.agentName}.")
-                appendLine("You are a participant in a multi-user, multi-session agent environment.")
-                appendLine("Maintain your own boundaries and role, do not respond on behalf of other participants.")
-            }
-            append(ContextDelimiters.h1("YOUR IDENTITY AND ROLE", identityContent.length, ContextDelimiters.PROTECTED))
-            append(identityContent)
-            append(ContextDelimiters.h1End("YOUR IDENTITY AND ROLE"))
-
-            // 2. System instructions (strategy-owned, PROTECTED)
-            if (instructions.isNotBlank()) {
-                append(ContextDelimiters.h1("SYSTEM INSTRUCTIONS", instructions.length, ContextDelimiters.PROTECTED))
-                appendLine(instructions)
-                append(ContextDelimiters.h1End("SYSTEM INSTRUCTIONS"))
-            }
-
-            // 3. Private session routing explanation (strategy-owned, PROTECTED)
-            val routingContent = buildString {
-                appendLine("Your responses are routed to your PRIVATE session. This session is your")
-                appendLine("internal workspace — only you can see it. Other participants cannot read it.")
-                appendLine()
-                appendLine("To communicate with users and other agents, you MUST use the session.POST")
-                appendLine("action to post messages to the public sessions you are subscribed to.")
-                appendLine()
-                appendLine("Example — posting to a public session:")
-                appendLine("```auf_session.POST")
-                appendLine("""{ "session": "<session name or handle>", "message": "Your message here." }""")
-                appendLine("```")
-                appendLine()
-                appendLine("The conversation messages in your context come from ALL your subscribed sessions.")
-                appendLine("Your direct response text goes to your private session (invisible to others).")
-                appendLine("Always use session.POST when you want others to see your message.")
-            }
-            append(ContextDelimiters.h1("PRIVATE SESSION ROUTING", routingContent.length, ContextDelimiters.PROTECTED))
-            append(routingContent)
-            append(ContextDelimiters.h1End("PRIVATE SESSION ROUTING"))
-
-            // 4. Session subscriptions with participants (strategy-owned, PROTECTED)
-            if (context.subscribedSessions.isNotEmpty()) {
-                val sessContent = buildPrivateSubscribedSessionsContent(context)
-                append(ContextDelimiters.h1("SUBSCRIBED SESSIONS", sessContent.length, ContextDelimiters.PROTECTED))
-                append(sessContent)
-                append(ContextDelimiters.h1End("SUBSCRIBED SESSIONS"))
-            }
-
-            // 5. Gathered contexts — pre-wrapped by pipeline with h1 headers.
-            // Multi-agent context first, then all others.
-            context.gatheredContexts["MULTI_AGENT_CONTEXT"]?.let { append(it) }
-            context.gatheredContexts
-                .filterKeys { it != "MULTI_AGENT_CONTEXT" }
-                .forEach { (_, content) -> append(content) }
-        }
-    }
-
     override fun buildPrompt(context: AgentTurnContext, state: JsonElement) =
         PromptBuilder(context).apply {
             identity()

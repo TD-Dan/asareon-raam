@@ -7,12 +7,6 @@ import kotlinx.serialization.json.JsonObject
 // =============================================================================
 // Unified Partition Model + Builder API + Assembly Result Types
 //
-// This file defines the foundation types for the context architecture redesign.
-// Phase 1: types defined, default CognitiveStrategy.buildPrompt() bridges to
-//   prepareSystemPrompt() as a single opaque Section.
-// Phase 2: all 6 strategies override buildPrompt() natively.
-// Phase 3: pipeline switches to consume buildPrompt(); prepareSystemPrompt() removed.
-//
 // Contents:
 //   §1  PromptSection        — sealed class hierarchy (§3.1 of design doc)
 //   §2  FormatOverrides      — strategy-level formatting callbacks (§3.2)
@@ -35,7 +29,6 @@ sealed class PromptSection {
 
     /**
      * A named section of the prompt. Leaf node.
-     *
      * Used for strategy-owned content (identity, instructions, navigation)
      * and for individual items within a [Group] (single holon, single file).
      */
@@ -319,7 +312,7 @@ class PromptBuilder(private val context: AgentTurnContext) {
         ))
     }
 
-    /** Returns true if key is new (OK to emit). Returns false on duplicate (Red Team C3). */
+    /** Returns true if key is new. Returns false on duplicate (Red Team C3). */
     private fun checkDuplicate(key: String): Boolean {
         if (key in emittedKeys) return false
         emittedKeys.add(key)
@@ -334,9 +327,7 @@ class PromptBuilder(private val context: AgentTurnContext) {
 
 /** Format variant for session subscription rendering. */
 enum class SessionFormat {
-    /** Standard session list (Vanilla, HKG, StateMachine). */
     STANDARD,
-    /** Private session variant with routing tags (PrivateSession, Sovereign). */
     PRIVATE
 }
 
@@ -346,13 +337,12 @@ enum class SessionFormat {
 //
 // Pipeline-level utilities used by PromptBuilder.sessions() and by strategies
 // that build session lists directly. Moved here from VanillaStrategy.kt to
-// eliminate a cross-package dependency (strategies → agent, not agent → strategies).
+// eliminate a cross-package dependency.
 // =============================================================================
 
 /**
  * Builds the inner content for the SUBSCRIBED SESSIONS section.
  * Each session is listed with a PRIMARY tag for the output session.
- * Reused by all strategies that show session awareness.
  */
 fun buildSubscribedSessionsContent(context: AgentTurnContext): String = buildString {
     appendLine("You are currently subscribed to the following sessions:")
@@ -401,9 +391,6 @@ fun buildPrivateSubscribedSessionsContent(context: AgentTurnContext): String = b
 
 /**
  * Complete result of the context assembly pipeline (full path).
- *
- * Contains partitions, collapse result, budget report, assembled system prompt,
- * gateway request, and a frozen transient data snapshot.
  */
 data class ContextAssemblyResult(
     val partitions: List<ContextCollapseLogic.ContextPartition>,
@@ -419,7 +406,6 @@ data class ContextAssemblyResult(
 
 /**
  * Fast-path result: partition metadata only (no string assembly).
- * Used by the Context Manager UI (Tab 0) for instant reassembly on toggle.
  */
 data class PartitionAssemblyResult(
     val partitions: List<ContextCollapseLogic.ContextPartition>,
@@ -431,8 +417,7 @@ data class PartitionAssemblyResult(
 
 /**
  * Frozen copy of transient data needed for reassembly.
- * Captured at manage-context entry. Decoupled from [AgentStatusInfo]'s mutable
- * lifecycle so IDLE transitions don't destroy it (Red Team Fix F2).
+ * Decoupled from [AgentStatusInfo]'s mutable lifecycle (Red Team Fix F2).
  */
 data class TransientDataSnapshot(
     val sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
