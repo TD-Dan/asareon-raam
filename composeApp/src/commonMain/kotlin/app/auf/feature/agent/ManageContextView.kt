@@ -232,6 +232,17 @@ private fun BudgetBar(
     maxBudgetChars: Int
 ) {
     val topLevel = partitions.filter { it.parentKey == null }
+    // Pre-compute aggregate char counts: for expanded group containers, include children
+    val childCharsByParent = partitions
+        .filter { it.parentKey != null }
+        .groupBy { it.parentKey!! }
+        .mapValues { (_, children) -> children.sumOf { it.effectiveCharCount } }
+    fun aggregateChars(partition: ContextCollapseLogic.ContextPartition): Int =
+        if (partition.state == CollapseState.EXPANDED)
+            partition.effectiveCharCount + (childCharsByParent[partition.key] ?: 0)
+        else
+            partition.effectiveCharCount
+
     val totalTokens = totalChars / ContextDelimiters.CHARS_PER_TOKEN
     val softTokens = softBudgetChars / ContextDelimiters.CHARS_PER_TOKEN
     val maxTokens = maxBudgetChars / ContextDelimiters.CHARS_PER_TOKEN
@@ -269,7 +280,7 @@ private fun BudgetBar(
                     Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp))
                 ) {
                     topLevel.forEachIndexed { index, partition ->
-                        val weight = partition.effectiveCharCount.toFloat() / totalChars
+                        val weight = aggregateChars(partition).toFloat() / totalChars
                         if (weight > 0.005f) {
                             val hue = (index * GOLDEN_ANGLE) % 360f
                             Box(
@@ -288,8 +299,9 @@ private fun BudgetBar(
                 // Hover detail label — shows the partition the pointer is over
                 if (hoveredIndex in topLevel.indices) {
                     val hovered = topLevel[hoveredIndex]
-                    val hTokens = hovered.effectiveCharCount / ContextDelimiters.CHARS_PER_TOKEN
-                    val hPct = (hovered.effectiveCharCount.toFloat() / totalChars * 100).roundToInt()
+                    val hChars = aggregateChars(hovered)
+                    val hTokens = hChars / ContextDelimiters.CHARS_PER_TOKEN
+                    val hPct = (hChars.toFloat() / totalChars * 100).roundToInt()
                     val hue = (hoveredIndex * GOLDEN_ANGLE) % 360f
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).background(hslToColor(hue, 0.55f, 0.55f), RoundedCornerShape(2.dp)))
@@ -329,8 +341,14 @@ private fun PartitionCard(
     depth: Int,
     topLevelIndex: Int = 0
 ) {
-    val tokens = partition.effectiveCharCount / ContextDelimiters.CHARS_PER_TOKEN
+    // For expanded group containers with children, show aggregate token count
     val isCollapsed = partition.state == CollapseState.COLLAPSED
+    val aggregateChars = if (!isCollapsed && children.isNotEmpty()) {
+        partition.effectiveCharCount + children.sumOf { it.effectiveCharCount }
+    } else {
+        partition.effectiveCharCount
+    }
+    val tokens = aggregateChars / ContextDelimiters.CHARS_PER_TOKEN
     val isProtected = !partition.isAutoCollapsible
 
     val stateBadge = when {

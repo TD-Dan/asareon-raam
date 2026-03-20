@@ -1042,6 +1042,12 @@ object AgentCognitivePipeline {
     /**
      * Flattens the section tree into a [ContextPartition] list with cascade semantics.
      * Red Team Fix F1: collapsed Group → children excluded from flat list.
+     *
+     * Group rendering:
+     * - **COLLAPSED**: one summary partition (key = group key), children excluded.
+     * - **EXPANDED**: one container partition (key = group key, content = header or empty)
+     *   + N child partitions (parentKey = group key). The container serves as the parent
+     *   card in the UI and carries the toggle for collapsing the entire group.
      */
     private fun flattenWithCascade(
         sections: List<PromptSection>,
@@ -1054,22 +1060,41 @@ object AgentCognitivePipeline {
                 is PromptSection.Section -> result.add(sectionToPartition(section, parentKey, overrides))
                 is PromptSection.Group -> {
                     val groupState = overrides[section.key] ?: CollapseState.EXPANDED
+                    val collapsedSummary = section.collapsedSummary
+                        ?: "[${section.key} collapsed — use CONTEXT_UNCOLLAPSE to expand]"
+
                     if (groupState == CollapseState.COLLAPSED) {
-                        val summary = section.collapsedSummary ?: "[${section.key} collapsed — use CONTEXT_UNCOLLAPSE to expand]"
+                        // CASCADE: emit summary only, children excluded from flat list.
                         result.add(ContextCollapseLogic.ContextPartition(
-                            key = section.key, fullContent = summary, collapsedContent = summary,
-                            state = CollapseState.COLLAPSED, priority = section.priority,
-                            isAutoCollapsible = section.isCollapsible, parentKey = parentKey
+                            key = section.key,
+                            fullContent = collapsedSummary,
+                            collapsedContent = collapsedSummary,
+                            state = CollapseState.COLLAPSED,
+                            priority = section.priority,
+                            isAutoCollapsible = section.isCollapsible && !section.isProtected,
+                            parentKey = parentKey
                         ))
                     } else {
-                        if (section.header.isNotBlank()) {
-                            result.add(ContextCollapseLogic.ContextPartition(
-                                key = "${section.key}:header", fullContent = section.header,
-                                collapsedContent = section.header, state = CollapseState.EXPANDED,
-                                isAutoCollapsible = false, priority = section.priority, parentKey = parentKey
-                            ))
-                        }
-                        result.addAll(flattenWithCascade(section.children, overrides, parentKey = section.key))
+                        // EXPANDED: emit a container partition for the group, then children.
+                        // The container partition:
+                        // - key = group key (e.g., "CONVERSATION_LOG") → children match via parentKey
+                        // - fullContent = header text (may be empty) → actual content lives in children
+                        // - collapsedContent = summary → shown if budget auto-collapses this group
+                        // - isAutoCollapsible = true → budget can collapse the group, which hides children
+                        val headerContent = section.header.ifBlank { "" }
+                        result.add(ContextCollapseLogic.ContextPartition(
+                            key = section.key,
+                            fullContent = headerContent,
+                            collapsedContent = collapsedSummary,
+                            state = CollapseState.EXPANDED,
+                            priority = section.priority,
+                            isAutoCollapsible = section.isCollapsible && !section.isProtected,
+                            parentKey = parentKey
+                        ))
+                        // Recurse — children carry this group as their parent
+                        result.addAll(flattenWithCascade(
+                            section.children, overrides, parentKey = section.key
+                        ))
                     }
                 }
                 is PromptSection.GatheredRef -> { /* resolved by merge step */ }
@@ -1104,37 +1129,77 @@ object AgentCognitivePipeline {
 
     /**
      * Assembles the final system prompt string from collapsed partitions.
-     * Top-level (parentKey == null) → h1 headers. Children → h2 headers.
-     * CONTEXT_BUDGET is now a real partition in the list (no special-case append).
-     * Entire output wrapped with system prompt delimiters.
+     *
+     * Top-level partitions (parentKey == null) get h1 headers. Children (parentKey != null)
+     * get h2 headers and are rendered INSIDE their parent's h1 delimiters. This produces
+     * the correct nesting:
+     *
+     * ```
+     * - [ CONVERSATION_LOG ] (~12,400 tokens) [EXPANDED] -
+     *   --- session:abc (~8,200 tokens) [EXPANDED] ---
+     *   ... messages ...
+     *   --- END OF session:abc ---
+     * - [ END OF CONVERSATION_LOG ] -
+     * ```
+     *
+     * CONTEXT_BUDGET is a real partition in the list (no special-case append).
      *
      * @param partitions The full partition list including CONTEXT_BUDGET.
-     * @param truncatedKeys Keys of partitions that were truncated by the sentinel,
-     *   used to display the `[TRUNCATED]` badge in headers.
+     * @param truncatedKeys Keys of partitions that were truncated by the sentinel.
      */
     private fun assemblePromptString(
         partitions: List<ContextCollapseLogic.ContextPartition>,
         truncatedKeys: List<String> = emptyList()
     ): String {
+        // Build a children map for nested rendering
+        val childrenByParent = partitions
+            .filter { it.parentKey != null }
+            .groupBy { it.parentKey!! }
+        val topLevel = partitions.filter { it.parentKey == null }
+
+        fun stateBadge(partition: ContextCollapseLogic.ContextPartition): String = when {
+            !partition.isAutoCollapsible -> ContextDelimiters.PROTECTED
+            partition.key in truncatedKeys -> ContextDelimiters.TRUNCATED
+            partition.state == CollapseState.EXPANDED -> ContextDelimiters.EXPANDED
+            else -> ContextDelimiters.COLLAPSED
+        }
+
         val body = buildString {
-            for (partition in partitions) {
-                val rawContent = if (partition.state == CollapseState.EXPANDED) partition.fullContent else partition.collapsedContent
-                if (rawContent.isBlank()) continue
-                val stateBadge = when {
-                    !partition.isAutoCollapsible -> ContextDelimiters.PROTECTED
-                    partition.key in truncatedKeys -> ContextDelimiters.TRUNCATED
-                    partition.state == CollapseState.EXPANDED -> ContextDelimiters.EXPANDED
-                    else -> ContextDelimiters.COLLAPSED
+            for (partition in topLevel) {
+                val isCollapsed = partition.state == CollapseState.COLLAPSED
+                val rawContent = if (!isCollapsed) partition.fullContent else partition.collapsedContent
+                // Children only rendered when parent is expanded (cascade semantics)
+                val children = if (!isCollapsed) childrenByParent[partition.key] ?: emptyList() else emptyList()
+
+                // Compute total chars for the h1 header: own content + visible children
+                val childrenChars = children.sumOf { child ->
+                    val childContent = if (child.state == CollapseState.EXPANDED) child.fullContent else child.collapsedContent
+                    childContent.length
                 }
-                if (partition.parentKey == null) {
-                    append(ContextDelimiters.h1(partition.key, rawContent.length, stateBadge))
+                val totalChars = rawContent.length + childrenChars
+
+                // Skip entirely empty partitions (no own content AND no children)
+                if (rawContent.isBlank() && children.isEmpty()) continue
+
+                // Open h1
+                append(ContextDelimiters.h1(partition.key, totalChars, stateBadge(partition)))
+
+                // Own content (header text for group containers, full content for leaf partitions)
+                if (rawContent.isNotBlank()) {
                     append(rawContent)
-                    append(ContextDelimiters.h1End(partition.key))
-                } else {
-                    append(ContextDelimiters.h2(partition.key, rawContent.length, stateBadge))
-                    append(rawContent)
-                    append(ContextDelimiters.h2End(partition.key))
                 }
+
+                // Render children as h2 inside this h1 (only when parent is expanded)
+                for (child in children) {
+                    val childContent = if (child.state == CollapseState.EXPANDED) child.fullContent else child.collapsedContent
+                    if (childContent.isBlank()) continue
+                    append(ContextDelimiters.h2(child.key, childContent.length, stateBadge(child)))
+                    append(childContent)
+                    append(ContextDelimiters.h2End(child.key))
+                }
+
+                // Close h1
+                append(ContextDelimiters.h1End(partition.key))
             }
         }
         return ContextDelimiters.wrapSystemPrompt(body)
