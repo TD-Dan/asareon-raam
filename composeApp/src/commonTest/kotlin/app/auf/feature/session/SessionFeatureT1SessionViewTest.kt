@@ -199,6 +199,13 @@ class SessionFeatureT1SessionViewTest {
             .onNodeWithText("Enter message (Ctrl+Enter to send, / for commandline)...")
             .performTextInput("typing test")
 
+        // Draft dispatch is debounced (2 s trailing edge) — wait for it to fire.
+        composeTestRule.waitUntil(timeoutMillis = 3_000) {
+            fakeStore.dispatchedActions.any {
+                it.name == ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED
+            }
+        }
+
         val draftActions = fakeStore.dispatchedActions.filter {
             it.name == ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED
         }

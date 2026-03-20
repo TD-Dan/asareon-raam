@@ -63,6 +63,21 @@ class SessionFeatureT1LedgerEntryCardTest {
         }
     }
 
+    /**
+     * Hovers the card to make the ChromeOverlay visible.
+     *
+     * LedgerEntryCard gates its action-icon overlay behind:
+     *   val showChrome = isHovered || isMenuOpen || isEditingThisMessage
+     * In a test environment none of those are true by default, so the Copy,
+     * Toggle Raw, and More Options buttons are absent from the tree.
+     * Performing a mouse-enter on the Card's hoverable surface triggers
+     * collectIsHoveredAsState() → recomposition with showChrome = true.
+     */
+    private fun hoverCard() {
+        composeTestRule.onNodeWithText("User").performMouseInput { enter() }
+        composeTestRule.waitForIdle()
+    }
+
     @Test
     fun `renders sender name and content`() {
         setViewState(userEntry)
@@ -74,6 +89,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     @Test
     fun `clicking copy button dispatches CORE_COPY_TO_CLIPBOARD`() {
         setViewState(userEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("Copy Message Content").performClick()
 
@@ -85,6 +101,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     @Test
     fun `selecting delete from menu dispatches SESSION_DELETE_MESSAGE`() {
         setViewState(userEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
@@ -118,6 +135,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     @Test
     fun `selecting Lock from menu dispatches TOGGLE_MESSAGE_LOCKED`() {
         setViewState(userEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
@@ -133,6 +151,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     fun `locked message shows Unlock menu item`() {
         val lockedEntry = LedgerEntry("msg-locked", 1L, "user", "Locked", isLocked = true)
         setViewState(lockedEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
@@ -146,6 +165,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     @Test
     fun `selecting Edit from menu dispatches SET_EDITING_MESSAGE`() {
         setViewState(userEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
@@ -160,6 +180,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     fun `Edit menu item is disabled when message is locked`() {
         val lockedEntry = LedgerEntry("msg-locked", 1L, "user", "Locked", isLocked = true)
         setViewState(lockedEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
@@ -170,6 +191,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     fun `Delete menu item is disabled when message is locked`() {
         val lockedEntry = LedgerEntry("msg-locked", 1L, "user", "Locked", isLocked = true)
         setViewState(lockedEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
@@ -219,6 +241,7 @@ class SessionFeatureT1LedgerEntryCardTest {
     @Test
     fun `clicking Toggle Raw Content dispatches TOGGLE_MESSAGE_RAW_VIEW`() {
         setViewState(userEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("Toggle Raw Content").performClick()
 
@@ -240,6 +263,7 @@ class SessionFeatureT1LedgerEntryCardTest {
             metadata = buildJsonObject { put("type", "avatar_card") }
         )
         setViewState(metadataEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("Copy Message Content").assertIsNotEnabled()
     }
@@ -252,6 +276,7 @@ class SessionFeatureT1LedgerEntryCardTest {
             metadata = buildJsonObject { put("type", "avatar_card") }
         )
         setViewState(metadataEntry)
+        hoverCard()
 
         composeTestRule.onNodeWithContentDescription("More options").performClick()
         composeTestRule.waitForIdle()
