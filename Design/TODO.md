@@ -64,7 +64,7 @@
 
 - WORKSPACE_INDEX should default to uncollapsed?
 
-- Session is saving the input draft on evey keystroke or with a really fast debounce. This should be longer say 3 seconds and fire only in 3 second intervals.
+- NVRAM schema adherence: Strategy sets or agent can expand?
 
 ## HIGH PRIORITY:
 
