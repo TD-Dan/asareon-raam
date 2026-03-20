@@ -28,6 +28,18 @@ object AgentCognitivePipeline {
     private val json = Json { ignoreUnknownKeys = true }
     private const val LOG_TAG = "AgentCognitivePipeline"
 
+    // =========================================================================
+    // Transient stash for complex non-serializable objects (Phase 4)
+    //
+    // The Redux-like architecture requires state changes to flow through the
+    // reducer, but ContextAssemblyResult / PartitionAssemblyResult are too
+    // complex for JSON action payloads. Side-effects store results here before
+    // dispatching the lightweight action; the reducer retrieves and clears them.
+    // Safe because the Store dispatches on a single thread.
+    // =========================================================================
+    internal var pendingManagedContext: ContextAssemblyResult? = null
+    internal var pendingManagedPartitions: PartitionAssemblyResult? = null
+
     private val redundantHeaderRegex = Regex("""^.+? \([^)]+\) @ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z:\s*""")
 
     fun startCognitiveCycle(agentId: IdentityUUID, store: Store) {
@@ -696,19 +708,30 @@ object AgentCognitivePipeline {
         val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
         val result = assembleContext(agent, sessionLedgers, hkgContext, agentState, store) ?: return
 
-        val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW else ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
-        val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
-
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-            put("agentId", agentUuid.uuid); put("step", step)
-        }))
-        store.deferredDispatch("agent", Action(requestActionName, buildJsonObject {
-            put("providerId", agent.modelProvider)
-            put("modelName", agent.modelName)
-            put("correlationId", agentUuid.uuid)
-            put("contents", buildJsonArray {})
-            put("systemPrompt", result.systemPrompt)
-        }))
+        if (statusInfo.turnMode == TurnMode.PREVIEW) {
+            // PREVIEW mode: store the assembly result as managed context.
+            // The Manage Context UI reads it directly — no gateway roundtrip needed.
+            // The debounced preview within the UI handles token estimation.
+            pendingManagedContext = result
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_MANAGED_CONTEXT, buildJsonObject {
+                put("agentId", agentUuid.uuid)
+            }))
+            store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject {
+                put("key", "feature.agent.context_viewer")
+            }))
+        } else {
+            // DIRECT mode: dispatch to gateway immediately
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+                put("agentId", agentUuid.uuid); put("step", "Generating Content")
+            }))
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+                put("providerId", agent.modelProvider)
+                put("modelName", agent.modelName)
+                put("correlationId", agentUuid.uuid)
+                put("contents", buildJsonArray {})
+                put("systemPrompt", result.systemPrompt)
+            }))
+        }
     }
 
     // =========================================================================
@@ -1094,13 +1117,13 @@ object AgentCognitivePipeline {
             return
         }
 
-        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PREVIEW_DATA, buildJsonObject {
+        // Debounced gateway preview response — update token estimate + raw JSON
+        // for the Manage Context UI (Tabs 1+2). View is already open.
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_MANAGED_PREVIEW, buildJsonObject {
             put("agentId", agent.identityUUID.uuid)
-            put("agnosticRequest", json.encodeToJsonElement(decoded.agnosticRequest))
             put("rawRequestJson", decoded.rawRequestJson)
             decoded.estimatedInputTokens?.let { put("estimatedInputTokens", it) }
         }))
-        store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", "feature.agent.context_viewer") }))
     }
 
     private fun handleGatewayResponse(payload: JsonObject, store: Store) {

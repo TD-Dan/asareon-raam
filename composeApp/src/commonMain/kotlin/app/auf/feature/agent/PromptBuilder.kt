@@ -8,30 +8,20 @@ import kotlinx.serialization.json.JsonObject
 // Unified Partition Model + Builder API + Assembly Result Types
 //
 // Contents:
-//   §1  PromptSection        — sealed class hierarchy (§3.1 of design doc)
+//   §1  PromptSection        — sealed class hierarchy (§3.1)
 //   §2  FormatOverrides      — strategy-level formatting callbacks (§3.2)
 //   §3  PromptBuilder        — fluent API for prompt construction (§4.2)
-//   §4  SessionFormat        — enum for session rendering variants
-//   §4b Session helpers      — shared subscription rendering (moved from VanillaStrategy)
+//   §4  SessionFormat + shared session helpers
 //   §5  ContextAssemblyResult / PartitionAssemblyResult / TransientDataSnapshot (§5.7–5.8)
 // =============================================================================
 
 
 // =============================================================================
-// §1  PromptSection — Unified partition model
+// §1  PromptSection
 // =============================================================================
 
-/**
- * Describes every piece of the prompt — strategy sections, gathered partitions,
- * and sub-items within groups — using a single sealed hierarchy.
- */
 sealed class PromptSection {
 
-    /**
-     * A named section of the prompt. Leaf node.
-     * Used for strategy-owned content (identity, instructions, navigation)
-     * and for individual items within a [Group] (single holon, single file).
-     */
     data class Section(
         val key: String,
         val content: String,
@@ -43,12 +33,9 @@ sealed class PromptSection {
     ) : PromptSection()
 
     /**
-     * A group of child sections. Enables per-child collapse and budgeting.
-     *
      * Collapse cascade (Red Team Fix F1):
-     * - Group COLLAPSED → entire group replaced by [collapsedSummary].
-     *   Children EXCLUDED from the flat partition list.
-     * - Group EXPANDED → each child rendered per its own collapse state.
+     * - COLLAPSED → entire group replaced by [collapsedSummary], children excluded.
+     * - EXPANDED → each child rendered per its own collapse state.
      */
     data class Group(
         val key: String,
@@ -61,56 +48,34 @@ sealed class PromptSection {
         val truncateFromStart: Boolean = false
     ) : PromptSection()
 
-    /**
-     * Reference to a pipeline-gathered partition by key.
-     * Resolved to [Section] or [Group] during the merge step.
-     * Silently skipped if absent.
-     */
     data class GatheredRef(
         val key: String,
         val formatOverrides: FormatOverrides? = null
     ) : PromptSection()
 
-    /**
-     * "All gathered partitions not explicitly placed via [GatheredRef]."
-     * MULTI_AGENT_CONTEXT first among remaining, then alphabetical.
-     */
     data object RemainingGathered : PromptSection()
 }
 
 
 // =============================================================================
-// §2  FormatOverrides — Strategy-level formatting callbacks
+// §2  FormatOverrides
 // =============================================================================
 
-/**
- * Allows strategies to customize how gathered partitions format their internal
- * content without rebuilding the formatter.
- *
- * Callbacks are pure transforms: frozen input, string output. Return null to
- * skip an entry. Same interface for Kotlin and Lua (bridge translates Lua
- * functions to lambdas).
- */
 data class FormatOverrides(
-    /** Custom formatter for individual messages in a conversation log session. */
     val formatMessage: ((GatewayMessage) -> String?)? = null,
-    /** Custom formatter for an entire session ledger snapshot. */
     val formatSession: ((ConversationLogFormatter.SessionLedgerSnapshot, String) -> String?)? = null,
-    /** Custom formatter for a generic key-value entry (HKG holon, workspace file). */
     val formatEntry: ((key: String, content: String) -> String?)? = null
 )
 
 
 // =============================================================================
-// §3  PromptBuilder — Fluent API for prompt construction
+// §3  PromptBuilder
 // =============================================================================
 
 /**
  * Fluent API for declaring the structure and content of an agent's system prompt.
- *
- * Both Kotlin strategies and (future) Lua scripts use this builder. Strategies
- * express *what* content exists and *where* it goes. The pipeline handles *how*
- * (collapse, budgeting, wrapping, assembly).
+ * Strategies express *what* content exists and *where* it goes. The pipeline
+ * handles *how* (collapse, budgeting, wrapping, assembly).
  *
  * Duplicate detection (Red Team C3): [emittedKeys] tracks all keys; duplicates skipped.
  */
@@ -120,7 +85,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
 
     // ── Built-in sections ───────────────────────────────────────────
 
-    /** Standard 3-line identity block with optional extra lines appended. */
     fun identity(vararg extraLines: String) {
         val content = buildString {
             appendLine("You are ${context.agentName}.")
@@ -131,20 +95,16 @@ class PromptBuilder(private val context: AgentTurnContext) {
         emitSection("YOUR IDENTITY AND ROLE", content, isProtected = true)
     }
 
-    /** Full replacement of the identity section. */
     fun identityCustom(content: String) {
         emitSection("YOUR IDENTITY AND ROLE", content, isProtected = true)
     }
 
-    /** Emits the system_instruction resource as SYSTEM INSTRUCTIONS. No-op if blank. */
     fun instructions() {
         val content = context.resolvedResources["system_instruction"]
-            ?.takeIf { it.isNotBlank() }
-            ?: return
+            ?.takeIf { it.isNotBlank() } ?: return
         emitSection("SYSTEM INSTRUCTIONS", content, isProtected = true)
     }
 
-    /** Standard or private-format session subscription list. */
     fun sessions(format: SessionFormat = SessionFormat.STANDARD) {
         if (context.subscribedSessions.isEmpty()) return
         val content = when (format) {
@@ -154,7 +114,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
         emitSection("SUBSCRIBED SESSIONS", content, isProtected = true)
     }
 
-    /** Private session routing explanation block. */
     fun privateSessionRouting() {
         val content = buildString {
             appendLine("Your responses are routed to your PRIVATE session. This session is your")
@@ -175,7 +134,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
         emitSection("PRIVATE SESSION ROUTING", content, isProtected = true)
     }
 
-    /** HKG navigation instructions. Only emitted when HKG INDEX was gathered. */
     fun hkgNavigation() {
         if ("HOLON_KNOWLEDGE_GRAPH_INDEX" !in context.gatheredContextKeys) return
         val content = buildString {
@@ -203,7 +161,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
         emitSection("HKG NAVIGATION", content, isProtected = true)
     }
 
-    /** Workspace navigation instructions. Only emitted when WORKSPACE_INDEX was gathered. */
     fun workspaceNavigation() {
         if ("WORKSPACE_INDEX" !in context.gatheredContextKeys) return
         val content = buildString {
@@ -240,7 +197,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
 
     // ── Custom sections ─────────────────────────────────────────────
 
-    /** Named section. Protected and non-collapsible by default. */
     fun section(
         key: String, content: String,
         isProtected: Boolean = true, isCollapsible: Boolean = false,
@@ -250,34 +206,27 @@ class PromptBuilder(private val context: AgentTurnContext) {
         emitSection(key, content, isProtected, isCollapsible, priority, collapsedSummary, truncateFromStart)
     }
 
-    /** Emits a named resource as a section. No-op if slot is empty/blank. */
     fun resource(slotId: String, sectionName: String? = null) {
         val content = context.resolvedResources[slotId]
-            ?.takeIf { it.isNotBlank() }
-            ?: return
-        val key = sectionName ?: slotId.uppercase()
-        emitSection(key, content, isProtected = true)
+            ?.takeIf { it.isNotBlank() } ?: return
+        emitSection(sectionName ?: slotId.uppercase(), content, isProtected = true)
     }
 
     // ── Gathered partition placement ────────────────────────────────
 
-    /** Place a pipeline-gathered partition at this position. Silently skipped if absent. */
     fun place(key: String, formatOverrides: FormatOverrides? = null) {
         if (!checkDuplicate(key)) return
         sections.add(PromptSection.GatheredRef(key, formatOverrides))
     }
 
-    /** True if the pipeline gathered a partition with this key. */
     fun has(key: String): Boolean = key in context.gatheredContextKeys
 
-    /** All remaining gathered partitions not explicitly placed. */
     fun everythingElse() {
         sections.add(PromptSection.RemainingGathered)
     }
 
     // ── Groups ──────────────────────────────────────────────────────
 
-    /** Group with individually collapsible children. */
     fun group(
         key: String, header: String = "",
         isProtected: Boolean = false, isCollapsible: Boolean = true,
@@ -312,7 +261,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
         ))
     }
 
-    /** Returns true if key is new. Returns false on duplicate (Red Team C3). */
     private fun checkDuplicate(key: String): Boolean {
         if (key in emittedKeys) return false
         emittedKeys.add(key)
@@ -322,36 +270,21 @@ class PromptBuilder(private val context: AgentTurnContext) {
 
 
 // =============================================================================
-// §4  SessionFormat
+// §4  SessionFormat + shared helpers
 // =============================================================================
 
-/** Format variant for session subscription rendering. */
-enum class SessionFormat {
-    STANDARD,
-    PRIVATE
-}
-
-
-// =============================================================================
-// §4b Shared session subscription helpers
-//
-// Pipeline-level utilities used by PromptBuilder.sessions() and by strategies
-// that build session lists directly. Moved here from VanillaStrategy.kt to
-// eliminate a cross-package dependency.
-// =============================================================================
+enum class SessionFormat { STANDARD, PRIVATE }
 
 /**
  * Builds the inner content for the SUBSCRIBED SESSIONS section.
- * Each session is listed with a PRIMARY tag for the output session.
+ * Reused by all strategies that show session awareness.
  */
 fun buildSubscribedSessionsContent(context: AgentTurnContext): String = buildString {
     appendLine("You are currently subscribed to the following sessions:")
     context.subscribedSessions.forEach { session ->
         val primaryTag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
             " [PRIMARY — Your output and tool results are routed here]"
-        } else {
-            ""
-        }
+        } else ""
         appendLine("  - ${session.name} (${session.handle})$primaryTag")
     }
     appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
@@ -368,10 +301,8 @@ fun buildPrivateSubscribedSessionsContent(context: AgentTurnContext): String = b
         } else {
             "PUBLIC — Use session.POST to communicate here"
         }
-
         val sessionHeader = "${session.name} (${session.handle}) [$tag] | ${session.messageCount} messages"
         append(ContextDelimiters.h2(sessionHeader))
-
         if (session.participants.isNotEmpty()) {
             session.participants.forEach { participant ->
                 appendLine("  - ${participant.senderName} (${participant.senderId}): ${participant.type}, ${participant.messageCount} messages")
@@ -379,7 +310,6 @@ fun buildPrivateSubscribedSessionsContent(context: AgentTurnContext): String = b
         } else {
             appendLine("  (no messages yet)")
         }
-
         append(ContextDelimiters.h2End("SESSION"))
     }
 }
@@ -389,9 +319,6 @@ fun buildPrivateSubscribedSessionsContent(context: AgentTurnContext): String = b
 // §5  Assembly Result Types
 // =============================================================================
 
-/**
- * Complete result of the context assembly pipeline (full path).
- */
 data class ContextAssemblyResult(
     val partitions: List<ContextCollapseLogic.ContextPartition>,
     val collapseResult: ContextCollapseLogic.CollapseResult,
@@ -404,9 +331,6 @@ data class ContextAssemblyResult(
     val transientDataSnapshot: TransientDataSnapshot
 )
 
-/**
- * Fast-path result: partition metadata only (no string assembly).
- */
 data class PartitionAssemblyResult(
     val partitions: List<ContextCollapseLogic.ContextPartition>,
     val collapseResult: ContextCollapseLogic.CollapseResult,

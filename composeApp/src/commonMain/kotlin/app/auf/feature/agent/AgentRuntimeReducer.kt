@@ -143,26 +143,69 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
-            ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
+            ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT -> {
                 val agentId = action.payload?.agentUUID() ?: return state
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
-                val updatedStatus = currentStatus.copy(stagedPreviewData = null, processingStep = null)
+                val updatedStatus = currentStatus.copy(
+                    managedContext = null,
+                    managedPartitions = null,
+                    managedContextRawJson = null,
+                    managedContextEstimatedTokens = null,
+                    processingStep = null
+                )
                 state.copy(
                     agentStatuses = state.agentStatuses + (agentId to updatedStatus),
-                    viewingContextForAgentId = null
+                    managingContextForAgentId = null
                 )
             }
 
-            ActionRegistry.Names.AGENT_SET_PREVIEW_DATA -> {
-                val payload = action.payload?.let { json.decodeFromJsonElement<SetPreviewDataPayload>(it) } ?: return state
-                val agentId = payload.agentId
+            ActionRegistry.Names.AGENT_SET_MANAGED_CONTEXT -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                // ContextAssemblyResult is too complex for JSON payloads.
+                // The side-effect stores it in AgentCognitivePipeline.pendingManagedContext
+                // and the reducer retrieves it here. Single-threaded dispatch ensures safety.
+                val result = AgentCognitivePipeline.pendingManagedContext
+                AgentCognitivePipeline.pendingManagedContext = null
+                if (result == null) return state
+
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
-                val previewData = StagedPreviewData(payload.agnosticRequest, payload.rawRequestJson, payload.estimatedInputTokens)
-                val updatedStatus = currentStatus.copy(stagedPreviewData = previewData)
+                val updatedStatus = currentStatus.copy(
+                    managedContext = result,
+                    managedPartitions = PartitionAssemblyResult(
+                        partitions = result.partitions,
+                        collapseResult = result.collapseResult,
+                        totalChars = result.collapseResult.totalChars,
+                        softBudgetChars = result.softBudgetChars,
+                        maxBudgetChars = result.maxBudgetChars
+                    )
+                )
                 state.copy(
                     agentStatuses = state.agentStatuses + (agentId to updatedStatus),
-                    viewingContextForAgentId = agentId
+                    managingContextForAgentId = agentId
                 )
+            }
+
+            ActionRegistry.Names.AGENT_SET_MANAGED_PARTITIONS -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val result = AgentCognitivePipeline.pendingManagedPartitions
+                AgentCognitivePipeline.pendingManagedPartitions = null
+                if (result == null) return state
+
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(managedPartitions = result)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_UPDATE_MANAGED_PREVIEW -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val rawJson = action.payload?.get("rawRequestJson")?.jsonPrimitive?.contentOrNull
+                val estimatedTokens = action.payload?.get("estimatedInputTokens")?.jsonPrimitive?.intOrNull
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(
+                    managedContextRawJson = rawJson ?: currentStatus.managedContextRawJson,
+                    managedContextEstimatedTokens = estimatedTokens ?: currentStatus.managedContextEstimatedTokens
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
             // --- External Events ---

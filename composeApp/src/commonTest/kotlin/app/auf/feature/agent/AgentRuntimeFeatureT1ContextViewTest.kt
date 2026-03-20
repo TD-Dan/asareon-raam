@@ -2,7 +2,6 @@ package app.auf.feature.agent
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import app.auf.core.Action
 import app.auf.core.AppState
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
@@ -17,10 +16,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 /**
- * Tier 1 Component Test for AgentContextView.
+ * Tier 1 Component Test for ManageContextView.
  *
- * Mandate (P-TEST-001, T1): To verify the rendering and interaction logic of the
- * turn preview screen, specifically handling StagedPreviewData.
+ * Mandate: To verify the rendering and interaction logic of the
+ * Manage Context screen (§6), specifically handling ContextAssemblyResult
+ * and the three-tab layout (Context Management, API Preview, Raw JSON Payload).
  */
 class AgentRuntimeFeatureT1ContextViewTest {
 
@@ -36,102 +36,208 @@ class AgentRuntimeFeatureT1ContextViewTest {
         fakeStore = FakeStore(AppState(), fakePlatform)
     }
 
-    private fun setPreviewState(
-        systemPrompt: String? = null,
-        rawJson: String = "{}"
+    private fun setManagedContextState(
+        systemPrompt: String = "You are a test agent.",
+        rawJson: String? = null,
+        estimatedTokens: Int? = null,
+        partitions: List<ContextCollapseLogic.ContextPartition> = emptyList()
     ) {
         val agentId = "a1"
         val agent = testAgent(agentId, "Test Agent", null, "p", "m")
 
-        val messages = listOf(
-            GatewayMessage("user", "Hello Agent", "u1", "User", 1000L)
+        val collapseResult = ContextCollapseLogic.CollapseResult(partitions, partitions.sumOf { it.effectiveCharCount })
+
+        val managedContext = ContextAssemblyResult(
+            partitions = partitions,
+            collapseResult = collapseResult,
+            budgetReport = "Test budget report",
+            systemPrompt = systemPrompt,
+            gatewayRequest = GatewayRequest(
+                modelName = "m",
+                contents = emptyList(),
+                correlationId = agentId,
+                systemPrompt = systemPrompt
+            ),
+            softBudgetChars = 200_000,
+            maxBudgetChars = 500_000,
+            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
         )
 
-        val request = GatewayRequest(
-            modelName = "m",
-            contents = messages,
-            correlationId = agentId,
-            systemPrompt = systemPrompt
+        val managedPartitions = PartitionAssemblyResult(
+            partitions = partitions,
+            collapseResult = collapseResult,
+            totalChars = partitions.sumOf { it.effectiveCharCount },
+            softBudgetChars = 200_000,
+            maxBudgetChars = 500_000
         )
 
-        val previewData = StagedPreviewData(request, rawJson)
-        val statusInfo = AgentStatusInfo(stagedPreviewData = previewData)
+        val statusInfo = AgentStatusInfo(
+            managedContext = managedContext,
+            managedPartitions = managedPartitions,
+            managedContextRawJson = rawJson,
+            managedContextEstimatedTokens = estimatedTokens
+        )
 
         val state = AgentRuntimeState(
             agents = mapOf(uid(agentId) to agent),
             agentStatuses = mapOf(uid(agentId) to statusInfo),
-            viewingContextForAgentId = uid(agentId)
+            managingContextForAgentId = uid(agentId)
         )
 
         fakeStore.setState(AppState(featureStates = mapOf("agent" to state)))
 
         composeTestRule.setContent {
             AppTheme {
-                AgentContextView(fakeStore)
+                ManageContextView(fakeStore)
             }
         }
     }
 
-    @Test
-    fun `logical tab displays system prompt and message history`() {
-        setPreviewState(systemPrompt = "You are a helpful assistant.")
+    // =========================================================================
+    // Tab 0: Context Management
+    // =========================================================================
 
-        // 1. Verify System Prompt
+    @Test
+    fun `context management tab displays partition cards`() {
+        val partitions = listOf(
+            ContextCollapseLogic.ContextPartition(
+                key = "YOUR IDENTITY AND ROLE",
+                fullContent = "You are Test Agent.",
+                collapsedContent = "You are Test Agent.",
+                isAutoCollapsible = false
+            ),
+            ContextCollapseLogic.ContextPartition(
+                key = "CONVERSATION_LOG",
+                fullContent = "Hello world",
+                collapsedContent = "[Collapsed]",
+                isAutoCollapsible = true
+            )
+        )
+        setManagedContextState(partitions = partitions)
+
+        composeTestRule.onNodeWithText("YOUR IDENTITY AND ROLE").assertIsDisplayed()
+        composeTestRule.onNodeWithText("CONVERSATION_LOG").assertIsDisplayed()
+    }
+
+    @Test
+    fun `context management tab shows persistence notice`() {
+        setManagedContextState()
+        composeTestRule.onNodeWithText("Collapse settings persist across turns for this agent.")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun `protected partition shows PROTECTED label instead of toggle`() {
+        val partitions = listOf(
+            ContextCollapseLogic.ContextPartition(
+                key = "SESSION_METADATA",
+                fullContent = "metadata",
+                collapsedContent = "metadata",
+                isAutoCollapsible = false
+            )
+        )
+        setManagedContextState(partitions = partitions)
+
+        composeTestRule.onNodeWithText("PROTECTED").assertIsDisplayed()
+    }
+
+    // =========================================================================
+    // Tab 1: API Preview
+    // =========================================================================
+
+    @Test
+    fun `api preview tab displays system prompt`() {
+        setManagedContextState(systemPrompt = "You are a helpful assistant.")
+
+        composeTestRule.onNodeWithText("API Preview").performClick()
         composeTestRule.onNodeWithText("SYSTEM PROMPT").assertIsDisplayed()
         composeTestRule.onNodeWithText("You are a helpful assistant.").assertIsDisplayed()
-
-        // 2. Verify Message History
-        composeTestRule.onNodeWithText("ROLE: USER").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Hello Agent").assertIsDisplayed()
     }
+
+    @Test
+    fun `api preview tab shows token estimate when available`() {
+        setManagedContextState(estimatedTokens = 12345)
+
+        composeTestRule.onNodeWithText("API Preview").performClick()
+        composeTestRule.onNodeWithText("Estimated input: 12,345 tokens").assertIsDisplayed()
+    }
+
+    // =========================================================================
+    // Tab 2: Raw JSON Payload
+    // =========================================================================
 
     @Test
     fun `raw tab displays raw json payload`() {
         val rawJson = """{"foo": "bar"}"""
-        setPreviewState(rawJson = rawJson)
+        setManagedContextState(rawJson = rawJson)
 
-        // 1. Switch to Raw Tab
         composeTestRule.onNodeWithText("Raw JSON Payload").performClick()
-
-        // 2. Verify Content
         composeTestRule.onNodeWithText(rawJson).assertIsDisplayed()
     }
 
     @Test
-    fun `execute button dispatches AGENT_EXECUTE_PREVIEWED_TURN`() {
-        setPreviewState()
+    fun `raw tab shows loading spinner when no raw json yet`() {
+        setManagedContextState(rawJson = null)
+
+        composeTestRule.onNodeWithText("Raw JSON Payload").performClick()
+        composeTestRule.onNodeWithText("Waiting for gateway preview...").assertIsDisplayed()
+    }
+
+    // =========================================================================
+    // Action dispatches
+    // =========================================================================
+
+    @Test
+    fun `execute button dispatches AGENT_EXECUTE_MANAGED_TURN`() {
+        setManagedContextState()
 
         composeTestRule.onNodeWithText("Execute Turn").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_EXECUTE_MANAGED_TURN }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
-    fun `discard button dispatches AGENT_DISCARD_PREVIEW`() {
-        setPreviewState()
+    fun `cancel button dispatches AGENT_DISCARD_MANAGED_CONTEXT`() {
+        setManagedContextState()
 
-        // Note: There are two buttons that trigger this (Back Arrow and "Cancel").
-        // We test the "Cancel" button here.
         composeTestRule.onNodeWithText("Cancel").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_DISCARD_PREVIEW }
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT }
         assertNotNull(action)
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
     }
 
     @Test
-    fun `copy button dispatches CORE_COPY_TO_CLIPBOARD`() {
-        setPreviewState(rawJson = "{\"test\": true}")
+    fun `copy button on api preview tab dispatches CORE_COPY_TO_CLIPBOARD`() {
+        setManagedContextState(systemPrompt = "test prompt content")
 
-        // Switch to raw tab to test that specific copy button
-        composeTestRule.onNodeWithText("Raw JSON Payload").performClick()
-
+        composeTestRule.onNodeWithText("API Preview").performClick()
         composeTestRule.onNodeWithText("Copy All").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD }
         assertNotNull(action)
-        assertEquals("{\"test\": true}", action.payload?.get("text")?.jsonPrimitive?.contentOrNull)
+        assertEquals("test prompt content", action.payload?.get("text")?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun `collapse toggle dispatches CONTEXT_COLLAPSE`() {
+        val partitions = listOf(
+            ContextCollapseLogic.ContextPartition(
+                key = "CONVERSATION_LOG",
+                fullContent = "content",
+                collapsedContent = "[collapsed]",
+                state = CollapseState.EXPANDED,
+                isAutoCollapsible = true
+            )
+        )
+        setManagedContextState(partitions = partitions)
+
+        composeTestRule.onNodeWithText("EXPANDED ▾").performClick()
+
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE }
+        assertNotNull(action)
+        assertEquals("CONVERSATION_LOG", action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull)
     }
 }

@@ -56,6 +56,7 @@ class AgentRuntimeFeature(
 
     private val activeTurnJobs = mutableMapOf<IdentityUUID, Job>()
     private val avatarUpdateJobs = mutableMapOf<IdentityUUID, Job>()
+    private val previewDebounceJobs = mutableMapOf<IdentityUUID, Job>()
     private var agentLoadCount = 0
 
     companion object {
@@ -536,39 +537,48 @@ class AgentRuntimeFeature(
                 }
                 AgentCognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
             }
-            ActionRegistry.Names.AGENT_EXECUTE_PREVIEWED_TURN -> {
+            ActionRegistry.Names.AGENT_EXECUTE_MANAGED_TURN -> {
                 val correlationId = action.payload?.correlationId()
                 val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId] ?: run {
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: Agent '$agentId' not found.")
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_MANAGED_TURN: Agent '$agentId' not found.")
                     publishActionResult(store, correlationId, action.name, false, error = "Agent '$agentId' not found.")
                     return
                 }
                 val statusInfo = agentState.agentStatuses[agentId]
-                val previewData = statusInfo?.stagedPreviewData ?: run {
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_PREVIEWED_TURN: No staged preview data for agent '$agentId'. Preview may have been discarded.")
-                    publishActionResult(store, correlationId, action.name, false, error = "No staged preview for agent '${agent.identity.name}'.")
+                val managedContext = statusInfo?.managedContext ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "EXECUTE_MANAGED_TURN: No managed context for agent '$agentId'.")
+                    publishActionResult(store, correlationId, action.name, false, error = "No managed context for agent '${agent.identity.name}'.")
                     return
                 }
+
+                // Cancel any pending debounce job (Red Team C4)
+                previewDebounceJobs[agentId]?.cancel()
+                previewDebounceJobs.remove(agentId)
 
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState, AgentStatus.PROCESSING)
 
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
                     put("providerId", agent.modelProvider)
-                    put("modelName", previewData.agnosticRequest.modelName)
-                    put("correlationId", previewData.agnosticRequest.correlationId)
-                    put("contents", json.encodeToJsonElement(previewData.agnosticRequest.contents))
-                    previewData.agnosticRequest.systemPrompt?.let { put("systemPrompt", it) }
+                    put("modelName", managedContext.gatewayRequest.modelName)
+                    put("correlationId", managedContext.gatewayRequest.correlationId)
+                    put("contents", json.encodeToJsonElement(managedContext.gatewayRequest.contents))
+                    managedContext.gatewayRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId.uuid) }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT, buildJsonObject { put("agentId", agentId.uuid) }))
                 store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
 
-                publishActionResult(store, correlationId, action.name, true, summary = "Previewed turn executed for agent '${agent.identity.name}'.")
+                publishActionResult(store, correlationId, action.name, true, summary = "Managed turn executed for agent '${agent.identity.name}'.")
             }
-            ActionRegistry.Names.AGENT_DISCARD_PREVIEW -> {
+            ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT -> {
                 val correlationId = action.payload?.correlationId()
                 val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId]
+
+                // Cancel debounce job (Red Team C4)
+                previewDebounceJobs[agentId]?.cancel()
+                previewDebounceJobs.remove(agentId)
+
                 val statusInfo = agentState.agentStatuses[agentId]
                 if (statusInfo?.status != AgentStatus.PROCESSING) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
@@ -576,7 +586,7 @@ class AgentRuntimeFeature(
                     }))
                 }
                 store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
-                publishActionResult(store, correlationId, action.name, true, summary = "Preview discarded for agent '${agent?.identity?.name ?: agentId.uuid}'.")
+                publishActionResult(store, correlationId, action.name, true, summary = "Managed context discarded for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
                 val correlationId = action.payload?.correlationId()
@@ -734,6 +744,13 @@ class AgentRuntimeFeature(
                 }
 
                 saveContextState(agent, agentState, store)
+
+                // If Manage Context is open for this agent, reassemble instantly (§6.4)
+                val updatedAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState
+                val updatedStatusInfo = updatedAgentState?.agentStatuses?.get(agentId)
+                if (updatedStatusInfo?.managedContext != null) {
+                    reassembleOnToggle(agentId, store)
+                }
 
                 // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
@@ -1012,6 +1029,65 @@ class AgentRuntimeFeature(
                     "Dispatched '$actionName' on behalf of agent '$originatorId' (uuid=$agentUuid, session=$sessionId, correlationId=$correlationId)."
                 )
             }
+        }
+    }
+
+    // =========================================================================
+    // Managed Context: Instant Reassembly + Debounced Preview (§6.4–6.5)
+    // =========================================================================
+
+    /**
+     * Called when a collapse toggle happens while Manage Context is open.
+     * Runs the fast-path assembly and resets the debounced full preview.
+     */
+    private fun reassembleOnToggle(agentId: IdentityUUID, store: Store) {
+        val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = agentState.agents[agentId] ?: return
+        val statusInfo = agentState.agentStatuses[agentId] ?: return
+        val snapshot = statusInfo.managedContext?.transientDataSnapshot ?: return
+
+        // Fast path: partition metadata only, no string assembly
+        val result = AgentCognitivePipeline.assemblePartitions(
+            agent, snapshot.sessionLedgers, snapshot.hkgContext, agentState, store
+        )
+        if (result != null) {
+            AgentCognitivePipeline.pendingManagedPartitions = result
+            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SET_MANAGED_PARTITIONS, buildJsonObject {
+                put("agentId", agentId.uuid)
+            }))
+        }
+
+        // Reset the debounced full preview (5s timer)
+        resetDebouncedPreview(agentId, store)
+    }
+
+    /**
+     * Resets the debounced preview timer for the Manage Context view.
+     * After 5 seconds, runs full assembly + gateway preview for token estimation.
+     * Cancels any existing timer for this agent (Red Team C4).
+     */
+    private fun resetDebouncedPreview(agentId: IdentityUUID, store: Store) {
+        previewDebounceJobs[agentId]?.cancel()
+        previewDebounceJobs[agentId] = coroutineScope.launch {
+            delay(5_000L)
+            val agentState = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return@launch
+            val agent = agentState.agents[agentId] ?: return@launch
+            val statusInfo = agentState.agentStatuses[agentId] ?: return@launch
+            val snapshot = statusInfo.managedContext?.transientDataSnapshot ?: return@launch
+
+            // Full assembly for updated system prompt
+            val result = AgentCognitivePipeline.assembleContext(
+                agent, snapshot.sessionLedgers, snapshot.hkgContext, agentState, store
+            ) ?: return@launch
+
+            // Dispatch gateway preview for token estimation
+            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW, buildJsonObject {
+                put("providerId", agent.modelProvider)
+                put("modelName", agent.modelName)
+                put("correlationId", agentId.uuid)
+                put("contents", buildJsonArray {})
+                put("systemPrompt", result.systemPrompt)
+            }))
         }
     }
 
@@ -1605,7 +1681,7 @@ class AgentRuntimeFeature(
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
             mapOf(
                 "feature.agent.manager" to { store, _ -> AgentManagerView(store, platformDependencies) },
-                "feature.agent.context_viewer" to { store, _ -> AgentContextView(store) }
+                "feature.agent.context_viewer" to { store, _ -> ManageContextView(store) }
             )
         @Composable
         override fun RibbonContent(store: Store, activeViewKey: String?) {

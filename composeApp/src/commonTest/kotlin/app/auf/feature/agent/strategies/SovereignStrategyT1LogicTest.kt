@@ -20,7 +20,7 @@ import kotlin.test.*
  *
  * 1. **ensureInfrastructure**: Pending guard pattern for private session + HKG reservation.
  * 2. **validateConfig**: Permits out-of-band outputSessionId (private cognition session).
- * 3. **prepareSystemPrompt**: Constitution, NVRAM, private routing, HKG navigation,
+ * 3. **buildPrompt**: Constitution, NVRAM, private routing, HKG navigation,
  *    ContextDelimiters, boot sentinel (BOOTING only).
  * 4. **postProcessResponse**: Boot sentinel gate (BOOTING → AWAKE), turn counter (AWAKE).
  * 5. **onAgentConfigChanged**: KG assignment/revocation lifecycle.
@@ -173,100 +173,100 @@ class SovereignStrategyT1LogicTest {
     }
 
     // =========================================================================
-    // 8. prepareSystemPrompt
+    // 8. buildPrompt
     // =========================================================================
 
-    @Test fun `prepareSystemPrompt should include agent name and identity section with PROTECTED badge`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContexts = emptyMap())
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState())
+    @Test fun `buildPrompt should include agent name and identity section with PROTECTED badge`() {
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
         assertTrue(prompt.contains(agentName)); assertTrue(prompt.contains("YOUR IDENTITY AND ROLE")); assertTrue(prompt.contains("[PROTECTED]"))
     }
 
-    @Test fun `prepareSystemPrompt should include constitution in PROTECTED section`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "Supreme Law Here", "bootloader" to "B"), gatheredContexts = emptyMap())
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState())
+    @Test fun `buildPrompt should include constitution in PROTECTED section`() {
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "Supreme Law Here", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
         assertTrue(prompt.contains("CONSTITUTION")); assertTrue(prompt.contains("Supreme Law Here"))
     }
 
-    @Test fun `prepareSystemPrompt should include NVRAM when AWAKE`() {
+    @Test fun `buildPrompt should include NVRAM when AWAKE`() {
         val state = buildJsonObject { put("phase", "AWAKE"); put("currentTask", "testing"); put("operationalPosture", "ELEVATED"); put("turnCount", 5) }
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContexts = emptyMap())
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, state)
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        val prompt = SovereignStrategy.buildPrompt(ctx, state).renderForTest()
         assertTrue(prompt.contains("CONTROL REGISTERS")); assertTrue(prompt.contains("Phase: AWAKE"))
         assertTrue(prompt.contains("Current Task: testing")); assertTrue(prompt.contains("Turn Count: 5"))
     }
 
-    @Test fun `prepareSystemPrompt should omit NVRAM when BOOTING`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContexts = emptyMap())
-        assertFalse(SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState()).contains("CONTROL REGISTERS"))
+    @Test fun `buildPrompt should omit NVRAM when BOOTING`() {
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        assertFalse(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("CONTROL REGISTERS"))
     }
 
-    @Test fun `prepareSystemPrompt should include private session routing section`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContexts = emptyMap())
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState())
+    @Test fun `buildPrompt should include private session routing section`() {
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
         assertTrue(prompt.contains("PRIVATE SESSION ROUTING")); assertTrue(prompt.contains("session.POST"))
     }
 
-    @Test fun `prepareSystemPrompt should include bootloader only when BOOTING`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "<boot_sentinel_protocol>CHECK</boot_sentinel_protocol>"), gatheredContexts = emptyMap())
-        assertTrue(SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState()).contains("<boot_sentinel_protocol>"))
-        assertTrue(SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState()).contains("BOOT SENTINEL"))
+    @Test fun `buildPrompt should include bootloader only when BOOTING`() {
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "<boot_sentinel_protocol>CHECK</boot_sentinel_protocol>"), gatheredContextKeys = emptySet())
+        assertTrue(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("<boot_sentinel_protocol>"))
+        assertTrue(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("BOOT SENTINEL"))
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
-        assertFalse(SovereignStrategy.prepareSystemPrompt(ctx, awake).contains("<boot_sentinel_protocol>"))
-        assertFalse(SovereignStrategy.prepareSystemPrompt(ctx, awake).contains("BOOT SENTINEL"))
+        assertFalse(SovereignStrategy.buildPrompt(ctx, awake).renderForTest().contains("<boot_sentinel_protocol>"))
+        assertFalse(SovereignStrategy.buildPrompt(ctx, awake).renderForTest().contains("BOOT SENTINEL"))
     }
 
-    @Test fun `prepareSystemPrompt should include HKG navigation when AWAKE and HKG present`() {
+    @Test fun `buildPrompt should include HKG navigation when AWAKE and HKG present`() {
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContexts = mapOf("HOLON_KNOWLEDGE_GRAPH_INDEX" to "[wrapped index]"))
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, awake)
+            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX"))
+        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
         assertTrue(prompt.contains("HKG NAVIGATION")); assertTrue(prompt.contains("CONTEXT_UNCOLLAPSE"))
     }
 
-    @Test fun `prepareSystemPrompt should omit HKG navigation when BOOTING`() {
+    @Test fun `buildPrompt should omit HKG navigation when BOOTING`() {
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContexts = mapOf("HOLON_KNOWLEDGE_GRAPH_INDEX" to "[index]"))
-        assertFalse(SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState()).contains("HKG NAVIGATION"))
+            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX"))
+        assertFalse(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("HKG NAVIGATION"))
     }
 
-    @Test fun `prepareSystemPrompt should place HKG before other gathered contexts`() {
+    @Test fun `buildPrompt should place HKG before other gathered contexts`() {
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContexts = mapOf("AVAILABLE_ACTIONS" to "[actions]", "HOLON_KNOWLEDGE_GRAPH_INDEX" to "[index]", "HOLON_KNOWLEDGE_GRAPH_FILES" to "[files]"))
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, awake)
-        assertTrue(prompt.indexOf("[index]") < prompt.indexOf("[actions]"))
-        assertTrue(prompt.indexOf("[files]") < prompt.indexOf("[actions]"))
+            gatheredContextKeys = setOf("AVAILABLE_ACTIONS", "HOLON_KNOWLEDGE_GRAPH_INDEX", "HOLON_KNOWLEDGE_GRAPH_FILES"))
+        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
+        assertTrue(prompt.indexOf("[GATHERED:HOLON_KNOWLEDGE_GRAPH_INDEX]") < prompt.indexOf("[GATHERED:AVAILABLE_ACTIONS]"))
+        assertTrue(prompt.indexOf("[GATHERED:HOLON_KNOWLEDGE_GRAPH_FILES]") < prompt.indexOf("[GATHERED:AVAILABLE_ACTIONS]"))
     }
 
-    @Test fun `prepareSystemPrompt should include multi-agent context before other gathered contexts`() {
+    @Test fun `buildPrompt should include multi-agent context before other gathered contexts`() {
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContexts = mapOf("MULTI_AGENT_CONTEXT" to "multi-info", "AVAILABLE_ACTIONS" to "[actions]"))
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, awake)
-        assertTrue(prompt.indexOf("multi-info") < prompt.indexOf("[actions]"))
+            gatheredContextKeys = setOf("MULTI_AGENT_CONTEXT", "AVAILABLE_ACTIONS"))
+        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
+        assertTrue(prompt.indexOf("[GATHERED:MULTI_AGENT_CONTEXT]") < prompt.indexOf("[GATHERED:AVAILABLE_ACTIONS]"))
     }
 
-    @Test fun `prepareSystemPrompt should include subscribed sessions with PRIVATE and PUBLIC tags`() {
+    @Test fun `buildPrompt should include subscribed sessions with PRIVATE and PUBLIC tags`() {
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(uuid = privateSessionUUID, handle = "session.priv", name = "Private", isOutput = true),
                 SessionInfo(uuid = publicSession1, handle = "session.chat", name = "Chat", isOutput = false)
             ), outputSessionHandle = "session.priv")
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState())
+        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
         assertTrue(prompt.contains("SUBSCRIBED SESSIONS")); assertTrue(prompt.contains("[PRIVATE")); assertTrue(prompt.contains("[PUBLIC"))
     }
 
-    @Test fun `prepareSystemPrompt should say candidate consciousness when BOOTING`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContexts = emptyMap())
-        assertTrue(SovereignStrategy.prepareSystemPrompt(ctx, SovereignStrategy.getInitialState()).contains("candidate consciousness"))
+    @Test fun `buildPrompt should say candidate consciousness when BOOTING`() {
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        assertTrue(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("candidate consciousness"))
     }
 
-    @Test fun `prepareSystemPrompt should not say candidate consciousness when AWAKE`() {
+    @Test fun `buildPrompt should not say candidate consciousness when AWAKE`() {
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContexts = emptyMap())
-        val prompt = SovereignStrategy.prepareSystemPrompt(ctx, awake)
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
+        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
         assertFalse(prompt.contains("candidate consciousness")); assertTrue(prompt.contains("You are $agentName."))
     }
 

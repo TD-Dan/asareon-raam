@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  *
  * Tests cover:
  * - validateConfig: outputSessionId ∈ subscribedSessionIds invariant
- * - prepareSystemPrompt: identity, instructions, session listing, multi-agent context
+ * - buildPrompt: identity, instructions, session listing, multi-agent context
  * - postProcessResponse: always PROCEED
  * - getBuiltInResources: default system instruction
  */
@@ -85,46 +85,46 @@ class VanillaStrategyT1LogicTest {
     }
 
     // =========================================================================
-    // prepareSystemPrompt
+    // buildPrompt
     // =========================================================================
 
     @Test
-    fun `prepareSystemPrompt should include agent name and identity section`() {
+    fun `buildPrompt should include agent name and identity section`() {
         val context = AgentTurnContext(
             agentName = "HelpBot",
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = VanillaStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = VanillaStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("You are HelpBot."))
         assertTrue(prompt.contains("YOUR IDENTITY AND ROLE"))
     }
 
     @Test
-    fun `prepareSystemPrompt should include system instructions when provided`() {
+    fun `buildPrompt should include system instructions when provided`() {
         val context = AgentTurnContext(
             agentName = "HelpBot",
             resolvedResources = mapOf("system_instruction" to "Always be polite."),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = VanillaStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = VanillaStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("SYSTEM INSTRUCTIONS"))
         assertTrue(prompt.contains("Always be polite."))
     }
 
     @Test
-    fun `prepareSystemPrompt should not include instructions section when empty`() {
+    fun `buildPrompt should not include instructions section when empty`() {
         val context = AgentTurnContext(
             agentName = "HelpBot",
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = VanillaStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = VanillaStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(!prompt.contains("SYSTEM INSTRUCTIONS"))
     }

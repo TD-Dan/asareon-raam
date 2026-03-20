@@ -72,14 +72,6 @@ data class GatewayRequest(
     val systemPrompt: String? = null
 )
 
-@Serializable
-data class StagedPreviewData(
-    val agnosticRequest: GatewayRequest,
-    val rawRequestJson: String,
-    /** Estimated input token count from the provider's counting API. Null if unsupported. */
-    val estimatedInputTokens: Int? = null
-)
-
 /**
  * Tracks an agent command dispatched via ACTION_CREATED so that AgentRuntimeFeature
  * can route targeted RETURN_* data back to the originating session via
@@ -207,7 +199,24 @@ data class AgentStatusInfo(
     val processingSinceTimestamp: Long? = null,
     val processingStep: String? = null,
     val turnMode: TurnMode = TurnMode.DIRECT,
-    val stagedPreviewData: StagedPreviewData? = null,
+
+    // ========================================================================
+    // Managed Context Session (§9.1)
+    //
+    // Active while the "Manage Context" view is open for this agent.
+    // managedContext holds the full assembly snapshot (including transient data)
+    // so that IDLE transitions don't destroy data needed for reassembly (F2 fix).
+    // ========================================================================
+
+    /** Full assembly result. Available while Manage Context view is open. */
+    val managedContext: ContextAssemblyResult? = null,
+    /** Fast-path partition data for Tab 0. Updated on every collapse toggle. */
+    val managedPartitions: PartitionAssemblyResult? = null,
+    /** Raw JSON from debounced gateway preview. */
+    val managedContextRawJson: String? = null,
+    /** Provider-estimated input tokens from debounced gateway preview. */
+    val managedContextEstimatedTokens: Int? = null,
+
     val stagedTurnContext: List<GatewayMessage>? = null,
     val transientHkgContext: JsonObject? = null,
 
@@ -315,7 +324,7 @@ data class AgentRuntimeState(
     @Transient
     val agentsToPersist: Set<IdentityUUID>? = null,
     @Transient
-    val viewingContextForAgentId: IdentityUUID? = null,
+    val managingContextForAgentId: IdentityUUID? = null,
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
 

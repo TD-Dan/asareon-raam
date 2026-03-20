@@ -749,34 +749,61 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     }
 
     @Test
-    fun `SET_PREVIEW_DATA should update status and set active viewing context`() {
+    fun `SET_MANAGED_CONTEXT should store managed context and set active managing agent`() {
         val agentId = "agent-1"
-        val request = GatewayRequest("model", emptyList(), agentId)
         val state = AgentRuntimeState(agentStatuses = mapOf(uid(agentId) to AgentStatusInfo()))
 
-        val action = Action(ActionRegistry.Names.AGENT_SET_PREVIEW_DATA, buildJsonObject {
-            put("agentId", agentId); put("agnosticRequest", json.encodeToJsonElement(request)); put("rawRequestJson", "{}")
+        // Set up the transient stash (same pattern the pipeline uses)
+        val fakeResult = ContextAssemblyResult(
+            partitions = emptyList(),
+            collapseResult = ContextCollapseLogic.CollapseResult(emptyList(), 0),
+            budgetReport = "",
+            systemPrompt = "test prompt",
+            gatewayRequest = GatewayRequest("model", emptyList(), agentId, "test prompt"),
+            softBudgetChars = 200_000,
+            maxBudgetChars = 500_000,
+            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
+        )
+        AgentCognitivePipeline.pendingManagedContext = fakeResult
+
+        val action = Action(ActionRegistry.Names.AGENT_SET_MANAGED_CONTEXT, buildJsonObject {
+            put("agentId", agentId)
         })
 
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
-        assertNotNull(newState.agentStatuses[uid(agentId)]?.stagedPreviewData)
-        assertEquals(uid(agentId), newState.viewingContextForAgentId)
+        assertNotNull(newState.agentStatuses[uid(agentId)]?.managedContext)
+        assertNotNull(newState.agentStatuses[uid(agentId)]?.managedPartitions)
+        assertEquals(uid(agentId), newState.managingContextForAgentId)
+        // Stash should be cleared after consumption
+        assertNull(AgentCognitivePipeline.pendingManagedContext)
     }
 
     @Test
-    fun `DISCARD_PREVIEW should clear preview data and viewing context`() {
+    fun `DISCARD_MANAGED_CONTEXT should clear managed context and managing agent`() {
         val agentId = "agent-1"
-        val previewData = StagedPreviewData(GatewayRequest("m", emptyList(), "id"), "{}")
+        val fakeResult = ContextAssemblyResult(
+            partitions = emptyList(),
+            collapseResult = ContextCollapseLogic.CollapseResult(emptyList(), 0),
+            budgetReport = "",
+            systemPrompt = "test prompt",
+            gatewayRequest = GatewayRequest("model", emptyList(), agentId, "test prompt"),
+            softBudgetChars = 200_000,
+            maxBudgetChars = 500_000,
+            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
+        )
         val state = AgentRuntimeState(
-            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(stagedPreviewData = previewData)),
-            viewingContextForAgentId = uid(agentId)
+            agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(managedContext = fakeResult)),
+            managingContextForAgentId = uid(agentId)
         )
 
-        val action = Action(ActionRegistry.Names.AGENT_DISCARD_PREVIEW, buildJsonObject { put("agentId", agentId) })
+        val action = Action(ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT, buildJsonObject { put("agentId", agentId) })
         val newState = AgentRuntimeReducer.reduce(state, action, platform)
 
-        assertNull(newState.agentStatuses[uid(agentId)]?.stagedPreviewData)
-        assertNull(newState.viewingContextForAgentId)
+        assertNull(newState.agentStatuses[uid(agentId)]?.managedContext)
+        assertNull(newState.agentStatuses[uid(agentId)]?.managedPartitions)
+        assertNull(newState.agentStatuses[uid(agentId)]?.managedContextRawJson)
+        assertNull(newState.agentStatuses[uid(agentId)]?.managedContextEstimatedTokens)
+        assertNull(newState.managingContextForAgentId)
     }
 
     // =========================================================================

@@ -303,8 +303,8 @@
       ]
     },
     {
-      "action_name": "agent.EXECUTE_PREVIEWED_TURN",
-      "summary": "Executes the turn that was previously staged for preview.",
+      "action_name": "agent.EXECUTE_MANAGED_TURN",
+      "summary": "Executes the turn that was previously staged for managed context.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -333,8 +333,8 @@
       ]
     },
     {
-      "action_name": "agent.DISCARD_PREVIEW",
-      "summary": "Discards a turn that was staged for preview and navigates back.",
+      "action_name": "agent.DISCARD_MANAGED_CONTEXT",
+      "summary": "Discards a turn that was staged for managed context and navigates back.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -762,8 +762,8 @@
       }
     },
     {
-      "action_name": "agent.SET_PREVIEW_DATA",
-      "summary": "[INTERNAL] Saves the complete preview data.",
+      "action_name": "agent.SET_MANAGED_CONTEXT",
+      "summary": "[INTERNAL] Saves the complete managed context data.",
       "public": false,
       "broadcast": false,
       "targeted": false,
@@ -1367,6 +1367,57 @@
         "required": [
           "agentId",
           "contents"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_MANAGED_PARTITIONS",
+      "summary": "Stores fast-path partition data for Context Management Tab 0.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "partitions": {
+            "type": "object",
+            "description": "Serialized PartitionAssemblyResult"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.UPDATE_MANAGED_PREVIEW",
+      "summary": "Stores rawRequestJson + estimatedInputTokens from debounced gateway preview.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "rawRequestJson": {
+            "type": "string"
+          },
+          "estimatedInputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId"
         ]
       },
       "required_permissions": []

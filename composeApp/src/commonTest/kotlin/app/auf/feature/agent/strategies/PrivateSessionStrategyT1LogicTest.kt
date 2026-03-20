@@ -37,7 +37,7 @@ import kotlin.test.*
  *    - If outputSessionId is null and subscriptions exist, it should NOT auto-assign
  *      (unlike Vanilla). The private session is assigned via ensureInfrastructure.
  *
- * 3. **prepareSystemPrompt: private session awareness**
+ * 3. **buildPrompt: private session awareness**
  *    - Tags the private session as [PRIVATE] and public sessions as [PUBLIC].
  *    - Includes session subscription awareness (like Vanilla).
  *    - Includes multi-agent context (like Vanilla).
@@ -290,59 +290,59 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     // =========================================================================
-    // 7. prepareSystemPrompt
+    // 7. buildPrompt
     // =========================================================================
 
     @Test
-    fun `prepareSystemPrompt should include agent name and identity section`() {
+    fun `buildPrompt should include agent name and identity section`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("You are $agentName."), "Should include agent name")
         assertTrue(prompt.contains("YOUR IDENTITY AND ROLE"), "Should have identity section")
     }
 
     @Test
-    fun `prepareSystemPrompt should include system instructions when provided`() {
+    fun `buildPrompt should include system instructions when provided`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = mapOf("system_instruction" to "Be concise and helpful."),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("SYSTEM INSTRUCTIONS"))
         assertTrue(prompt.contains("Be concise and helpful."))
     }
 
     @Test
-    fun `prepareSystemPrompt should not include instructions section when empty`() {
+    fun `buildPrompt should not include instructions section when empty`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertFalse(prompt.contains("SYSTEM INSTRUCTIONS"))
     }
 
     @Test
-    fun `prepareSystemPrompt should include multi-user environment awareness`() {
+    fun `buildPrompt should include multi-user environment awareness`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("multi-user"), "Should mention multi-user environment")
         assertTrue(prompt.contains("Maintain your own boundaries"),
@@ -350,14 +350,14 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should include private session routing section`() {
+    fun `buildPrompt should include private session routing section`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("PRIVATE SESSION ROUTING"), "Should have routing section")
         assertTrue(prompt.contains("session.POST"),
@@ -367,14 +367,14 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should include session POST example without senderId`() {
+    fun `buildPrompt should include session POST example without senderId`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("auf_session.POST"),
             "Should include a fenced code block example for session.POST")
@@ -385,11 +385,11 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should tag output session as PRIVATE`() {
+    fun `buildPrompt should tag output session as PRIVATE`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = publicSession1,
@@ -407,7 +407,7 @@ class PrivateSessionStrategyT1LogicTest {
             outputSessionHandle = "session.testbot-private"
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("SUBSCRIBED SESSIONS"), "Should have session section")
         assertTrue(prompt.contains("Chat"), "Should list public session")
@@ -417,11 +417,11 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should tag non-output sessions as PUBLIC`() {
+    fun `buildPrompt should tag non-output sessions as PUBLIC`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = publicSession1,
@@ -439,7 +439,7 @@ class PrivateSessionStrategyT1LogicTest {
             outputSessionHandle = "session.testbot-private"
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         // The Chat session should be tagged as PUBLIC
         val chatLine = prompt.lines().find { it.contains("Chat") && it.contains("session.chat") }
@@ -449,25 +449,25 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should explain that direct output is invisible to others`() {
+    fun `buildPrompt should explain that direct output is invisible to others`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("invisible to others") || prompt.contains("only you can see"),
             "Should clearly state that the private session is not visible to others")
     }
 
     @Test
-    fun `prepareSystemPrompt should list participants per session with details`() {
+    fun `buildPrompt should list participants per session with details`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = publicSession1,
@@ -483,7 +483,7 @@ class PrivateSessionStrategyT1LogicTest {
             )
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("Daniel"), "Should list participant name")
         assertTrue(prompt.contains("user.daniel"), "Should list participant senderId")
@@ -493,11 +493,11 @@ class PrivateSessionStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt should show no messages yet for empty session`() {
+    fun `buildPrompt should show no messages yet for empty session`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = publicSession1,
@@ -510,58 +510,53 @@ class PrivateSessionStrategyT1LogicTest {
             )
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("no messages yet"),
             "Should indicate empty session has no messages")
     }
 
     @Test
-    fun `prepareSystemPrompt should include multi-agent context when present`() {
+    fun `buildPrompt should include multi-agent context when present`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "MULTI_AGENT_CONTEXT" to "There are 2 agents in this environment."
-            )
+            gatheredContextKeys = setOf("MULTI_AGENT_CONTEXT")
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
-        assertTrue(prompt.contains("There are 2 agents in this environment."))
+        assertTrue(prompt.contains("[GATHERED:MULTI_AGENT_CONTEXT]"))
     }
 
     @Test
-    fun `prepareSystemPrompt should not include context section when no contexts`() {
+    fun `buildPrompt should not include gathered markers when no contexts`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
-        assertFalse(prompt.contains("--- CONTEXT ---"),
-            "Should omit context section when no contexts present")
+        assertFalse(prompt.contains("[GATHERED:"),
+            "Should have no gathered partition markers when no contexts present")
     }
 
     @Test
-    fun `prepareSystemPrompt should not duplicate MULTI_AGENT_CONTEXT in generic context section`() {
+    fun `buildPrompt should not duplicate MULTI_AGENT_CONTEXT in generic context section`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "MULTI_AGENT_CONTEXT" to "Multi-agent info.",
-                "WORKSPACE" to "Files."
-            )
+            gatheredContextKeys = setOf("MULTI_AGENT_CONTEXT", "WORKSPACE")
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
-        val occurrences = prompt.windowed("Multi-agent info.".length)
-            .count { it == "Multi-agent info." }
+        val occurrences = prompt.windowed("[GATHERED:MULTI_AGENT_CONTEXT]".length)
+            .count { it == "[GATHERED:MULTI_AGENT_CONTEXT]" }
         assertEquals(1, occurrences,
-            "MULTI_AGENT_CONTEXT content must appear exactly once")
+            "MULTI_AGENT_CONTEXT must appear exactly once (placed explicitly, not duplicated by everythingElse)")
     }
 
     // =========================================================================
@@ -766,26 +761,26 @@ class PrivateSessionStrategyT1LogicTest {
     // =========================================================================
 
     @Test
-    fun `prepareSystemPrompt with no sessions should omit session section`() {
+    fun `buildPrompt with no sessions should omit session section`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = mapOf("system_instruction" to "Test instructions."),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = emptyList()
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertFalse(prompt.contains("SUBSCRIBED SESSIONS"),
             "Should omit session section when no sessions are subscribed")
     }
 
     @Test
-    fun `prepareSystemPrompt should handle single session that is both subscribed and output`() {
+    fun `buildPrompt should handle single session that is both subscribed and output`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = privateSessionUUID,
@@ -797,19 +792,19 @@ class PrivateSessionStrategyT1LogicTest {
             outputSessionHandle = "session.testbot-private"
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         assertTrue(prompt.contains("TestBot Private"))
         assertTrue(prompt.contains("[PRIVATE"))
     }
 
     @Test
-    fun `prepareSystemPrompt should tag first session as PRIVATE when no explicit output handle`() {
+    fun `buildPrompt should tag first session as PRIVATE when no explicit output handle`() {
         // Fallback: when outputSessionHandle is null, first session is treated as output
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = publicSession1,
@@ -821,18 +816,18 @@ class PrivateSessionStrategyT1LogicTest {
             outputSessionHandle = null
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         // First session gets the output tag in the fallback case
         assertTrue(prompt.contains("[PRIVATE"))
     }
 
     @Test
-    fun `prepareSystemPrompt routing section should appear before subscribed sessions`() {
+    fun `buildPrompt routing section should appear before subscribed sessions`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(
                     uuid = publicSession1,
@@ -843,7 +838,7 @@ class PrivateSessionStrategyT1LogicTest {
             )
         )
 
-        val prompt = PrivateSessionStrategy.prepareSystemPrompt(context, JsonNull)
+        val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
         val routingPos = prompt.indexOf("PRIVATE SESSION ROUTING")
         val sessionsPos = prompt.indexOf("SUBSCRIBED SESSIONS")

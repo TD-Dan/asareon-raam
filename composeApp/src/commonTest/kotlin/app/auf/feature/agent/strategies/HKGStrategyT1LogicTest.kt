@@ -19,7 +19,7 @@ import kotlin.test.*
  * 1. **validateConfig**: outputSessionId ∈ subscribedSessionIds (same as Vanilla).
  *    No private session — unlike PrivateSession/Sovereign.
  *
- * 2. **prepareSystemPrompt**: includes INDEX and FILES from gatheredContexts,
+ * 2. **buildPrompt**: places INDEX and FILES gathered partitions,
  *    HKG navigation instructions, session awareness, multi-agent context.
  *    Excludes HKG keys from the generic CONTEXT section.
  *
@@ -223,89 +223,84 @@ class HKGStrategyT1LogicTest {
     }
 
     // =========================================================================
-    // prepareSystemPrompt
+    // buildPrompt
     // =========================================================================
 
     @Test
-    fun `prepareSystemPrompt should include agent name and HKG awareness`() {
+    fun `buildPrompt should include agent name and HKG awareness`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
         assertTrue(prompt.contains("You are $agentName."))
         assertTrue(prompt.contains("Holon Knowledge Graph"))
     }
 
     @Test
-    fun `prepareSystemPrompt should include system instructions when provided`() {
+    fun `buildPrompt should include system instructions when provided`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = mapOf("system_instruction" to "Be a great mapper."),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
         assertTrue(prompt.contains("SYSTEM INSTRUCTIONS"))
         assertTrue(prompt.contains("Be a great mapper."))
     }
 
     @Test
-    fun `prepareSystemPrompt should include INDEX when present in gathered contexts`() {
-        val indexContent = "--- HOLON_KNOWLEDGE_GRAPH_INDEX ---\nPersona: Meridian | Total holons: 5\n--- END ---"
+    fun `buildPrompt should include INDEX when present in gathered contexts`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = mapOf("HOLON_KNOWLEDGE_GRAPH_INDEX" to indexContent)
+            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX")
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
-        assertTrue(prompt.contains(indexContent))
+        assertTrue(prompt.contains("[GATHERED:HOLON_KNOWLEDGE_GRAPH_INDEX]"))
         assertTrue(prompt.contains("HKG NAVIGATION"))
     }
 
     @Test
-    fun `prepareSystemPrompt should include FILES when present in gathered contexts`() {
-        val filesContent = "--- HOLON_KNOWLEDGE_GRAPH_FILES ---\nFiles currently open: 1\n--- END ---"
+    fun `buildPrompt should include FILES when present in gathered contexts`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = mapOf(
-                "HOLON_KNOWLEDGE_GRAPH_INDEX" to "index stub",
-                "HOLON_KNOWLEDGE_GRAPH_FILES" to filesContent
-            )
+            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX", "HOLON_KNOWLEDGE_GRAPH_FILES")
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
-        assertTrue(prompt.contains(filesContent))
+        assertTrue(prompt.contains("[GATHERED:HOLON_KNOWLEDGE_GRAPH_FILES]"))
     }
 
     @Test
-    fun `prepareSystemPrompt should not show HKG navigation when no INDEX`() {
+    fun `buildPrompt should not show HKG navigation when no INDEX`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap()
+            gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
         assertFalse(prompt.contains("HKG NAVIGATION"))
     }
 
     @Test
-    fun `prepareSystemPrompt should include session subscription awareness`() {
+    fun `buildPrompt should include session subscription awareness`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = emptyMap(),
+            gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(uuid = session1, handle = "session.chat", name = "Chat", isOutput = true)
             ),
             outputSessionHandle = "session.chat"
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
         assertTrue(prompt.contains("SUBSCRIBED SESSIONS"))
         assertTrue(prompt.contains("Chat (session.chat)"))
@@ -313,13 +308,13 @@ class HKGStrategyT1LogicTest {
     }
 
     @Test
-    fun `prepareSystemPrompt includes navigation instructions with expand and collapse examples`() {
+    fun `buildPrompt includes navigation instructions with expand and collapse examples`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContexts = mapOf("HOLON_KNOWLEDGE_GRAPH_INDEX" to "index stub")
+            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX")
         )
-        val prompt = HKGStrategy.prepareSystemPrompt(context, HKGStrategy.getInitialState())
+        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
 
         assertTrue(prompt.contains("CONTEXT_UNCOLLAPSE"))
         assertTrue(prompt.contains("CONTEXT_COLLAPSE"))
