@@ -9,6 +9,7 @@ import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -1214,6 +1215,89 @@ class FileSystemFeatureT2CoreTest {
                 it.level == LogLevel.ERROR && it.message.contains("Failed to open")
             }
             assertNotNull(errorLog, "An ERROR-level log should be recorded when openFolderInExplorer throws.")
+        }
+    }
+
+    // --- Action result reporting ---
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER publishes success ACTION_RESULT when folder is opened`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val resultAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
+            }
+            assertNotNull(resultAction, "An ACTION_RESULT should be published on success.")
+            assertEquals(true, resultAction.payload?.get("success")?.jsonPrimitive?.boolean)
+            assertEquals(
+                ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER,
+                resultAction.payload?.get("requestAction")?.jsonPrimitive?.content
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER publishes failure ACTION_RESULT when directory does not exist`() {
+        val platform = FakePlatformDependencies("test")
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        // Do NOT create the directory
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:nonexistent")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val resultAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
+            }
+            assertNotNull(resultAction, "An ACTION_RESULT should be published when folder does not exist.")
+            assertEquals(false, resultAction.payload?.get("success")?.jsonPrimitive?.boolean)
+            assertNotNull(
+                resultAction.payload?.get("error")?.jsonPrimitive?.content,
+                "Error field should be present."
+            )
+        }
+    }
+
+    @Test
+    fun `OPEN_SYSTEM_FOLDER publishes failure ACTION_RESULT when openFolderInExplorer throws`() {
+        val platform = FakePlatformDependencies("test")
+        platform.openFolderShouldThrow = true
+        val feature = FileSystemFeature(platform)
+        val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+        val expectedPath = platform.getBasePathFor(BasePath.APP_ZONE) + "/logs"
+        platform.createDirectories(expectedPath)
+
+        val action = Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject {
+            put("path", "app:logs")
+        })
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("core", action)
+
+            val resultAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
+            }
+            assertNotNull(resultAction, "An ACTION_RESULT should be published when openFolderInExplorer throws.")
+            assertEquals(false, resultAction.payload?.get("success")?.jsonPrimitive?.boolean)
+            assertNotNull(
+                resultAction.payload?.get("error")?.jsonPrimitive?.content,
+                "Error field should be present."
+            )
         }
     }
 }

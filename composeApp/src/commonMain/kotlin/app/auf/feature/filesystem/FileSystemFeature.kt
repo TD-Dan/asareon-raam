@@ -577,15 +577,21 @@ class FileSystemFeature(
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                         put("message", "Folder does not exist: $fullPath")
                     }))
+                    publishActionResult(store, null, action.name, success = false,
+                        error = "Folder does not exist")
                     return
                 }
                 try {
                     platformDependencies.openFolderInExplorer(fullPath)
+                    publishActionResult(store, null, action.name, success = true,
+                        summary = "Opened folder")
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to open system folder '$fullPath': ${e.message}", e)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                         put("message", "Failed to open system folder: ${e.message}")
                     }))
+                    publishActionResult(store, null, action.name, success = false,
+                        error = "Failed to open folder: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
         }
