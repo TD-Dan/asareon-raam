@@ -40,6 +40,10 @@ object ContextCollapseLogic {
      * @param truncateFromStart If true, oversized sentinel truncates oldest content (start).
      *   If false (default), truncates newest content (end). Sessions use start-truncation
      *   because recent messages are more relevant than old ones.
+     * @param parentKey Parent partition key if this is a child in a [PromptSection.Group].
+     *   Null for top-level partitions. Used only for display grouping and h2 wrapping
+     *   in Phases 3/4 — the collapse algorithm operates on the flat list identically
+     *   regardless of this field.
      */
     data class ContextPartition(
         val key: String,
@@ -51,7 +55,8 @@ object ContextCollapseLogic {
         val priority: Int = 0,
         val isAutoCollapsible: Boolean = true,
         val isAgentOverridden: Boolean = false,
-        val truncateFromStart: Boolean = false
+        val truncateFromStart: Boolean = false,
+        val parentKey: String? = null
     ) {
         /** The char count for the partition's current state. */
         val effectiveCharCount: Int

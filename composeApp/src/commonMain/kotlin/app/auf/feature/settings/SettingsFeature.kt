@@ -114,7 +114,7 @@ class SettingsFeature(
         private val viewKey = "feature.settings.main"
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = mapOf(
             viewKey to { store, _ ->
-                SettingsView(store = store, onClose = { store.dispatch("settings", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) })
+                SettingsView(store = store, onClose = { store.deferredDispatch("settings", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) })
             }
         )
         @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {

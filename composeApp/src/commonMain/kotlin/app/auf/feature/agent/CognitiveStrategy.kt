@@ -137,16 +137,53 @@ interface CognitiveStrategy {
     }
 
     /**
-     * The Core Function.
+     * The Core Function (legacy).
      * Purely transforms Context + State into the System Prompt.
      *
      * This allows the strategy to dynamically inject protocols based on the
      * current 'rigor' register, or inject Sentinel checks based on the 'phase' register.
+     *
+     * **Migration note (Phase 1):** This method is retained for backward compatibility.
+     * Strategies should migrate to [buildPrompt] in Phase 2. The default [buildPrompt]
+     * implementation wraps this method's output as a single opaque [PromptSection.Section].
+     * Once all strategies override [buildPrompt], this method will be removed (Phase 3).
      */
     fun prepareSystemPrompt(
         context: AgentTurnContext,
         state: JsonElement
     ): String
+
+    /**
+     * Declares the structure of the agent's system prompt using [PromptBuilder].
+     *
+     * Strategies express *what* content exists and *where* it goes. The pipeline
+     * handles *how* (collapse, budgeting, wrapping, assembly).
+     *
+     * ## Phase 1 Default
+     *
+     * Wraps [prepareSystemPrompt] output as a single opaque section. This preserves
+     * exact behavioral equivalence for all existing strategies. Phase 2 migrates
+     * strategies one-at-a-time to use the builder natively.
+     *
+     * @param context The agent's turn context (resources, sessions, gathered keys).
+     * @param state The agent's cognitive state (NVRAM). Deep-copied by the pipeline
+     *   before this call (Red Team Fix F3) — mutations are discarded.
+     * @return A [PromptBuilder] whose [PromptBuilder.sections] describe the prompt.
+     */
+    fun buildPrompt(context: AgentTurnContext, state: JsonElement): PromptBuilder {
+        // Default: wrap legacy prepareSystemPrompt as a single opaque section.
+        // This is the Phase 1 bridge — no strategy needs to override this yet.
+        val rawPrompt = prepareSystemPrompt(context, state)
+        return PromptBuilder(context).apply {
+            section(
+                key = "STRATEGY_PROMPT",
+                content = rawPrompt,
+                isProtected = true,
+                isCollapsible = false,
+                priority = 1000
+            )
+        }
+    }
 
     /**
      * Analyzes the Agent's raw text response to determine if a state transition is required.
@@ -294,6 +331,16 @@ data class SessionInfo(
 
 /**
  * Minimal context required by the strategy to build the prompt.
+ *
+ * ## Phase 1 Migration Note
+ *
+ * [gatheredContexts] is retained for backward compatibility with existing
+ * [CognitiveStrategy.prepareSystemPrompt] implementations. The new
+ * [PromptBuilder] uses [gatheredContextKeys] (derived from the same map)
+ * for its [PromptBuilder.has] method.
+ *
+ * Phase 2 replaces [gatheredContexts] with [gatheredContextKeys] as the
+ * primary field. The pipeline retains the full map internally for the merge step.
  */
 data class AgentTurnContext(
     val agentName: String,
@@ -305,4 +352,16 @@ data class AgentTurnContext(
     val outputSessionUUID: String? = null,
     /** The output session handle (used by strategies for display in prompts). */
     val outputSessionHandle: String? = null
-)
+) {
+    /**
+     * Keys of all gathered context partitions available for placement.
+     *
+     * Used by [PromptBuilder.has] for conditional section emission (e.g., only
+     * show HKG navigation if HOLON_KNOWLEDGE_GRAPH_INDEX was gathered).
+     *
+     * Derived from [gatheredContexts] in Phase 1. Phase 2 will make this the
+     * primary constructor parameter and remove [gatheredContexts] from the
+     * strategy-visible API.
+     */
+    val gatheredContextKeys: Set<String> get() = gatheredContexts.keys
+}

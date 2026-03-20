@@ -502,13 +502,39 @@ object AgentCognitivePipeline {
         evaluateFullContext(agentId, store)
     }
 
-    private fun executeTurn(
+    // =========================================================================
+    // Phase 1: Extracted Assembly Functions (§5.1)
+    //
+    // assembleContext()      — full path: partition metadata + assembled prompt
+    // assemblePartitions()   — fast path: partition metadata only (stub in Phase 1)
+    // executeTurn()          — thin wrapper: assemble + dispatch
+    // =========================================================================
+
+    /**
+     * Full assembly path: builds contextMap, runs collapse, assembles system prompt.
+     *
+     * Returns a [ContextAssemblyResult] containing partitions, the collapse result,
+     * the budget report, the assembled system prompt, and a gateway request ready
+     * for dispatch.
+     *
+     * Returns null on failure (e.g., missing required resources). Errors are
+     * reported via avatar status updates before returning null.
+     *
+     * ## Phase 1 Status
+     *
+     * Extracted from [executeTurn] with no behavioral changes. The processing-step
+     * dispatches remain here (they take [Store]) to maintain exact equivalence.
+     * Phase 3 will separate pure assembly from side-effect dispatches.
+     *
+     * See: §5.1 (Extract assembleContext) of the context architecture redesign doc.
+     */
+    fun assembleContext(
         agent: AgentInstance,
         sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
         hkgContext: JsonObject?,
         agentState: AgentRuntimeState,
         store: Store
-    ) {
+    ): ContextAssemblyResult? {
         val agentUuid = agent.identityUUID
         val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
         val platformDependencies = store.platformDependencies
@@ -522,7 +548,7 @@ object AgentCognitivePipeline {
         // === RESOURCE RESOLUTION ===
         val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store, agentState)
         if (resolvedResources == null) {
-            return
+            return null
         }
 
         val contextMap = mutableMapOf<String, String>()
@@ -882,6 +908,84 @@ object AgentCognitivePipeline {
         // The strategy never sees these — they frame the entire system prompt.
         val systemPrompt = ContextDelimiters.wrapSystemPrompt(rawPrompt)
 
+        // Build the agnostic gateway request (used by both direct and preview paths)
+        val gatewayRequest = GatewayRequest(
+            modelName = agent.modelName,
+            contents = emptyList(), // Empty — conversation is in systemPrompt
+            correlationId = agentUuid.uuid,
+            systemPrompt = systemPrompt
+        )
+
+        return ContextAssemblyResult(
+            partitions = collapseResult.partitions,
+            collapseResult = collapseResult,
+            budgetReport = budgetReport,
+            systemPrompt = systemPrompt,
+            gatewayRequest = gatewayRequest,
+            softBudgetChars = agent.contextBudgetChars,
+            maxBudgetChars = agent.contextMaxBudgetChars,
+            transientDataSnapshot = TransientDataSnapshot(
+                sessionLedgers = sessionLedgers,
+                hkgContext = hkgContext,
+                workspaceListing = statusInfo.transientWorkspaceListing,
+                workspaceFileContents = statusInfo.transientWorkspaceFileContents
+            )
+        )
+    }
+
+    /**
+     * Fast assembly path: returns partition metadata only (no string assembly).
+     *
+     * Used by the Context Manager UI (Tab 0) for instant reassembly on toggle.
+     * In Phase 1, this delegates to [assembleContext] and extracts the partition
+     * subset. Phase 3 will implement a true fast path that skips string building.
+     *
+     * Returns null on failure (e.g., missing required resources).
+     *
+     * See: §5.1 (assemblePartitions) of the context architecture redesign doc.
+     */
+    fun assemblePartitions(
+        agent: AgentInstance,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
+        hkgContext: JsonObject?,
+        agentState: AgentRuntimeState,
+        store: Store
+    ): PartitionAssemblyResult? {
+        // Phase 1 stub: delegate to full assembly and extract partition data.
+        // Phase 3 will implement the true fast path (no string building).
+        val full = assembleContext(agent, sessionLedgers, hkgContext, agentState, store) ?: return null
+        return PartitionAssemblyResult(
+            partitions = full.partitions,
+            collapseResult = full.collapseResult,
+            totalChars = full.collapseResult.totalChars,
+            softBudgetChars = full.softBudgetChars,
+            maxBudgetChars = full.maxBudgetChars
+        )
+    }
+
+    /**
+     * Thin wrapper: assembles context and dispatches the gateway request.
+     *
+     * Prior to Phase 1, this method contained the entire context assembly pipeline.
+     * Now it delegates to [assembleContext] for prompt construction and handles
+     * only the gateway dispatch decision (direct vs. preview mode).
+     */
+    private fun executeTurn(
+        agent: AgentInstance,
+        sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
+        hkgContext: JsonObject?,
+        agentState: AgentRuntimeState,
+        store: Store
+    ) {
+        val agentUuid = agent.identityUUID
+        val statusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
+
+        val result = assembleContext(agent, sessionLedgers, hkgContext, agentState, store)
+        if (result == null) {
+            // assembleContext already reported the error via avatar status
+            return
+        }
+
         val requestActionName = if (statusInfo.turnMode == TurnMode.PREVIEW) ActionRegistry.Names.GATEWAY_PREPARE_PREVIEW else ActionRegistry.Names.GATEWAY_GENERATE_CONTENT
         val step = if (statusInfo.turnMode == TurnMode.PREVIEW) "Preparing Preview" else "Generating Content"
 
@@ -896,7 +1000,7 @@ object AgentCognitivePipeline {
             put("modelName", agent.modelName)
             put("correlationId", agentUuid.uuid)
             put("contents", buildJsonArray {}) // Empty — conversation is in systemPrompt
-            put("systemPrompt", systemPrompt)
+            put("systemPrompt", result.systemPrompt)
         }))
     }
 
