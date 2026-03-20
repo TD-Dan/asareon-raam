@@ -145,20 +145,13 @@ object SovereignStrategy : CognitiveStrategy {
             // 4. Private session routing — Sovereign uses custom "cognition session" wording
             section("PRIVATE SESSION ROUTING", buildSovereignRoutingContent())
 
-            // 5. Sessions with private format
-            sessions(SessionFormat.PRIVATE)
+            // 5. Sessions — unified partition (subscriptions + messages)
+            sessions()
 
-            // 6–7. HKG partitions
-            place("HOLON_KNOWLEDGE_GRAPH_INDEX")
-            place("HOLON_KNOWLEDGE_GRAPH_FILES")
+            // 6. HKG — unified partition (INDEX + holon tree + NAVIGATION)
+            place("HOLON_KNOWLEDGE_GRAPH")
 
-            // 8. HKG navigation — AWAKE only (BOOTING agents navigate via boot sentinel)
-            if (phase != PHASE_BOOTING) {
-                hkgNavigation()
-            }
-
-            // 9. Multi-agent + remaining gathered
-            place("MULTI_AGENT_CONTEXT")
+            // 7. Remaining gathered
             everythingElse()
 
             // 10. Bootloader — BOOTING only, placed last

@@ -72,7 +72,6 @@ object StateMachineStrategy : CognitiveStrategy {
             section("STATE MACHINE", buildStateMachineContent(context, stateObj, phase))
             section("PHASE TRANSITION", buildPhaseTransitionContent(phase))
             sessions()
-            place("MULTI_AGENT_CONTEXT")
             everythingElse()
         }
     }

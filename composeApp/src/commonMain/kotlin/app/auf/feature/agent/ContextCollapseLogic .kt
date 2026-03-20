@@ -173,7 +173,7 @@ object ContextCollapseLogic {
     }
 
     /**
-     * Builds the CONTEXT_BUDGET partition content.
+     * Builds the CONTEXT_BUDGET partition content (§3.5).
      *
      */
     fun buildBudgetReport(
@@ -245,7 +245,6 @@ object ContextCollapseLogic {
 
     /**
      * Builds a [ContextPartition] from a context map entry with standard defaults.
-     *
      */
     fun buildPartition(
         key: String,
@@ -275,7 +274,6 @@ object ContextCollapseLogic {
     // =========================================================================
     // =========================================================================
     // Partition Defaults
-    //
     // =========================================================================
 
     data class PartitionDefaults(
@@ -287,8 +285,6 @@ object ContextCollapseLogic {
 
     /**
      * Resolves defaults for well-known partition keys.
-     *
-     * TODO: Here is the offending code.
      *
      * Used by [buildPartition] (internal) and by [AgentCognitivePipeline.mergeIntoPartitions]
      * to assign collapse/priority properties when converting contextMap entries to

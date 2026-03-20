@@ -65,8 +65,7 @@ object PrivateSessionStrategy : CognitiveStrategy {
             identity()
             instructions()
             privateSessionRouting()
-            sessions(SessionFormat.PRIVATE)
-            place("MULTI_AGENT_CONTEXT")
+            sessions()
             everythingElse()
         }
 

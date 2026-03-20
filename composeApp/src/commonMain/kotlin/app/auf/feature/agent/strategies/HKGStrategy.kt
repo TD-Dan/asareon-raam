@@ -66,11 +66,8 @@ object HKGStrategy : CognitiveStrategy {
         PromptBuilder(context).apply {
             identity("You have access to a Holon Knowledge Graph (HKG) — your persistent memory and identity layer.")
             instructions()
-            place("HOLON_KNOWLEDGE_GRAPH_INDEX")
-            place("HOLON_KNOWLEDGE_GRAPH_FILES")
-            hkgNavigation()
+            place("HOLON_KNOWLEDGE_GRAPH")
             sessions()
-            place("MULTI_AGENT_CONTEXT")
             everythingElse()
         }
 
