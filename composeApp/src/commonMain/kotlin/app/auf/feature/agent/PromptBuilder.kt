@@ -29,7 +29,14 @@ sealed class PromptSection {
         val isCollapsible: Boolean = false,
         val priority: Int = 1000,
         val collapsedSummary: String? = null,
-        val truncateFromStart: Boolean = false
+        val truncateFromStart: Boolean = false,
+        /**
+         * If true, default collapse state is COLLAPSED when the key is absent from
+         * the agent's collapse overrides. Used by Group children (individual holons,
+         * workspace files) whose default is "closed until the agent opens them."
+         * Strategy-owned sections and top-level partitions default to EXPANDED (false).
+         */
+        val defaultCollapsed: Boolean = false
     ) : PromptSection()
 
     /**

@@ -221,10 +221,70 @@ object HkgContextFormatter {
     }
 
     /**
+     * Build the FILES section as a [PromptSection.Group] with per-holon children
+     * for the unified partition model. Each holon becomes an individually collapsible
+     * child [PromptSection.Section].
+     *
+     * The child key convention is `hkg:<holonId>`, matching the existing
+     * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
+     *
+     * Unlike [buildFilesSection] (which bakes collapse into string content),
+     * this method emits ALL holons as children — the collapse algorithm in
+     * [flattenWithCascade] handles visibility based on override state.
+     *
+     * @param hkgContext Raw HKG context map (holonId → raw JSON content string).
+     * @param collapseOverrides Agent's sticky collapse overrides.
+     * @param platformDependencies For logging.
+     */
+    fun buildFilesSections(
+        hkgContext: JsonObject,
+        collapseOverrides: Map<String, CollapseState>,
+        platformDependencies: PlatformDependencies? = null
+    ): PromptSection.Group {
+        val children = hkgContext.keys.sorted().map { holonId ->
+            val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull
+            if (rawContent == null) {
+                platformDependencies?.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "Holon '$holonId' content could not be read as a string. " +
+                            "It will appear in INDEX but be missing from FILES."
+                )
+            }
+            PromptSection.Section(
+                key = "hkg:$holonId",
+                content = rawContent ?: "[Content unavailable for holon '$holonId']",
+                isProtected = false,
+                isCollapsible = true,
+                priority = 0,
+                collapsedSummary = "[Holon '$holonId' file closed. Use agent.CONTEXT_UNCOLLAPSE to open.]",
+                defaultCollapsed = true
+            )
+        }
+
+        val expandedCount = hkgContext.keys.count { holonId ->
+            resolveCollapseState(holonId, collapseOverrides) == CollapseState.EXPANDED
+        }
+
+        return PromptSection.Group(
+            key = "HOLON_KNOWLEDGE_GRAPH_FILES",
+            header = if (children.isNotEmpty())
+                "Files currently open: $expandedCount of ${hkgContext.size}"
+            else "",
+            children = children,
+            isCollapsible = true,
+            priority = 0,
+            collapsedSummary = "[HKG files collapsed. Use agent.CONTEXT_UNCOLLAPSE with \"hkg:<holonId>\" to open specific holon files.]"
+        )
+    }
+
+    /**
      * Build the FILES section string (expanded holons only).
      *
      * @param hkgContext Raw HKG context map (holonId → raw JSON content string).
      * @param collapseOverrides Agent's sticky collapse overrides.
+     *
+     * @deprecated Use [buildFilesSections] for the structured partition model.
+     *   Retained during migration for backward compatibility.
      */
     fun buildFilesSection(
         hkgContext: JsonObject,

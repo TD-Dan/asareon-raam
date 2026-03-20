@@ -50,10 +50,91 @@ object ConversationLogFormatter {
     )
 
     /**
+     * Builds a [PromptSection.Group] with per-session children for the unified
+     * partition model. Each session becomes an individually collapsible child
+     * [PromptSection.Section], enabling per-session budget management and
+     * visibility in the Context Manager UI.
+     *
+     * The child key convention is `session:<uuid>`, matching the
+     * `contextCollapseOverrides` key space.
+     */
+    fun buildSections(
+        sessions: List<SessionLedgerSnapshot>,
+        platformDependencies: PlatformDependencies
+    ): PromptSection.Group {
+        if (sessions.isEmpty() || sessions.all { it.messages.isEmpty() }) {
+            return PromptSection.Group(
+                key = "CONVERSATION_LOG",
+                children = listOf(
+                    PromptSection.Section(
+                        key = "CONVERSATION_LOG:empty",
+                        content = "No messages in any subscribed session.",
+                        isProtected = true,
+                        isCollapsible = false
+                    )
+                ),
+                isCollapsible = true,
+                priority = 100,
+                collapsedSummary = "[Conversation collapsed — no messages]",
+                truncateFromStart = true
+            )
+        }
+
+        val children = sessions.map { session ->
+            val content = buildSessionContent(session, platformDependencies)
+            val messageCount = session.messages.size
+
+            PromptSection.Section(
+                key = "session:${session.sessionUUID}",
+                content = content,
+                isProtected = false,
+                isCollapsible = true,
+                priority = 100,
+                collapsedSummary = "[Session '${session.sessionName}' collapsed — $messageCount messages]",
+                truncateFromStart = true
+            )
+        }
+
+        val totalMessages = sessions.sumOf { it.messages.size }
+        return PromptSection.Group(
+            key = "CONVERSATION_LOG",
+            children = children,
+            isCollapsible = true,
+            priority = 100,
+            collapsedSummary = "[Conversation collapsed — $totalMessages messages across ${sessions.size} sessions. " +
+                    "Use agent.CONTEXT_UNCOLLAPSE to expand.]",
+            truncateFromStart = true
+        )
+    }
+
+    /**
+     * Builds the formatted content string for a single session's messages.
+     * Used by both [buildSections] (structured path) and [format] (legacy string path).
+     */
+    fun buildSessionContent(
+        session: SessionLedgerSnapshot,
+        platformDependencies: PlatformDependencies
+    ): String = buildString {
+        if (session.messages.isEmpty()) {
+            appendLine("(no messages)")
+        } else {
+            for (msg in session.messages) {
+                val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
+                append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp"))
+                appendLine(msg.content)
+                append(ContextDelimiters.h3End())
+            }
+        }
+    }
+
+    /**
      * Formats multiple session ledgers into a single structured conversation log.
      *
      * Returns raw content (no h1 wrapper — pipeline adds it via ContextDelimiters).
      * Each session is an h2 section with token count and collapse state badge.
+     *
+     * @deprecated Use [buildSections] for the structured partition model.
+     *   Retained during migration for backward compatibility.
      */
     fun format(
         sessions: List<SessionLedgerSnapshot>,
@@ -67,20 +148,7 @@ object ConversationLogFormatter {
         for (session in sessions) {
             val messageCount = session.messages.size
             val outputTag = if (session.isOutputSession) " | output: true" else ""
-
-            // Build session content to measure tokens
-            val sessionContent = buildString {
-                if (session.messages.isEmpty()) {
-                    appendLine("(no messages)")
-                } else {
-                    for (msg in session.messages) {
-                        val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
-                        append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp"))
-                        appendLine(msg.content)
-                        append(ContextDelimiters.h3End())
-                    }
-                }
-            }
+            val sessionContent = buildSessionContent(session, platformDependencies)
 
             val sessionLabel = "SESSION: ${session.sessionName} | uuid: ${session.sessionUUID} | $messageCount messages$outputTag"
             val state = if (session.messages.isEmpty()) ContextDelimiters.COLLAPSED else ContextDelimiters.EXPANDED

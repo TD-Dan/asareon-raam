@@ -193,11 +193,72 @@ object WorkspaceContextFormatter {
     }
 
     /**
+     * Build the WORKSPACE_FILES section as a [PromptSection.Group] with per-file
+     * children for the unified partition model. Each file becomes an individually
+     * collapsible child [PromptSection.Section].
+     *
+     * The child key convention is `ws:<relativePath>`, matching the existing
+     * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
+     *
+     * Unlike [buildFilesSection] (which bakes collapse into string content),
+     * this method emits ALL fetched files as children — the collapse algorithm in
+     * [flattenWithCascade] handles visibility based on override state.
+     *
+     * @param expandedFileContents Map of relative path → file content for files
+     *   that have been fetched (content is available for rendering).
+     * @param collapseOverrides Agent's sticky collapse overrides.
+     * @param platformDependencies For logging.
+     */
+    fun buildFilesSections(
+        expandedFileContents: Map<String, String>,
+        collapseOverrides: Map<String, CollapseState>,
+        platformDependencies: PlatformDependencies? = null
+    ): PromptSection.Group {
+        val children = expandedFileContents.keys.sorted().map { path ->
+            val content = expandedFileContents[path]
+            if (content == null) {
+                platformDependencies?.log(
+                    LogLevel.WARN, LOG_TAG,
+                    "File '$path' is in the fetched map but has null content. " +
+                            "It will appear in INDEX but be missing from FILES."
+                )
+            }
+            PromptSection.Section(
+                key = "ws:$path",
+                content = content ?: "[Content unavailable for file '$path']",
+                isProtected = false,
+                isCollapsible = true,
+                priority = 10,
+                collapsedSummary = "[File '$path' closed. Use agent.CONTEXT_UNCOLLAPSE to open.]",
+                defaultCollapsed = true
+            )
+        }
+
+        val expandedCount = expandedFileContents.keys.count { path ->
+            resolveCollapseState(path, collapseOverrides) == CollapseState.EXPANDED
+        }
+
+        return PromptSection.Group(
+            key = "WORKSPACE_FILES",
+            header = if (children.isNotEmpty())
+                "Files currently open: $expandedCount"
+            else "",
+            children = children,
+            isCollapsible = true,
+            priority = 10,
+            collapsedSummary = "[Workspace files collapsed. Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
+        )
+    }
+
+    /**
      * Build the WORKSPACE_FILES section string (expanded files only).
      *
      * @param expandedFileContents Map of relative path → file content for files that
      *   have been fetched. Only files whose collapse state is EXPANDED appear here.
      * @param collapseOverrides Agent's sticky collapse overrides.
+     *
+     * @deprecated Use [buildFilesSections] for the structured partition model.
+     *   Retained during migration for backward compatibility.
      */
     fun buildFilesSection(
         expandedFileContents: Map<String, String>,
