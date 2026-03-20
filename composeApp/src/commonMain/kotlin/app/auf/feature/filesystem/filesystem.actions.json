@@ -236,6 +236,27 @@
       ]
     },
     {
+      "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
+      "summary": "[SYSTEM] Open any system folder in the native OS file explorer.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "hidden": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "relative (\"app:\", \"user:\") or complete path in the OS filesystem.",
+            "default": ""
+          }
+        }
+      },
+      "required_permissions": [
+        "filesystem:system-files-read"
+      ]
+    },
+    {
       "action_name": "filesystem.NAVIGATE",
       "summary": "Requests to change the currently viewed directory path.",
       "public": false,
