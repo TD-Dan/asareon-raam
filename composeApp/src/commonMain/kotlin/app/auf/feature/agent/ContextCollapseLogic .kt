@@ -316,7 +316,6 @@ object ContextCollapseLogic {
         val tokens = ContextDelimiters.approxTokens(content.length)
         return when (key) {
             // Never auto-collapse
-            "HOLON_KNOWLEDGE_GRAPH_INDEX" -> PartitionDefaults(1000, false, content)
             "SESSION_METADATA" -> PartitionDefaults(1000, false, content)
             "WORKSPACE_INDEX" -> PartitionDefaults(50, false, content)
             "WORKSPACE_NAVIGATION" -> PartitionDefaults(50, false, content)
@@ -340,11 +339,8 @@ object ContextCollapseLogic {
                 "[Workspace files collapsed. Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
             )
 
-            // Low priority (heaviest partition, collapse first)
-            "HOLON_KNOWLEDGE_GRAPH_FILES" -> PartitionDefaults(
-                0, true,
-                "[HKG files collapsed. Use agent.CONTEXT_UNCOLLAPSE with \"hkg:<holonId>\" to open specific holon files.]"
-            )
+            // HKG — protected container, individual holons are collapsible children
+            "HOLON_KNOWLEDGE_GRAPH" -> PartitionDefaults(1000, false, content)
 
             // Unknown — lowest priority
             else -> PartitionDefaults(0, true, "[$key collapsed — ~$tokens tokens]")

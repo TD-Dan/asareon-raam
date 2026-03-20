@@ -177,46 +177,37 @@ private fun ContextManagementPane(
     store: Store,
     onViewContent: (String, String) -> Unit
 ) {
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Budget bar
-        item {
-            BudgetBar(
-                partitions = partitions,
-                totalChars = collapseResult.totalChars,
-                softBudgetChars = softBudgetChars,
-                maxBudgetChars = maxBudgetChars
-            )
-        }
+    Column {
+        // Budget bar — sticky at the top, outside the scrollable list
+        BudgetBar(
+            partitions = partitions,
+            totalChars = collapseResult.totalChars,
+            softBudgetChars = softBudgetChars,
+            maxBudgetChars = maxBudgetChars,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
+        )
 
-        // Persistence notice
-        item {
-            Text(
-                "Collapse settings persist across turns for this agent.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Partition cards — top-level only (children rendered inside groups)
+            val topLevel = partitions.filter { it.parentKey == null }
+            itemsIndexed(topLevel, key = { _, it -> it.key }) { index, partition ->
+                val children = partitions.filter { it.parentKey == partition.key }
+                PartitionCard(
+                    partition = partition,
+                    children = children,
+                    allPartitions = partitions,
+                    agentId = agentId,
+                    store = store,
+                    onViewContent = onViewContent,
+                    depth = 0,
+                    topLevelIndex = index
+                )
+            }
         }
-
-        // Partition cards — top-level only (children rendered inside groups)
-        val topLevel = partitions.filter { it.parentKey == null }
-        itemsIndexed(topLevel, key = { _, it -> it.key }) { index, partition ->
-            val children = partitions.filter { it.parentKey == partition.key }
-            PartitionCard(
-                partition = partition,
-                children = children,
-                allPartitions = partitions,
-                agentId = agentId,
-                store = store,
-                onViewContent = onViewContent,
-                depth = 0,
-                topLevelIndex = index
-            )
-        }
-    }
+    } // Column
 }
 
 // =============================================================================
@@ -229,7 +220,8 @@ private fun BudgetBar(
     partitions: List<ContextCollapseLogic.ContextPartition>,
     totalChars: Int,
     softBudgetChars: Int,
-    maxBudgetChars: Int
+    maxBudgetChars: Int,
+    modifier: Modifier = Modifier
 ) {
     val topLevel = partitions.filter { it.parentKey == null }
     // Build children map for recursive aggregation
@@ -254,7 +246,7 @@ private fun BudgetBar(
     var hoveredIndex by remember { mutableStateOf(-1) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (isOverSoft) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
             else MaterialTheme.colorScheme.surfaceVariant

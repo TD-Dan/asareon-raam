@@ -289,11 +289,24 @@ object HkgContextFormatter {
      *   whose `header` is the holon's own file content and whose `children` are
      *   the recursive results of its sub-holons.
      */
+    /**
+     * Recursively builds a [PromptSection] for a single holon.
+     *
+     * - **Leaf holon** (no children in the loaded set) → [PromptSection.Section]
+     * - **Branch holon** (has children in the loaded set) → [PromptSection.Group]
+     *   whose `header` is the holon's own file content and whose `children` are
+     *   the recursive results of its sub-holons.
+     *
+     * @param isRoot If true, this holon is marked protected (always visible, never
+     *   auto-collapsed by the budget algorithm, expanded by default). Only passed
+     *   for the root-level call — recursive children are always non-root.
+     */
     private fun buildHolonSection(
         summary: HolonSummary,
         hkgContext: JsonObject,
         headers: Map<String, HolonSummary>,
-        platformDependencies: PlatformDependencies?
+        platformDependencies: PlatformDependencies?,
+        isRoot: Boolean = false
     ): PromptSection {
         val holonId = summary.id
         val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull
@@ -315,16 +328,14 @@ object HkgContextFormatter {
             PromptSection.Section(
                 key = "hkg:$holonId",
                 content = content,
-                isProtected = false,
-                isCollapsible = true,
-                priority = 0,
+                isProtected = isRoot,
+                isCollapsible = !isRoot,
+                priority = if (isRoot) 1000 else 0,
                 collapsedSummary = "[${summary.type}: \"${summary.name}\" — file closed]",
-                defaultCollapsed = true
+                defaultCollapsed = !isRoot
             )
         } else {
             // Branch holon → Group
-            // Own file content lives in the Group header (shown when expanded).
-            // Children are nested Groups/Sections.
             val totalSubs = countSubHolons(holonId, headers)
             PromptSection.Group(
                 key = "hkg:$holonId",
@@ -332,12 +343,108 @@ object HkgContextFormatter {
                 children = childSummaries.map { child ->
                     buildHolonSection(child, hkgContext, headers, platformDependencies)
                 },
-                isCollapsible = true,
-                priority = 0,
+                isProtected = isRoot,
+                isCollapsible = !isRoot,
+                priority = if (isRoot) 1000 else 0,
                 collapsedSummary = "[${summary.type}: \"${summary.name}\" — $totalSubs sub-holons collapsed]",
-                defaultCollapsed = true
+                defaultCollapsed = !isRoot
             )
         }
+    }
+
+    /**
+     * Builds a single unified `HOLON_KNOWLEDGE_GRAPH` [PromptSection.Group] that
+     * consolidates INDEX, holon file tree, and NAVIGATION into one coherent structure.
+     *
+     * Replaces the former three-partition pattern:
+     * - `HOLON_KNOWLEDGE_GRAPH_INDEX` (flat Section)
+     * - `HOLON_KNOWLEDGE_GRAPH_FILES` (Group with tree)
+     * - `HKG NAVIGATION` (strategy-owned Section)
+     *
+     * ## Structure
+     *
+     * ```
+     * Group("HOLON_KNOWLEDGE_GRAPH")
+     *   ├─ Section("HOLON_KNOWLEDGE_GRAPH:INDEX")      ← protected, always visible
+     *   ├─ Group("hkg:persona-root")                   ← recursive holon tree
+     *   │    ├─ Section("hkg:memory-bank")
+     *   │    └─ Group("hkg:skills") ...
+     *   └─ Section("HOLON_KNOWLEDGE_GRAPH:NAVIGATION") ← protected, always visible
+     * ```
+     *
+     * @param hkgContext Raw HKG context map (holonId → raw JSON content string).
+     * @param headers Parsed holon headers with tree structure from [parseHolonHeaders].
+     * @param collapseOverrides Agent's sticky collapse overrides.
+     * @param personaName Display name for the INDEX header line.
+     * @param platformDependencies For logging.
+     */
+    fun buildUnifiedSection(
+        hkgContext: JsonObject,
+        headers: Map<String, HolonSummary>,
+        collapseOverrides: Map<String, CollapseState>,
+        personaName: String? = null,
+        protectRoots: Boolean = true,
+        platformDependencies: PlatformDependencies? = null
+    ): PromptSection.Group {
+        val roots = headers.values
+            .filter { it.parentId == null }
+            .sortedBy { it.id }
+
+        val expandedCount = hkgContext.keys.count { holonId ->
+            resolveCollapseState(holonId, collapseOverrides) == CollapseState.EXPANDED
+        }
+
+        // Header = INDEX tree + NAVIGATION commands (always visible with the Group)
+        val header = buildString {
+            append(buildIndexTree(headers, collapseOverrides, personaName))
+            appendLine()
+            appendLine()
+            append(buildNavigationContent())
+        }
+
+        // Children = only the holon file tree
+        val children = roots.map { root ->
+            buildHolonSection(root, hkgContext, headers, platformDependencies, isRoot = protectRoots)
+        }
+
+        return PromptSection.Group(
+            key = "HOLON_KNOWLEDGE_GRAPH",
+            header = header,
+            children = children,
+            isProtected = true,
+            isCollapsible = false,
+            priority = 1000,
+            collapsedSummary = "[Knowledge Graph collapsed — ${headers.size} holons. " +
+                    "Use agent.CONTEXT_UNCOLLAPSE with \"hkg:<holonId>\" to navigate.]"
+        )
+    }
+
+    /**
+     * Builds the HKG navigation command reference content.
+     * Extracted from PromptBuilder.hkgNavigation() to live with the formatter
+     * that owns the HKG context structure.
+     */
+    private fun buildNavigationContent(): String = buildString {
+        appendLine("Your Knowledge Graph is presented as an INDEX (tree overview) and holon files.")
+        appendLine("By default, all files are closed. Use these commands to navigate:")
+        appendLine()
+        appendLine("Open a single holon file:")
+        appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
+        appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "single" }""")
+        appendLine("```")
+        appendLine()
+        appendLine("Open a holon and all its children:")
+        appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
+        appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "subtree" }""")
+        appendLine("```")
+        appendLine()
+        appendLine("Close a holon file:")
+        appendLine("```auf_agent.CONTEXT_COLLAPSE")
+        appendLine("""{ "partitionKey": "hkg:<holonId>" }""")
+        appendLine("```")
+        appendLine()
+        appendLine("IMPORTANT: You must expand a holon file before writing to it.")
+        appendLine("The system will block writes to collapsed holons to prevent data loss.")
     }
 
     /**

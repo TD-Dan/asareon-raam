@@ -817,7 +817,7 @@ object AgentCognitivePipeline {
         val mergedOverrides = mutableMapOf<String, CollapseState>()
         mergedOverrides.putAll(statusInfo.contextCollapseOverrides)
 
-        // HKG two-partition view (INDEX + FILES)
+        // HKG — unified partition (INDEX + holon tree + NAVIGATION)
         if (hkgContext != null && hkgContext.isNotEmpty()) {
             val hkgHeaders = HkgContextFormatter.parseHolonHeaders(hkgContext, platformDependencies)
             // Auto-expand HKG root holons
@@ -830,12 +830,9 @@ object AgentCognitivePipeline {
                 platformDependencies.log(LogLevel.WARN, LOG_TAG,
                     "HKG for agent '${agentUuid}': No root holon found among ${hkgHeaders.size} holons.")
             }
-            contextMap["HOLON_KNOWLEDGE_GRAPH_INDEX"] = stringToSection(
-                "HOLON_KNOWLEDGE_GRAPH_INDEX",
-                HkgContextFormatter.buildIndexTree(hkgHeaders, mergedOverrides, personaName)
-            )
-            contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSections(
-                hkgContext, hkgHeaders, mergedOverrides, platformDependencies
+            contextMap["HOLON_KNOWLEDGE_GRAPH"] = HkgContextFormatter.buildUnifiedSection(
+                hkgContext, hkgHeaders, mergedOverrides, personaName,
+                platformDependencies = platformDependencies
             )
         }
 
@@ -1139,7 +1136,10 @@ object AgentCognitivePipeline {
      * suppress all descendant rendering (cascade semantics).
      *
      * ```
-     * - [ HOLON_KNOWLEDGE_GRAPH_FILES ] -
+     * - [ HOLON_KNOWLEDGE_GRAPH ] -
+     *   --- HOLON_KNOWLEDGE_GRAPH:INDEX [PROTECTED] ---
+     *   ...
+     *   ---
      *   --- hkg:persona-root [EXPANDED] ---
      *     --- hkg:memory-bank [COLLAPSED] ---
      *     ---
@@ -1149,7 +1149,10 @@ object AgentCognitivePipeline {
      *       ---
      *     --- END OF hkg:skills ---
      *   --- END OF hkg:persona-root ---
-     * - [ END OF HOLON_KNOWLEDGE_GRAPH_FILES ] -
+     *   --- HOLON_KNOWLEDGE_GRAPH:NAVIGATION [PROTECTED] ---
+     *   ...
+     *   ---
+     * - [ END OF HOLON_KNOWLEDGE_GRAPH ] -
      * ```
      *
      * @param partitions The full flat partition list including CONTEXT_BUDGET.
