@@ -241,7 +241,6 @@
       "public": true,
       "broadcast": true,
       "targeted": false,
-      "hidden": true,
       "payload_schema": {
         "type": "object",
         "properties": {

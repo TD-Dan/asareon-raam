@@ -79,6 +79,49 @@ class FileSystemFeature(
     }
 
     /**
+     * Resolves a system path string with optional "app:" or "user:" prefix into an absolute path.
+     *
+     * Recognised forms (fault-tolerant — leading separator after the colon is stripped):
+     *   "app:"           → APP_ZONE root
+     *   "app:logs"       → APP_ZONE/logs
+     *   "app:/logs"      → APP_ZONE/logs
+     *   "app:\logs"      → APP_ZONE/logs
+     *   "user:"          → USER_ZONE root
+     *   "user:Documents" → USER_ZONE/Documents
+     *
+     * Anything else (e.g. "/var/log", "C:\Users") is treated as an absolute path and
+     * passed through unchanged.
+     *
+     * A blank or empty input defaults to APP_ZONE root.
+     */
+    private fun resolveSystemPath(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) {
+            return platformDependencies.getBasePathFor(BasePath.APP_ZONE)
+        }
+
+        val sep = platformDependencies.pathSeparator
+
+        fun stripLeadingSeparator(s: String): String =
+            if (s.isNotEmpty() && (s[0] == '/' || s[0] == '\\')) s.substring(1) else s
+
+        val lowered = trimmed.lowercase()
+        return when {
+            lowered.startsWith("app:") -> {
+                val remainder = stripLeadingSeparator(trimmed.substring(4))
+                val base = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
+                if (remainder.isEmpty()) base else "$base$sep$remainder"
+            }
+            lowered.startsWith("user:") -> {
+                val remainder = stripLeadingSeparator(trimmed.substring(5))
+                val base = platformDependencies.getBasePathFor(BasePath.USER_ZONE)
+                if (remainder.isEmpty()) base else "$base$sep$remainder"
+            }
+            else -> trimmed
+        }
+    }
+
+    /**
      * Publishes a lightweight, privacy-safe broadcast notification after completing
      * a command-dispatchable action. Summaries MUST NOT include sandbox-internal paths.
      */
@@ -520,6 +563,28 @@ class FileSystemFeature(
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to open workspace folder '$fullPath': ${e.message}", e)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                         put("message", "Failed to open workspace folder: ${e.message}")
+                    }))
+                }
+            }
+            ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER -> {
+                val rawPath = action.payload
+                    ?.let { json.decodeFromJsonElement<PathPayload>(it) }
+                    ?.path
+                    ?: ""
+                val fullPath = resolveSystemPath(rawPath)
+                if (!platformDependencies.fileExists(fullPath)) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "OPEN_SYSTEM_FOLDER: path does not exist: '$fullPath'")
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
+                        put("message", "Folder does not exist: $fullPath")
+                    }))
+                    return
+                }
+                try {
+                    platformDependencies.openFolderInExplorer(fullPath)
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to open system folder '$fullPath': ${e.message}", e)
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
+                        put("message", "Failed to open system folder: ${e.message}")
                     }))
                 }
             }

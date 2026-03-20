@@ -635,9 +635,10 @@ class CommandBotFeature(
                 LogLevel.WARN, identity.handle,
                 "Blocked hidden action '$actionName' from '$originalSenderId'. Hidden actions are not user/agent-invocable."
             )
+            // Hide the action completely so existing actions cannot be discovered via probing
             postFeedbackToSession(
                 sessionId,
-                "[COMMAND BOT] Action '$actionName' is not available.",
+                "[COMMAND BOT ERROR] Unknown action: '$actionName'",
                 store
             )
             return

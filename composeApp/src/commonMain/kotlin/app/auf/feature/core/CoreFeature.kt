@@ -265,11 +265,6 @@ class CoreFeature(
                     }))
                 }
             }
-            ActionRegistry.Names.CORE_OPEN_LOGS_FOLDER -> {
-                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER, buildJsonObject {
-                    put("path", "logs")
-                }))
-            }
             ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<CopyToClipboardPayload>(it) }
                 payload?.let {

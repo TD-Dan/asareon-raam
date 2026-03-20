@@ -23,6 +23,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Composable
 fun AboutView(store: Store) {
@@ -153,8 +155,7 @@ fun AboutView(store: Store) {
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
-                    onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_OPEN_LOGS_FOLDER)) }
+                    onClick = { store.dispatch("core", Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject { put("path", "app:logs/") })) }
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text("Open Logs Folder")
