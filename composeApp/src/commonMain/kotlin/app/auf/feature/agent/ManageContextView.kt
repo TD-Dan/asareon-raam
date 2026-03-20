@@ -232,16 +232,16 @@ private fun BudgetBar(
     maxBudgetChars: Int
 ) {
     val topLevel = partitions.filter { it.parentKey == null }
-    // Pre-compute aggregate char counts: for expanded group containers, include children
-    val childCharsByParent = partitions
+    // Build children map for recursive aggregation
+    val childrenByParent = partitions
         .filter { it.parentKey != null }
         .groupBy { it.parentKey!! }
-        .mapValues { (_, children) -> children.sumOf { it.effectiveCharCount } }
-    fun aggregateChars(partition: ContextCollapseLogic.ContextPartition): Int =
-        if (partition.state == CollapseState.EXPANDED)
-            partition.effectiveCharCount + (childCharsByParent[partition.key] ?: 0)
-        else
-            partition.effectiveCharCount
+    // Recursively aggregate char counts: for expanded groups, include all descendants
+    fun aggregateChars(partition: ContextCollapseLogic.ContextPartition): Int {
+        if (partition.state == CollapseState.COLLAPSED) return partition.effectiveCharCount
+        val childSum = (childrenByParent[partition.key] ?: emptyList()).sumOf { aggregateChars(it) }
+        return partition.effectiveCharCount + childSum
+    }
 
     val totalTokens = totalChars / ContextDelimiters.CHARS_PER_TOKEN
     val softTokens = softBudgetChars / ContextDelimiters.CHARS_PER_TOKEN
@@ -341,13 +341,14 @@ private fun PartitionCard(
     depth: Int,
     topLevelIndex: Int = 0
 ) {
-    // For expanded group containers with children, show aggregate token count
+    // Recursively aggregate token count for expanded groups (includes all descendants)
     val isCollapsed = partition.state == CollapseState.COLLAPSED
-    val aggregateChars = if (!isCollapsed && children.isNotEmpty()) {
-        partition.effectiveCharCount + children.sumOf { it.effectiveCharCount }
-    } else {
-        partition.effectiveCharCount
+    fun recursiveChars(p: ContextCollapseLogic.ContextPartition): Int {
+        if (p.state == CollapseState.COLLAPSED) return p.effectiveCharCount
+        val childSum = allPartitions.filter { it.parentKey == p.key }.sumOf { recursiveChars(it) }
+        return p.effectiveCharCount + childSum
     }
+    val aggregateChars = recursiveChars(partition)
     val tokens = aggregateChars / ContextDelimiters.CHARS_PER_TOKEN
     val isProtected = !partition.isAutoCollapsible
 

@@ -43,6 +43,10 @@ sealed class PromptSection {
      * Collapse cascade (Red Team Fix F1):
      * - COLLAPSED → entire group replaced by [collapsedSummary], children excluded.
      * - EXPANDED → each child rendered per its own collapse state.
+     *
+     * @param defaultCollapsed If true, default state is COLLAPSED when the key is absent
+     *   from the agent's collapse overrides. Used for sub-holon groups whose default is
+     *   "closed until the agent opens them." Top-level Groups default to EXPANDED (false).
      */
     data class Group(
         val key: String,
@@ -52,7 +56,8 @@ sealed class PromptSection {
         val isCollapsible: Boolean = true,
         val priority: Int = 0,
         val collapsedSummary: String? = null,
-        val truncateFromStart: Boolean = false
+        val truncateFromStart: Boolean = false,
+        val defaultCollapsed: Boolean = false
     ) : PromptSection()
 
     data class GatheredRef(

@@ -68,7 +68,9 @@
 
 - thinking reporting: update agent current status. Upgrade status as two part status:current_task.
 
-- streaming support
+- streaming support for gateways
+
+- show big < and > arrowbuttons when more content available in the permissions manager
 
 ## HIGH PRIORITY:
 

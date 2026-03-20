@@ -193,22 +193,32 @@ object WorkspaceContextFormatter {
     }
 
     /**
-     * Build the WORKSPACE_FILES section as a [PromptSection.Group] with per-file
-     * children for the unified partition model. Each file becomes an individually
-     * collapsible child [PromptSection.Section].
+     * Build the WORKSPACE_FILES section as a [PromptSection.Group] whose internal
+     * structure mirrors the actual directory tree. Directories become nested
+     * [PromptSection.Group]s; files become [PromptSection.Section]s.
      *
      * The child key convention is `ws:<relativePath>`, matching the existing
      * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
      *
-     * Creates children for ALL files in the listing, not just fetched ones:
-     * - Files with fetched content → Section with real content
-     * - Files without fetched content → Section with placeholder
+     * ## Tree rendering example
      *
-     * All children default to COLLAPSED (`defaultCollapsed = true`). The agent
-     * opens individual files via CONTEXT_UNCOLLAPSE, which triggers a file read
-     * and re-assembly.
+     * ```
+     * Group("WORKSPACE_FILES")
+     *   ├─ Section("ws:config.yaml")                 ← root-level file
+     *   └─ Group("ws:src/")                          ← directory
+     *        ├─ Section("ws:src/main.kt")            ← file in src/
+     *        └─ Group("ws:src/util/")                ← sub-directory
+     *             └─ Section("ws:src/util/helpers.kt")
+     * ```
      *
-     * @param entries All workspace file entries from [parseListingEntries].
+     * Collapsing `ws:src/` in the Context Manager hides the entire subtree.
+     * The budget algorithm can shed entire directories.
+     *
+     * All entries default to COLLAPSED (`defaultCollapsed = true`). The agent opens
+     * them via CONTEXT_UNCOLLAPSE. Root directories are auto-expanded by the pipeline
+     * via `effectiveOverrides`.
+     *
+     * @param entries All workspace entries from [parseListingEntries] (files AND directories).
      * @param expandedFileContents Map of relative path → file content for files
      *   that have been fetched (content is available for rendering).
      * @param collapseOverrides Agent's sticky collapse overrides.
@@ -220,40 +230,78 @@ object WorkspaceContextFormatter {
         collapseOverrides: Map<String, CollapseState>,
         platformDependencies: PlatformDependencies? = null
     ): PromptSection.Group {
-        // Create children for ALL files in the listing (not just fetched ones)
-        val fileEntries = entries.filter { !it.isDirectory }.sortedBy { it.relativePath }
-        val children = fileEntries.map { entry ->
-            val path = entry.relativePath
-            val fetchedContent = expandedFileContents[path]
-            // Files with fetched content get real content; others get a placeholder
-            // that the collapse algorithm will show when COLLAPSED (the default).
-            val content = fetchedContent ?: "[File not loaded. Use agent.CONTEXT_UNCOLLAPSE to open.]"
+        val childrenMap = buildChildrenMap(entries)
 
-            PromptSection.Section(
-                key = "ws:$path",
-                content = content,
-                isProtected = false,
-                isCollapsible = true,
-                priority = 10,
-                collapsedSummary = "[File '$path' closed. Use agent.CONTEXT_UNCOLLAPSE to open.]",
-                defaultCollapsed = true
-            )
-        }
+        // Build root-level children (parentPath == null)
+        val rootEntries = (childrenMap[null] ?: emptyList())
+            .sortedWith(compareBy({ !it.isDirectory }, { it.name }))
 
-        val expandedCount = fileEntries.count { entry ->
-            resolveCollapseState(entry.relativePath, collapseOverrides) == CollapseState.EXPANDED
+        val totalFiles = entries.count { !it.isDirectory }
+        val expandedCount = entries.count { entry ->
+            !entry.isDirectory && resolveCollapseState(entry.relativePath, collapseOverrides) == CollapseState.EXPANDED
         }
 
         return PromptSection.Group(
             key = "WORKSPACE_FILES",
-            header = if (children.isNotEmpty())
-                "Workspace: ${children.size} files | $expandedCount open"
+            header = if (totalFiles > 0)
+                "Workspace: $totalFiles files, ${entries.count { it.isDirectory }} directories | $expandedCount files open"
             else "",
-            children = children,
+            children = rootEntries.map { entry ->
+                buildEntrySection(entry, entries, childrenMap, expandedFileContents, platformDependencies)
+            },
             isCollapsible = true,
             priority = 10,
-            collapsedSummary = "[Workspace files collapsed — ${children.size} files. Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
+            collapsedSummary = "[Workspace files collapsed — $totalFiles files. " +
+                    "Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
         )
+    }
+
+    /**
+     * Recursively builds a [PromptSection] for a single workspace entry.
+     *
+     * - **Directory** → [PromptSection.Group] whose children are the directory's
+     *   immediate contents (sub-directories and files), built recursively.
+     * - **File** → [PromptSection.Section] with fetched content or a placeholder.
+     */
+    private fun buildEntrySection(
+        entry: WorkspaceEntry,
+        allEntries: List<WorkspaceEntry>,
+        childrenMap: Map<String?, List<WorkspaceEntry>>,
+        expandedFileContents: Map<String, String>,
+        platformDependencies: PlatformDependencies?
+    ): PromptSection {
+        return if (entry.isDirectory) {
+            // Directory → Group
+            val dirChildren = (childrenMap[entry.relativePath] ?: emptyList())
+                .sortedWith(compareBy({ !it.isDirectory }, { it.name }))
+            val itemCount = countItemsUnder(entry.relativePath, allEntries)
+
+            PromptSection.Group(
+                key = "ws:${entry.relativePath}",
+                header = "",  // no own content for directories
+                children = dirChildren.map { child ->
+                    buildEntrySection(child, allEntries, childrenMap, expandedFileContents, platformDependencies)
+                },
+                isCollapsible = true,
+                priority = 10,
+                collapsedSummary = "[${entry.name}/ — $itemCount items. Use agent.CONTEXT_UNCOLLAPSE to expand.]",
+                defaultCollapsed = true
+            )
+        } else {
+            // File → Section
+            val content = expandedFileContents[entry.relativePath]
+                ?: "[File not loaded. Use agent.CONTEXT_UNCOLLAPSE to open.]"
+
+            PromptSection.Section(
+                key = "ws:${entry.relativePath}",
+                content = content,
+                isProtected = false,
+                isCollapsible = true,
+                priority = 10,
+                collapsedSummary = "[${entry.name} — file closed]",
+                defaultCollapsed = true
+            )
+        }
     }
 
     /**

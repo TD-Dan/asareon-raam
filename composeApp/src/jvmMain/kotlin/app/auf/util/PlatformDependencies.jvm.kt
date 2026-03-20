@@ -81,8 +81,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         if (!root.isDirectory) throw IOException("Path is not a directory: $path")
 
         return root.walkTopDown()
-            .filter { it.isFile }
-            .map { FileEntry(it.absolutePath, isDirectory = false, lastModified = it.lastModified()) }
+            .filter { it != root }
+            .map { FileEntry(it.absolutePath, isDirectory = it.isDirectory, lastModified = it.lastModified()) }
             .toList()
     }
 

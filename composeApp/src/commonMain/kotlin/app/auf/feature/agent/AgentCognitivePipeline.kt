@@ -835,7 +835,7 @@ object AgentCognitivePipeline {
                 HkgContextFormatter.buildIndexTree(hkgHeaders, mergedOverrides, personaName)
             )
             contextMap["HOLON_KNOWLEDGE_GRAPH_FILES"] = HkgContextFormatter.buildFilesSections(
-                hkgContext, mergedOverrides, platformDependencies
+                hkgContext, hkgHeaders, mergedOverrides, platformDependencies
             )
         }
 
@@ -1063,7 +1063,8 @@ object AgentCognitivePipeline {
             when (section) {
                 is PromptSection.Section -> result.add(sectionToPartition(section, parentKey, overrides))
                 is PromptSection.Group -> {
-                    val groupState = overrides[section.key] ?: CollapseState.EXPANDED
+                    val defaultState = if (section.defaultCollapsed) CollapseState.COLLAPSED else CollapseState.EXPANDED
+                    val groupState = overrides[section.key] ?: defaultState
                     val collapsedSummary = section.collapsedSummary
                         ?: "[${section.key} collapsed — use CONTEXT_UNCOLLAPSE to expand]"
 
@@ -1134,22 +1135,31 @@ object AgentCognitivePipeline {
     /**
      * Assembles the final system prompt string from collapsed partitions.
      *
-     * Top-level partitions (parentKey == null) get h1 headers. Children (parentKey != null)
-     * get h2 headers and are rendered INSIDE their parent's h1 delimiters. This produces
-     * the correct nesting:
+     * Rendering is recursive and depth-aware to support nested holon trees:
+     * - Depth 0 → h1 (top-level partitions)
+     * - Depth 1 → h2 (sessions, holons, files within a group)
+     * - Depth 2 → h3 (sub-holons within a holon)
+     * - Depth 3+ → h4 (capped — deepest level supported by ContextDelimiters)
+     *
+     * Children are rendered INSIDE their parent's delimiters. Collapsed parents
+     * suppress all descendant rendering (cascade semantics).
      *
      * ```
-     * - [ CONVERSATION_LOG ] (~12,400 tokens) [EXPANDED] -
-     *   --- session:abc (~8,200 tokens) [EXPANDED] ---
-     *   ... messages ...
-     *   --- END OF session:abc ---
-     * - [ END OF CONVERSATION_LOG ] -
+     * - [ HOLON_KNOWLEDGE_GRAPH_FILES ] -
+     *   --- hkg:persona-root [EXPANDED] ---
+     *     --- hkg:memory-bank [COLLAPSED] ---
+     *     ---
+     *     --- hkg:skills [EXPANDED] ---
+     *       --- hkg:skill-writing [EXPANDED] ---
+     *       ...
+     *       ---
+     *     --- END OF hkg:skills ---
+     *   --- END OF hkg:persona-root ---
+     * - [ END OF HOLON_KNOWLEDGE_GRAPH_FILES ] -
      * ```
      *
-     * CONTEXT_BUDGET is a real partition in the list (no special-case append).
-     *
-     * @param partitions The full partition list including CONTEXT_BUDGET.
-     * @param truncatedKeys Keys of partitions that were truncated by the sentinel.
+     * @param partitions The full flat partition list including CONTEXT_BUDGET.
+     * @param truncatedKeys Keys of partitions truncated by the sentinel.
      */
     private fun assemblePromptString(
         partitions: List<ContextCollapseLogic.ContextPartition>,
@@ -1168,42 +1178,65 @@ object AgentCognitivePipeline {
             else -> ContextDelimiters.COLLAPSED
         }
 
+        /** Recursively compute total chars for a partition and all its visible descendants. */
+        fun totalCharsRecursive(partition: ContextCollapseLogic.ContextPartition): Int {
+            val ownContent = if (partition.state == CollapseState.EXPANDED) partition.fullContent else partition.collapsedContent
+            val ownChars = ownContent.length
+            if (partition.state == CollapseState.COLLAPSED) return ownChars
+            val childChars = (childrenByParent[partition.key] ?: emptyList()).sumOf { totalCharsRecursive(it) }
+            return ownChars + childChars
+        }
+
+        /** Depth-aware open delimiter. */
+        fun openDelimiter(key: String, chars: Int, badge: String, depth: Int): String = when (depth) {
+            0 -> ContextDelimiters.h1(key, chars, badge)
+            1 -> ContextDelimiters.h2(key, chars, badge)
+            2 -> ContextDelimiters.h3(key, chars, badge)
+            else -> ContextDelimiters.h4(key, chars, badge)
+        }
+
+        /** Depth-aware close delimiter. */
+        fun closeDelimiter(key: String, depth: Int): String = when (depth) {
+            0 -> ContextDelimiters.h1End(key)
+            1 -> ContextDelimiters.h2End(key)
+            2 -> ContextDelimiters.h3End()
+            else -> ContextDelimiters.h4End()
+        }
+
+        /** Recursively render a partition and its children into the StringBuilder. */
+        fun StringBuilder.renderPartition(
+            partition: ContextCollapseLogic.ContextPartition,
+            depth: Int
+        ) {
+            val isCollapsed = partition.state == CollapseState.COLLAPSED
+            val rawContent = if (!isCollapsed) partition.fullContent else partition.collapsedContent
+            val children = if (!isCollapsed) childrenByParent[partition.key] ?: emptyList() else emptyList()
+
+            // Skip entirely empty partitions
+            if (rawContent.isBlank() && children.isEmpty()) return
+
+            val totalChars = totalCharsRecursive(partition)
+
+            // Open
+            append(openDelimiter(partition.key, totalChars, stateBadge(partition), depth))
+
+            // Own content
+            if (rawContent.isNotBlank()) {
+                append(rawContent)
+            }
+
+            // Children (recursive — depth increases)
+            for (child in children) {
+                renderPartition(child, depth + 1)
+            }
+
+            // Close
+            append(closeDelimiter(partition.key, depth))
+        }
+
         val body = buildString {
             for (partition in topLevel) {
-                val isCollapsed = partition.state == CollapseState.COLLAPSED
-                val rawContent = if (!isCollapsed) partition.fullContent else partition.collapsedContent
-                // Children only rendered when parent is expanded (cascade semantics)
-                val children = if (!isCollapsed) childrenByParent[partition.key] ?: emptyList() else emptyList()
-
-                // Compute total chars for the h1 header: own content + visible children
-                val childrenChars = children.sumOf { child ->
-                    val childContent = if (child.state == CollapseState.EXPANDED) child.fullContent else child.collapsedContent
-                    childContent.length
-                }
-                val totalChars = rawContent.length + childrenChars
-
-                // Skip entirely empty partitions (no own content AND no children)
-                if (rawContent.isBlank() && children.isEmpty()) continue
-
-                // Open h1
-                append(ContextDelimiters.h1(partition.key, totalChars, stateBadge(partition)))
-
-                // Own content (header text for group containers, full content for leaf partitions)
-                if (rawContent.isNotBlank()) {
-                    append(rawContent)
-                }
-
-                // Render children as h2 inside this h1 (only when parent is expanded)
-                for (child in children) {
-                    val childContent = if (child.state == CollapseState.EXPANDED) child.fullContent else child.collapsedContent
-                    if (childContent.isBlank()) continue
-                    append(ContextDelimiters.h2(child.key, childContent.length, stateBadge(child)))
-                    append(childContent)
-                    append(ContextDelimiters.h2End(child.key))
-                }
-
-                // Close h1
-                append(ContextDelimiters.h1End(partition.key))
+                renderPartition(partition, depth = 0)
             }
         }
         return ContextDelimiters.wrapSystemPrompt(body)
