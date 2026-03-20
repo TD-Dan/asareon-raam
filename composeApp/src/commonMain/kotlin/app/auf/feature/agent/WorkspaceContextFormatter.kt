@@ -200,32 +200,38 @@ object WorkspaceContextFormatter {
      * The child key convention is `ws:<relativePath>`, matching the existing
      * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
      *
-     * Unlike [buildFilesSection] (which bakes collapse into string content),
-     * this method emits ALL fetched files as children — the collapse algorithm in
-     * [flattenWithCascade] handles visibility based on override state.
+     * Creates children for ALL files in the listing, not just fetched ones:
+     * - Files with fetched content → Section with real content
+     * - Files without fetched content → Section with placeholder
      *
+     * All children default to COLLAPSED (`defaultCollapsed = true`). The agent
+     * opens individual files via CONTEXT_UNCOLLAPSE, which triggers a file read
+     * and re-assembly.
+     *
+     * @param entries All workspace file entries from [parseListingEntries].
      * @param expandedFileContents Map of relative path → file content for files
      *   that have been fetched (content is available for rendering).
      * @param collapseOverrides Agent's sticky collapse overrides.
      * @param platformDependencies For logging.
      */
     fun buildFilesSections(
+        entries: List<WorkspaceEntry>,
         expandedFileContents: Map<String, String>,
         collapseOverrides: Map<String, CollapseState>,
         platformDependencies: PlatformDependencies? = null
     ): PromptSection.Group {
-        val children = expandedFileContents.keys.sorted().map { path ->
-            val content = expandedFileContents[path]
-            if (content == null) {
-                platformDependencies?.log(
-                    LogLevel.WARN, LOG_TAG,
-                    "File '$path' is in the fetched map but has null content. " +
-                            "It will appear in INDEX but be missing from FILES."
-                )
-            }
+        // Create children for ALL files in the listing (not just fetched ones)
+        val fileEntries = entries.filter { !it.isDirectory }.sortedBy { it.relativePath }
+        val children = fileEntries.map { entry ->
+            val path = entry.relativePath
+            val fetchedContent = expandedFileContents[path]
+            // Files with fetched content get real content; others get a placeholder
+            // that the collapse algorithm will show when COLLAPSED (the default).
+            val content = fetchedContent ?: "[File not loaded. Use agent.CONTEXT_UNCOLLAPSE to open.]"
+
             PromptSection.Section(
                 key = "ws:$path",
-                content = content ?: "[Content unavailable for file '$path']",
+                content = content,
                 isProtected = false,
                 isCollapsible = true,
                 priority = 10,
@@ -234,19 +240,19 @@ object WorkspaceContextFormatter {
             )
         }
 
-        val expandedCount = expandedFileContents.keys.count { path ->
-            resolveCollapseState(path, collapseOverrides) == CollapseState.EXPANDED
+        val expandedCount = fileEntries.count { entry ->
+            resolveCollapseState(entry.relativePath, collapseOverrides) == CollapseState.EXPANDED
         }
 
         return PromptSection.Group(
             key = "WORKSPACE_FILES",
             header = if (children.isNotEmpty())
-                "Files currently open: $expandedCount"
+                "Workspace: ${children.size} files | $expandedCount open"
             else "",
             children = children,
             isCollapsible = true,
             priority = 10,
-            collapsedSummary = "[Workspace files collapsed. Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
+            collapsedSummary = "[Workspace files collapsed — ${children.size} files. Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
         )
     }
 

@@ -886,10 +886,14 @@ object AgentCognitivePipeline {
                     "WORKSPACE_INDEX",
                     WorkspaceContextFormatter.buildIndexTree(wsEntries, mergedOverrides)
                 )
+                // Always create WORKSPACE_FILES Group when files exist in listing.
+                // Children are created for ALL files (collapsed by default).
+                // Expanded files get real content; others get a placeholder.
                 val fileContents = statusInfo.transientWorkspaceFileContents
-                if (fileContents.isNotEmpty()) {
+                val hasFiles = wsEntries.any { !it.isDirectory }
+                if (hasFiles) {
                     contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSections(
-                        fileContents, mergedOverrides, platformDependencies
+                        wsEntries, fileContents, mergedOverrides, platformDependencies
                     )
                 }
             }
