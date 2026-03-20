@@ -46,11 +46,11 @@ class SessionFeature(
     @Serializable private data class InputDraftChangedPayload(val sessionId: String, val draft: String)
     @Serializable private data class HistoryNavigatePayload(val sessionId: String, val direction: String)
 
-    // --- SLICE 4: New payload types for agent-facing message targeting ---
+    // --- Payload types for agent-facing message targeting ---
     @Serializable private data class LockMessagePayload(val session: String, val senderId: String, val timestamp: String)
     @Serializable private data class DeleteMessageExtPayload(val session: String, val messageId: String? = null, val senderId: String? = null, val timestamp: String? = null)
 
-    // --- Phase 4: Payload for RETURN_REGISTER_IDENTITY (from CoreFeature) ---
+    // --- Payload for RETURN_REGISTER_IDENTITY (from CoreFeature) ---
     @Serializable private data class RegisterIdentityResponsePayload(
         val success: Boolean,
         val requestedLocalHandle: String? = null,
@@ -924,7 +924,7 @@ class SessionFeature(
                 )
             }
 
-            // Phase 4: SESSION_CREATE stashes a PendingSessionCreation — no session in the map yet
+            // SESSION_CREATE stashes a PendingSessionCreation — no session in the map yet
             ActionRegistry.Names.SESSION_CREATE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<CreatePayload>(it) } ?: CreatePayload()
                 val desiredName = decoded.name?.takeIf { it.isNotBlank() } ?: "New Session"
@@ -943,7 +943,7 @@ class SessionFeature(
                 )
             }
 
-            // Phase 4: SESSION_CLONE stashes a PendingSessionCreation with clone source
+            // SESSION_CLONE stashes a PendingSessionCreation with clone source
             ActionRegistry.Names.SESSION_CLONE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<ClonePayload>(it) } ?: return currentFeatureState
                 val sourceLocalHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
@@ -965,7 +965,7 @@ class SessionFeature(
                 )
             }
 
-            // Phase 4: RETURN_REGISTER_IDENTITY — create session from pending or remove pending on failure
+            // RETURN_REGISTER_IDENTITY — create session from pending or remove pending on failure
             ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 val resp = payload?.let { json.decodeFromJsonElement<RegisterIdentityResponsePayload>(it) }
                     ?: return currentFeatureState
@@ -1029,7 +1029,7 @@ class SessionFeature(
                 }
             }
 
-            // Phase 4: RETURN_UPDATE_IDENTITY — reconcile handle change
+            // RETURN_UPDATE_IDENTITY — reconcile handle change
             ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
                 val resp = payload?.let { json.decodeFromJsonElement<UpdateIdentityResponsePayload>(it) }
                     ?: return currentFeatureState
@@ -1221,7 +1221,7 @@ class SessionFeature(
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))
             }
 
-            // --- SLICE 4: LOCK_MESSAGE / UNLOCK_MESSAGE reducer ---
+            // --- LOCK_MESSAGE / UNLOCK_MESSAGE reducer ---
             ActionRegistry.Names.SESSION_LOCK_MESSAGE, ActionRegistry.Names.SESSION_UNLOCK_MESSAGE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<LockMessagePayload>(it) } ?: return currentFeatureState
                 val localHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
