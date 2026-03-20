@@ -28,18 +28,9 @@ plugins {
 
 
 // ============================================================================
-// Phase 1 — generateActionRegistry Gradle task (with permissions support)
+// generateActionRegistry Gradle task
 // ============================================================================
-// Reads the unified *.actions.json format and generates:
-//   1. ActionRegistry.kt — the unified registry (single source of truth)
-//   2. ActionNames.kt — typealias + old→new name compat shim
-//
-// Phase 1 additions:
-//   - Parses "permissions" array from manifests (objects with key/description/dangerLevel)
-//   - Validates dangerLevel is LOW/CAUTION/DANGER
-//   - Validates permission keys contain exactly one colon
-//   - Cross-references required_permissions against declared keys
-//   - Generates PermissionDeclaration data class and permissionDeclarations map
+// Reads the unified *.actions.json format and generates ActionRegistry.kt.
 // ============================================================================
 
 tasks.register("generateActionRegistry") {
@@ -94,8 +85,8 @@ tasks.register("generateActionRegistry") {
                         ?: throw GradleException("Missing feature_name in ${manifestFile.path}")
                     val featureSummary = manifest["summary"]?.jsonPrimitive?.content ?: ""
 
-                    // ====== Parse permissions declarations (Phase 1) ======
-                    // New format: array of objects with key, description, dangerLevel
+                    // ====== Parse permissions declarations ======
+
                     val permissionsArray = manifest["permissions"] as? JsonArray
                     val permissionDeclarations = mutableListOf<Map<String, String>>()
 
@@ -237,8 +228,8 @@ tasks.register("generateActionRegistry") {
                             }
                         }
 
-                        // Phase 2.B: Parse agent_exposure → extract sandbox_rule and auto_fill_rules
-                        // as top-level fields. AgentExposure wrapper removed; requiresApproval deprecated.
+                        // Parse agent_exposure → extract sandbox_rule and auto_fill_rules
+                        // as top-level fields.
                         val agentExposureObj = obj["agent_exposure"] as? JsonObject
 
                         val autoFillRules: Map<String, String> = if (agentExposureObj != null) {
@@ -316,7 +307,7 @@ tasks.register("generateActionRegistry") {
             }
         }
 
-        // ====== Phase 2.B Post-migration: Enforce required_permissions on public actions ======
+        // ====== Enforce required_permissions on public actions ======
         // Public actions MUST declare required_permissions explicitly because any originator
         // (including non-trusted user/agent identities) can dispatch them. Non-public actions
         // are restricted to the owning feature (Step 2 authorization), and feature identities
@@ -338,7 +329,7 @@ tasks.register("generateActionRegistry") {
         // Generate ActionRegistry.kt
         // ============================================================
 
-        // Section 1: Name constants
+        // Section: Name constants
         val nameConstants = allActions.joinToString("\n") { action ->
             val constName = toConstName(action["fullName"] as String)
             "        const val $constName = \"${action["fullName"]}\""
@@ -349,7 +340,7 @@ tasks.register("generateActionRegistry") {
             "            $constName"
         }
 
-        // Section 3: Feature descriptors
+        // Section: Feature descriptors
         val sortedFeatures = featureMap.values.sortedBy { it["name"] as String }
         val featureEntries = sortedFeatures.joinToString(",\n") { feature ->
             @Suppress("UNCHECKED_CAST")
@@ -375,7 +366,7 @@ tasks.register("generateActionRegistry") {
                 val reqFieldsStr = if (reqFields.isEmpty()) "emptyList()"
                 else "listOf(${reqFields.joinToString(", ") { "\"$it\"" }})"
 
-                // Phase 2.B: autoFillRules and sandboxRule as top-level fields
+                // autoFillRules and sandboxRule as top-level fields
                 @Suppress("UNCHECKED_CAST")
                 val autoFills = action["autoFillRules"] as? Map<String, String> ?: emptyMap()
                 val autoFillStr = if (autoFills.isEmpty()) "emptyMap()"
