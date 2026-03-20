@@ -59,11 +59,12 @@ object AgentCognitivePipeline {
         }
 
         // Collect all sessions to request ledger from.
-        // For agents with subscribedSessionIds, request from all of them.
-        // For agents with no subscriptions, fall back to outputSessionId.
-        val sessionsToRequest = agent.subscribedSessionIds.ifEmpty {
-            listOfNotNull(agent.outputSessionId)
-        }
+        // Always include subscribedSessionIds + outputSessionId (if not already subscribed).
+        // This ensures auto-managed private/cognition sessions are visible in context.
+        val sessionsToRequest = buildSet {
+            addAll(agent.subscribedSessionIds)
+            agent.outputSessionId?.let { add(it) }
+        }.toList()
 
         if (sessionsToRequest.isEmpty()) {
             val msg = "Cannot start turn: Agent has no session for context."
@@ -927,7 +928,13 @@ object AgentCognitivePipeline {
         identityRegistry: Map<String, Identity>
     ): List<SessionInfo> {
         val agentUuid = agent.identityUUID
-        return agent.subscribedSessionIds.mapNotNull { sessUUID ->
+        // Include all subscribed sessions + outputSessionId (if not already subscribed).
+        // This ensures auto-managed private/cognition sessions appear in context.
+        val allSessionIds = buildSet {
+            addAll(agent.subscribedSessionIds)
+            outputSessionUUID?.let { add(it) }
+        }
+        return allSessionIds.mapNotNull { sessUUID ->
             val sessIdentity = identityRegistry.findByUUID(sessUUID)
             val sessMessages = sessionLedgers[sessUUID] ?: emptyList()
             val participants = sessMessages.groupBy { it.senderId }.map { (senderId, messages) ->

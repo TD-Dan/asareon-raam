@@ -128,54 +128,60 @@ object ConversationLogFormatter {
     }
 
     /**
-     * Builds the SESSIONS header: subscription list, multi-agent roster, format instructions.
+     * Builds the SESSIONS header: summary line, subscription list with per-session
+     * participant rosters, routing instructions, and message format notice.
      */
     private fun buildSessionsHeader(
         sessions: List<SessionLedgerSnapshot>,
         sessionInfos: List<SessionInfo>,
         isPrivateFormat: Boolean
     ): String = buildString {
-        // 1. Subscription list
-        if (sessionInfos.isNotEmpty()) {
-            appendLine("Subscribed sessions:")
-            sessionInfos.forEach { session ->
-                if (isPrivateFormat) {
-                    val tag = if (session.isOutput) {
-                        "PRIVATE — Your direct output is routed here, invisible to others"
-                    } else {
-                        "PUBLIC — Use session.POST to communicate here"
-                    }
-                    appendLine("  - ${session.name} (${session.handle}) [$tag] | ${session.messageCount} messages")
-                    if (session.participants.isNotEmpty()) {
-                        session.participants.forEach { p ->
-                            appendLine("      ${p.senderName} (${p.senderId}): ${p.type}, ${p.messageCount} messages")
-                        }
-                    }
-                } else {
-                    val primaryTag = if (session.isOutput) {
-                        " [PRIMARY — Your output and tool results are routed here]"
-                    } else ""
-                    appendLine("  - ${session.name} (${session.handle})$primaryTag")
+        if (sessionInfos.isEmpty()) return@buildString
+
+        // 1. Summary line
+        val sessionCount = sessionInfos.size
+        val totalParticipants = sessionInfos
+            .flatMap { it.participants }
+            .distinctBy { it.senderId }
+            .size
+        val sessionWord = if (sessionCount == 1) "1 session" else "$sessionCount sessions"
+        appendLine("You are participating in $sessionWord with $totalParticipants participants.")
+
+        // 2. Subscription list with per-session participants
+        appendLine("Subscribed sessions:")
+        sessionInfos.forEach { session ->
+            val tag = when {
+                isPrivateFormat && session.isOutput ->
+                    " [PRIVATE — Your direct output is routed here, invisible to others]"
+                isPrivateFormat ->
+                    " [Use session.POST to publish here]"
+                session.isOutput ->
+                    " [PRIMARY — Your output and tool results are routed here]"
+                else ->
+                    " [Use session.POST to publish here]"
+            }
+            appendLine("  - ${session.name} (${session.handle})$tag")
+            if (session.participants.isNotEmpty()) {
+                session.participants.forEach { p ->
+                    appendLine("    - ${p.senderName} (${p.senderId}): ${p.type} (${p.messageCount} messages)")
                 }
             }
-            if (!isPrivateFormat) {
-                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
-            }
-            appendLine()
         }
 
-        // 2. Multi-agent participant roster (only when >2 distinct participants)
-        val allParticipants = extractParticipants(sessions)
-        if (allParticipants.size > 2) {
-            appendLine("MULTI-AGENT ENVIRONMENT:")
-            appendLine("This is a multi-agent conversation with the following participants:")
-            sessionInfos.flatMap { it.participants }.distinctBy { it.senderId }.forEach { p ->
-                appendLine("  - ${p.senderName} (${p.senderId}): ${p.type}")
+        // 3. Routing instructions
+        appendLine()
+        if (isPrivateFormat) {
+            appendLine("You observe messages from all subscribed sessions. Your direct response goes to your private session.")
+            appendLine("Use session.POST to publish to public sessions.")
+        } else {
+            appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
+            if (sessionCount > 1) {
+                appendLine("Use session.POST to publish to other sessions.")
             }
-            appendLine()
         }
 
-        // 3. Message format instructions
+        // 4. Message format instructions
+        appendLine()
         appendLine("Each message in the conversation is wrapped with sender headers (name, id, timestamp).")
         appendLine("When YOU respond, do NOT include these headers — the system adds them automatically.")
     }
@@ -200,13 +206,4 @@ object ConversationLogFormatter {
         }
     }
 
-    /**
-     * Extracts unique participants across all sessions for multi-agent context building.
-     */
-    fun extractParticipants(sessions: List<SessionLedgerSnapshot>): List<Pair<String, String>> {
-        return sessions
-            .flatMap { it.messages }
-            .map { it.senderId to it.senderName }
-            .distinct()
-    }
 }
