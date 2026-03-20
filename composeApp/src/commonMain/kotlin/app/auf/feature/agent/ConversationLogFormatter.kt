@@ -50,32 +50,51 @@ object ConversationLogFormatter {
     )
 
     /**
-     * Builds a [PromptSection.Group] with per-session children for the unified
-     * partition model. Each session becomes an individually collapsible child
-     * [PromptSection.Section], enabling per-session budget management and
-     * visibility in the Context Manager UI.
+     * Builds a unified `SESSIONS` [PromptSection.Group] that consolidates session
+     * subscription metadata, multi-agent participant context, and conversation
+     * messages into one coherent structure.
      *
-     * The child key convention is `session:<handle>`, matching the
-     * `contextCollapseOverrides` key space.
+     * The Group is PROTECTED (always visible). Its header contains:
+     * 1. Session subscription list with routing tags (STANDARD or PRIVATE format)
+     * 2. Multi-agent participant roster (when >2 participants)
+     * 3. Message format instructions
+     *
+     * Each session becomes a collapsible child with its messages.
+     *
+     * ## Structure
+     *
+     * ```
+     * Group("SESSIONS")                         ← protected, header = subscriptions + participants
+     *   ├─ Section("session:chat.main")          ← collapsible, truncateFromStart
+     *   └─ Section("session:chat.debug")
+     * ```
+     *
+     * The child key convention is `session:<handle>`.
      */
-    fun buildSections(
+    fun buildSessionsGroup(
         sessions: List<SessionLedgerSnapshot>,
+        sessionInfos: List<SessionInfo>,
+        isPrivateFormat: Boolean = false,
         platformDependencies: PlatformDependencies
     ): PromptSection.Group {
+        // Build the header: subscription list + multi-agent + format instructions
+        val header = buildSessionsHeader(sessions, sessionInfos, isPrivateFormat)
+
         if (sessions.isEmpty() || sessions.all { it.messages.isEmpty() }) {
             return PromptSection.Group(
-                key = "CONVERSATION_LOG",
+                key = "SESSIONS",
+                header = header,
                 children = listOf(
                     PromptSection.Section(
-                        key = "CONVERSATION_LOG:empty",
+                        key = "SESSIONS:empty",
                         content = "No messages in any subscribed session.",
                         isProtected = true,
                         isCollapsible = false
                     )
                 ),
-                isCollapsible = true,
-                priority = 100,
-                collapsedSummary = "[Conversation collapsed — no messages]",
+                isProtected = true,
+                isCollapsible = false,
+                priority = 1000,
                 truncateFromStart = true
             )
         }
@@ -97,19 +116,73 @@ object ConversationLogFormatter {
 
         val totalMessages = sessions.sumOf { it.messages.size }
         return PromptSection.Group(
-            key = "CONVERSATION_LOG",
+            key = "SESSIONS",
+            header = header,
             children = children,
-            isCollapsible = true,
-            priority = 100,
-            collapsedSummary = "[Conversation collapsed — $totalMessages messages across ${sessions.size} sessions. " +
-                    "Use agent.CONTEXT_UNCOLLAPSE to expand.]",
+            isProtected = true,
+            isCollapsible = false,
+            priority = 1000,
+            collapsedSummary = "[Sessions collapsed — $totalMessages messages across ${sessions.size} sessions]",
             truncateFromStart = true
         )
     }
 
     /**
+     * Builds the SESSIONS header: subscription list, multi-agent roster, format instructions.
+     */
+    private fun buildSessionsHeader(
+        sessions: List<SessionLedgerSnapshot>,
+        sessionInfos: List<SessionInfo>,
+        isPrivateFormat: Boolean
+    ): String = buildString {
+        // 1. Subscription list
+        if (sessionInfos.isNotEmpty()) {
+            appendLine("Subscribed sessions:")
+            sessionInfos.forEach { session ->
+                if (isPrivateFormat) {
+                    val tag = if (session.isOutput) {
+                        "PRIVATE — Your direct output is routed here, invisible to others"
+                    } else {
+                        "PUBLIC — Use session.POST to communicate here"
+                    }
+                    appendLine("  - ${session.name} (${session.handle}) [$tag] | ${session.messageCount} messages")
+                    if (session.participants.isNotEmpty()) {
+                        session.participants.forEach { p ->
+                            appendLine("      ${p.senderName} (${p.senderId}): ${p.type}, ${p.messageCount} messages")
+                        }
+                    }
+                } else {
+                    val primaryTag = if (session.isOutput) {
+                        " [PRIMARY — Your output and tool results are routed here]"
+                    } else ""
+                    appendLine("  - ${session.name} (${session.handle})$primaryTag")
+                }
+            }
+            if (!isPrivateFormat) {
+                appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
+            }
+            appendLine()
+        }
+
+        // 2. Multi-agent participant roster (only when >2 distinct participants)
+        val allParticipants = extractParticipants(sessions)
+        if (allParticipants.size > 2) {
+            appendLine("MULTI-AGENT ENVIRONMENT:")
+            appendLine("This is a multi-agent conversation with the following participants:")
+            sessionInfos.flatMap { it.participants }.distinctBy { it.senderId }.forEach { p ->
+                appendLine("  - ${p.senderName} (${p.senderId}): ${p.type}")
+            }
+            appendLine()
+        }
+
+        // 3. Message format instructions
+        appendLine("Each message in the conversation is wrapped with sender headers (name, id, timestamp).")
+        appendLine("When YOU respond, do NOT include these headers — the system adds them automatically.")
+    }
+
+    /**
      * Builds the formatted content string for a single session's messages.
-     * Used by both [buildSections] (structured path) and [format] (legacy string path).
+     * Used by [buildSessionsGroup] for per-session child content.
      */
     fun buildSessionContent(
         session: SessionLedgerSnapshot,
@@ -124,38 +197,6 @@ object ConversationLogFormatter {
                 appendLine(msg.content)
                 append(ContextDelimiters.h3End())
             }
-        }
-    }
-
-    /**
-     * Formats multiple session ledgers into a single structured conversation log.
-     *
-     * Returns raw content (no h1 wrapper — pipeline adds it via ContextDelimiters).
-     * Each session is an h2 section with token count and collapse state badge.
-     *
-     * @deprecated Use [buildSections] for the structured partition model.
-     *   Retained during migration for backward compatibility.
-     */
-    fun format(
-        sessions: List<SessionLedgerSnapshot>,
-        platformDependencies: PlatformDependencies
-    ): String = buildString {
-        if (sessions.isEmpty() || sessions.all { it.messages.isEmpty() }) {
-            appendLine("No messages in any subscribed session.")
-            return@buildString
-        }
-
-        for (session in sessions) {
-            val messageCount = session.messages.size
-            val outputTag = if (session.isOutputSession) " | output: true" else ""
-            val sessionContent = buildSessionContent(session, platformDependencies)
-
-            val sessionLabel = "SESSION: ${session.sessionName} | uuid: ${session.sessionUUID} | $messageCount messages$outputTag"
-            val state = if (session.messages.isEmpty()) ContextDelimiters.COLLAPSED else ContextDelimiters.EXPANDED
-
-            append(ContextDelimiters.h2(sessionLabel, sessionContent.length, state))
-            append(sessionContent)
-            append(ContextDelimiters.h2End("SESSION"))
         }
     }
 

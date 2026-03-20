@@ -100,44 +100,6 @@ object ExposedActionsContextProvider {
         )
     }
 
-    /**
-     * Generates a formatted context block describing all actions available to
-     * the specified agent identity, filtered by its effective permissions.
-     *
-     * @deprecated Use [buildSections] for the structured partition model.
-     *   Retained during migration for backward compatibility.
-     */
-    fun generateContext(store: Store, agentIdentity: Identity): String = buildString {
-        append(buildPreamble())
-
-        val agentActions = resolveAgentActions(store, agentIdentity)
-
-        if (agentActions.isEmpty()) {
-            appendLine("No system actions are currently available.")
-            return@buildString
-        }
-
-        appendLine("AVAILABLE ACTIONS:")
-        appendLine()
-
-        agentActions.forEach { desc ->
-            appendLine("### ${desc.fullName}")
-            appendLine(desc.summary)
-
-            if (desc.payloadFields.isNotEmpty()) {
-                appendLine("Payload fields:")
-                desc.payloadFields.forEach { field ->
-                    val requiredTag = if (field.required) " (REQUIRED)" else ""
-                    val defaultTag = field.default?.let { " [default: $it]" } ?: ""
-                    appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
-                }
-            } else {
-                appendLine("Payload: none (empty code block body)")
-            }
-            appendLine()
-        }
-    }
-
     // =========================================================================
     // Internal helpers
     // =========================================================================

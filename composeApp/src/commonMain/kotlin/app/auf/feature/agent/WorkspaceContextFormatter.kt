@@ -313,57 +313,6 @@ object WorkspaceContextFormatter {
     }
 
     /**
-     * Build the WORKSPACE_FILES section string (expanded files only).
-     *
-     * @param expandedFileContents Map of relative path → file content for files that
-     *   have been fetched. Only files whose collapse state is EXPANDED appear here.
-     * @param collapseOverrides Agent's sticky collapse overrides.
-     *
-     * @deprecated Use [buildFilesSections] for the structured partition model.
-     *   Retained during migration for backward compatibility.
-     */
-    fun buildFilesSection(
-        expandedFileContents: Map<String, String>,
-        collapseOverrides: Map<String, CollapseState>,
-        platformDependencies: PlatformDependencies? = null
-    ): String {
-        // Filter to only include files that are actually EXPANDED in the overrides
-        val expandedPaths = expandedFileContents.keys.filter { path ->
-            resolveCollapseState(path, collapseOverrides) == CollapseState.EXPANDED
-        }.sorted()
-
-        return buildString {
-            appendLine("--- WORKSPACE_FILES ---")
-
-            if (expandedPaths.isEmpty()) {
-                appendLine("No files open. Use agent.CONTEXT_UNCOLLAPSE to open workspace files.")
-            } else {
-                appendLine("Files currently open: ${expandedPaths.size}")
-                appendLine()
-
-                for (path in expandedPaths) {
-                    val content = expandedFileContents[path]
-                    if (content == null) {
-                        platformDependencies?.log(
-                            LogLevel.WARN, LOG_TAG,
-                            "File '$path' is EXPANDED but has no content in the fetched map. " +
-                                    "It will appear as [EXPANDED] in INDEX but be missing from FILES."
-                        )
-                        continue
-                    }
-                    val ext = path.substringAfterLast('.', "")
-                    appendLine("--- START OF FILE $path ---")
-                    appendLine(content)
-                    appendLine("--- END OF FILE $path ---")
-                    appendLine()
-                }
-            }
-
-            appendLine("--- END OF WORKSPACE_FILES ---")
-        }.trimEnd()
-    }
-
-    /**
      * Resolves the effective collapse state for a workspace entry.
      *
      * Default is COLLAPSED — the agent must explicitly expand entries.

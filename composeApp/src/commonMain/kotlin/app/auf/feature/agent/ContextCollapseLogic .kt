@@ -6,20 +6,9 @@ import app.auf.util.PlatformDependencies
 /**
  * Pipeline-level utility for enforcing the agent's context budget.
  *
- * Implements §3.3–3.5 of the Sovereign Stabilization design document:
- * - [ContextPartition] data model
- * - [collapse] auto-collapse algorithm (two-pass with force-collapse)
- * - [buildBudgetReport] context budget report generation
- * - Oversized partial sentinel (truncation with diagnostic message)
- * - Directional truncation: sessions truncate from the START (oldest first),
- *   all other partitions truncate from the END.
+ * Knows nothing about specific content types that partials carry, works purely on the data provided in ContextPartition
  *
- * Lives in `app.auf.feature.agent` (pipeline package), NOT in `strategies`.
- * Called by [AgentCognitivePipeline.assembleContext] after context is gathered
- * and [CognitiveStrategy.buildPrompt] has declared the prompt structure.
- *
- * The pipeline owns h1 wrapping of partitions (via [ContextDelimiters]).
- * This utility returns raw content and metadata — the pipeline adds headers.
+ * TODO: MAGIC STRINGS: this is referencing partials with strings in partition defaults to set importance and protections. These should be set by anyone who created the partition, not by this utility.
  */
 object ContextCollapseLogic {
 
@@ -28,13 +17,13 @@ object ContextCollapseLogic {
     /**
      * A single partition of the agent's context window.
      *
-     * @param key The partition key (e.g., "HOLON_KNOWLEDGE_GRAPH_FILES", "CONVERSATION_LOG").
+     * @param key The partition key (e.g., "HOLON_KNOWLEDGE_GRAPH", "SESSIONS").
      * @param fullContent Complete content when EXPANDED.
      * @param collapsedContent Summary shown when COLLAPSED. Empty if partition disappears.
      * @param charCount [fullContent].length — cached for budget calculations.
      * @param collapsedCharCount [collapsedContent].length — cached for budget calculations.
      * @param state Resolved collapse state after overrides + budget enforcement.
-     * @param priority Higher = collapse last. INDEX/SESSION_METADATA = [Int.MAX_VALUE].
+     * @param priority Higher = collapse last. Protected partitions = [Int.MAX_VALUE].
      * @param isAutoCollapsible If false, the budget algorithm never touches this partition.
      * @param isAgentOverridden True if the agent has a sticky override for this partition.
      * @param truncateFromStart If true, oversized sentinel truncates oldest content (start).
@@ -83,7 +72,6 @@ object ContextCollapseLogic {
     /**
      * Runs the auto-collapse algorithm on the given partitions.
      *
-     * Implements §3.4:
      * 1. Calculate total chars using each partition's current state.
      * 2. If total ≤ maxBudgetChars → proceed (no collapse needed).
      * 3. If total > maxBudgetChars:
@@ -185,11 +173,8 @@ object ContextCollapseLogic {
     }
 
     /**
-     * Builds the CONTEXT_BUDGET partition content (§3.5).
+     * Builds the CONTEXT_BUDGET partition content.
      *
-     * Returns raw content only — the pipeline adds the h1 wrapper via
-     * [ContextDelimiters.h1]. Uses [ContextDelimiters.approxTokens] for
-     * consistent token display.
      */
     fun buildBudgetReport(
         result: CollapseResult,
@@ -260,6 +245,7 @@ object ContextCollapseLogic {
 
     /**
      * Builds a [ContextPartition] from a context map entry with standard defaults.
+     *
      */
     fun buildPartition(
         key: String,
@@ -289,6 +275,7 @@ object ContextCollapseLogic {
     // =========================================================================
     // =========================================================================
     // Partition Defaults
+    //
     // =========================================================================
 
     data class PartitionDefaults(
@@ -301,13 +288,15 @@ object ContextCollapseLogic {
     /**
      * Resolves defaults for well-known partition keys.
      *
+     * TODO: Here is the offending code.
+     *
      * Used by [buildPartition] (internal) and by [AgentCognitivePipeline.mergeIntoPartitions]
      * to assign collapse/priority properties when converting contextMap entries to
      * [PromptSection.Section] objects.
      *
      * Priority scale:
-     * - 1000: Never-collapse (INDEX, SESSION_METADATA) — isAutoCollapsible = false
-     * - 100:  High priority (CONVERSATION_LOG, MULTI_AGENT_CONTEXT)
+     * - 1000: Never-collapse (METADATA, SESSIONS, HKG) — isAutoCollapsible = false
+     * - 100:  High priority (session children)
      * - 50:   Medium priority (WORKSPACE_INDEX, WORKSPACE_NAVIGATION)
      * - 10:   Standard (AVAILABLE_ACTIONS, WORKSPACE_FILES)
      * - 0:    Low priority — collapse first (HKG FILES, unknown partitions)
@@ -315,19 +304,13 @@ object ContextCollapseLogic {
     fun resolvePartitionDefaults(key: String, content: String): PartitionDefaults {
         val tokens = ContextDelimiters.approxTokens(content.length)
         return when (key) {
-            // Never auto-collapse
-            "SESSION_METADATA" -> PartitionDefaults(1000, false, content)
+            // Never auto-collapse — protected containers
+            "METADATA" -> PartitionDefaults(1000, false, content)
+            "SESSIONS" -> PartitionDefaults(1000, false, content)
+            "HOLON_KNOWLEDGE_GRAPH" -> PartitionDefaults(1000, false, content)
             "WORKSPACE_INDEX" -> PartitionDefaults(50, false, content)
             "WORKSPACE_NAVIGATION" -> PartitionDefaults(50, false, content)
             "CONTEXT_BUDGET" -> PartitionDefaults(1000, false, content)
-
-            // High priority, truncate sessions from START (oldest first)
-            "CONVERSATION_LOG" -> PartitionDefaults(
-                100, true,
-                "[Conversation collapsed — ~$tokens tokens available. Use agent.CONTEXT_UNCOLLAPSE to expand.]",
-                truncateFromStart = true
-            )
-            "MULTI_AGENT_CONTEXT" -> PartitionDefaults(100, true, "[Multi-agent context collapsed]")
 
             // Standard priority
             "AVAILABLE_ACTIONS" -> PartitionDefaults(
@@ -339,9 +322,6 @@ object ContextCollapseLogic {
                 "[Workspace files collapsed. Use agent.CONTEXT_UNCOLLAPSE to open specific files.]"
             )
 
-            // HKG — protected container, individual holons are collapsible children
-            "HOLON_KNOWLEDGE_GRAPH" -> PartitionDefaults(1000, false, content)
-
             // Unknown — lowest priority
             else -> PartitionDefaults(0, true, "[$key collapsed — ~$tokens tokens]")
         }
@@ -351,7 +331,7 @@ object ContextCollapseLogic {
      * Applies the oversized partial sentinel. Respects [ContextPartition.truncateFromStart]:
      * - `false` (default): Truncates from the END, appends sentinel message.
      * - `true`: Truncates from the START (oldest content removed), prepends sentinel message.
-     *   Used for CONVERSATION_LOG where recent messages are more relevant.
+     *   Used for session children where recent messages are more relevant.
      */
     private fun applySentinel(
         partitions: MutableList<ContextPartition>,
@@ -370,16 +350,16 @@ object ContextCollapseLogic {
                 val newContent = if (partition.truncateFromStart) {
                     // START truncation: keep the LAST maxPartialChars, prepend sentinel
                     val kept = partition.fullContent.takeLast(maxPartialChars)
-                    val sentinel = "⚠ PIPELINE SENTINEL: This conversation is very large (~$originalTokens tokens). " +
-                            "The oldest messages have been removed, keeping the most recent ~$truncatedTokens tokens. " +
-                            "Use targeted uncollapse commands to manage session visibility.\n\n"
+                    val sentinel = "⚠ PIPELINE SENTINEL: This content partial is very large (~$originalTokens tokens). " +
+                            "The starting part has been removed, keeping the most recent ~$truncatedTokens tokens. " +
+                            "Use uncollapse commands to manage visibility.\n\n"
                     sentinel + kept
                 } else {
                     // END truncation (default): keep the FIRST maxPartialChars, append sentinel
                     val kept = partition.fullContent.take(maxPartialChars)
                     val sentinel = "\n\n⚠ PIPELINE SENTINEL: This content partial is very large (~$originalTokens tokens) and " +
-                            "has been truncated to the first ~$truncatedTokens tokens. Use targeted uncollapse commands " +
-                            "to navigate to the section you need, or collapse this partial and work from the index."
+                            "has been truncated to the first ~$truncatedTokens tokens. " +
+                            "Use uncollapse commands to manage visibility.\n\n"
                     kept + sentinel
                 }
 

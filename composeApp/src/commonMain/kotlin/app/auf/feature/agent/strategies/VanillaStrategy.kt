@@ -53,8 +53,7 @@ object VanillaStrategy : CognitiveStrategy {
         PromptBuilder(context).apply {
             identity()
             instructions()
-            sessions()
-            place("MULTI_AGENT_CONTEXT")
+            place("SESSIONS")
             everythingElse()
         }
 

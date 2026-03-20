@@ -11,8 +11,7 @@ import kotlinx.serialization.json.JsonObject
 //   §1  PromptSection        — sealed class hierarchy (§3.1)
 //   §2  FormatOverrides      — strategy-level formatting callbacks (§3.2)
 //   §3  PromptBuilder        — fluent API for prompt construction (§4.2)
-//   §4  SessionFormat + shared session helpers
-//   §5  ContextAssemblyResult / PartitionAssemblyResult / TransientDataSnapshot (§5.7–5.8)
+//   §4  ContextAssemblyResult / PartitionAssemblyResult / TransientDataSnapshot (§5.7–5.8)
 // =============================================================================
 
 
@@ -117,13 +116,9 @@ class PromptBuilder(private val context: AgentTurnContext) {
         emitSection("SYSTEM INSTRUCTIONS", content, isProtected = true)
     }
 
-    fun sessions(format: SessionFormat = SessionFormat.STANDARD) {
-        if (context.subscribedSessions.isEmpty()) return
-        val content = when (format) {
-            SessionFormat.STANDARD -> buildSubscribedSessionsContent(context)
-            SessionFormat.PRIVATE -> buildPrivateSubscribedSessionsContent(context)
-        }
-        emitSection("SUBSCRIBED SESSIONS", content, isProtected = true)
+    /** Places the gathered SESSIONS partition at this position. */
+    fun sessions() {
+        place("SESSIONS")
     }
 
     fun privateSessionRouting() {
@@ -144,33 +139,6 @@ class PromptBuilder(private val context: AgentTurnContext) {
             appendLine("Always use session.POST when you want others to see your message.")
         }
         emitSection("PRIVATE SESSION ROUTING", content, isProtected = true)
-    }
-
-    fun hkgNavigation() {
-        if ("HOLON_KNOWLEDGE_GRAPH_INDEX" !in context.gatheredContextKeys) return
-        val content = buildString {
-            appendLine("Your Knowledge Graph is presented as an INDEX (tree overview) and FILES (open file contents).")
-            appendLine("By default, all files are closed. Use these commands to navigate:")
-            appendLine()
-            appendLine("Open a single holon file:")
-            appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
-            appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "single" }""")
-            appendLine("```")
-            appendLine()
-            appendLine("Open a holon and reveal its children in the INDEX:")
-            appendLine("```auf_agent.CONTEXT_UNCOLLAPSE")
-            appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "subtree" }""")
-            appendLine("```")
-            appendLine()
-            appendLine("Close a holon file:")
-            appendLine("```auf_agent.CONTEXT_COLLAPSE")
-            appendLine("""{ "partitionKey": "hkg:<holonId>" }""")
-            appendLine("```")
-            appendLine()
-            appendLine("IMPORTANT: You must expand a holon file before writing to it.")
-            appendLine("The system will block writes to collapsed holons to prevent data loss.")
-        }
-        emitSection("HKG NAVIGATION", content, isProtected = true)
     }
 
     fun workspaceNavigation() {
@@ -282,53 +250,7 @@ class PromptBuilder(private val context: AgentTurnContext) {
 
 
 // =============================================================================
-// §4  SessionFormat + shared helpers
-// =============================================================================
-
-enum class SessionFormat { STANDARD, PRIVATE }
-
-/**
- * Builds the inner content for the SUBSCRIBED SESSIONS section.
- * Reused by all strategies that show session awareness.
- */
-fun buildSubscribedSessionsContent(context: AgentTurnContext): String = buildString {
-    appendLine("You are currently subscribed to the following sessions:")
-    context.subscribedSessions.forEach { session ->
-        val primaryTag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
-            " [PRIMARY — Your output and tool results are routed here]"
-        } else ""
-        appendLine("  - ${session.name} (${session.handle})$primaryTag")
-    }
-    appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
-}
-
-/**
- * Builds the inner content for the SUBSCRIBED SESSIONS section with
- * private session routing tags. Used by PrivateSessionStrategy and Sovereign.
- */
-fun buildPrivateSubscribedSessionsContent(context: AgentTurnContext): String = buildString {
-    context.subscribedSessions.forEach { session ->
-        val tag = if (session.isOutput || (context.outputSessionHandle == null && session == context.subscribedSessions.first())) {
-            "PRIVATE — Your direct output is routed here, invisible to others"
-        } else {
-            "PUBLIC — Use session.POST to communicate here"
-        }
-        val sessionHeader = "${session.name} (${session.handle}) [$tag] | ${session.messageCount} messages"
-        append(ContextDelimiters.h2(sessionHeader))
-        if (session.participants.isNotEmpty()) {
-            session.participants.forEach { participant ->
-                appendLine("  - ${participant.senderName} (${participant.senderId}): ${participant.type}, ${participant.messageCount} messages")
-            }
-        } else {
-            appendLine("  (no messages yet)")
-        }
-        append(ContextDelimiters.h2End("SESSION"))
-    }
-}
-
-
-// =============================================================================
-// §5  Assembly Result Types
+// §4  Assembly Result Types
 // =============================================================================
 
 data class ContextAssemblyResult(

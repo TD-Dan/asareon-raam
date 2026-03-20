@@ -253,42 +253,6 @@ object HkgContextFormatter {
      * @param collapseOverrides Agent's sticky collapse overrides.
      * @param platformDependencies For logging.
      */
-    fun buildFilesSections(
-        hkgContext: JsonObject,
-        headers: Map<String, HolonSummary>,
-        collapseOverrides: Map<String, CollapseState>,
-        platformDependencies: PlatformDependencies? = null
-    ): PromptSection.Group {
-        // Find root holons (top of the tree)
-        val roots = headers.values
-            .filter { it.parentId == null }
-            .sortedBy { it.id }
-
-        val expandedCount = hkgContext.keys.count { holonId ->
-            resolveCollapseState(holonId, collapseOverrides) == CollapseState.EXPANDED
-        }
-
-        return PromptSection.Group(
-            key = "HOLON_KNOWLEDGE_GRAPH_FILES",
-            header = if (hkgContext.isNotEmpty())
-                "HKG Files: $expandedCount of ${hkgContext.size} open"
-            else "",
-            children = roots.map { root -> buildHolonSection(root, hkgContext, headers, platformDependencies) },
-            isCollapsible = true,
-            priority = 0,
-            collapsedSummary = "[HKG files collapsed — ${hkgContext.size} holons. " +
-                    "Use agent.CONTEXT_UNCOLLAPSE with \"hkg:<holonId>\" to open.]"
-        )
-    }
-
-    /**
-     * Recursively builds a [PromptSection] for a single holon.
-     *
-     * - **Leaf holon** (no children in the loaded set) → [PromptSection.Section]
-     * - **Branch holon** (has children in the loaded set) → [PromptSection.Group]
-     *   whose `header` is the holon's own file content and whose `children` are
-     *   the recursive results of its sub-holons.
-     */
     /**
      * Recursively builds a [PromptSection] for a single holon.
      *
@@ -421,7 +385,7 @@ object HkgContextFormatter {
 
     /**
      * Builds the HKG navigation command reference content.
-     * Extracted from PromptBuilder.hkgNavigation() to live with the formatter
+     * HKG navigation command reference. Included in the unified HOLON_KNOWLEDGE_GRAPH
      * that owns the HKG context structure.
      */
     private fun buildNavigationContent(): String = buildString {
@@ -445,53 +409,6 @@ object HkgContextFormatter {
         appendLine()
         appendLine("IMPORTANT: You must expand a holon file before writing to it.")
         appendLine("The system will block writes to collapsed holons to prevent data loss.")
-    }
-
-    /**
-     * Build the FILES section string (expanded holons only).
-     *
-     * @param hkgContext Raw HKG context map (holonId → raw JSON content string).
-     * @param collapseOverrides Agent's sticky collapse overrides.
-     *
-     * @deprecated Use [buildFilesSections] for the structured partition model.
-     *   Retained during migration for backward compatibility.
-     */
-    fun buildFilesSection(
-        hkgContext: JsonObject,
-        collapseOverrides: Map<String, CollapseState>,
-        platformDependencies: PlatformDependencies? = null
-    ): String {
-        val expandedIds = hkgContext.keys.filter { holonId ->
-            resolveCollapseState(holonId, collapseOverrides) == CollapseState.EXPANDED
-        }.sorted()
-
-        return buildString {
-            if (expandedIds.isEmpty()) {
-                appendLine("No files open. Use agent.CONTEXT_UNCOLLAPSE to open holon files.")
-            } else {
-                appendLine("Files currently open: ${expandedIds.size} of ${hkgContext.size}")
-
-                for (holonId in expandedIds) {
-                    val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull
-                    if (rawContent == null) {
-                        platformDependencies?.log(
-                            LogLevel.WARN, LOG_TAG,
-                            "Holon '$holonId' is EXPANDED but its content could not be read as a string. " +
-                                    "It will appear as [EXPANDED] in INDEX but be missing from FILES."
-                        )
-                        continue
-                    }
-                    // h2 for each file with token count and EXPANDED state
-                    append(ContextDelimiters.h2(
-                        "FILE $holonId.json",
-                        rawContent.length,
-                        ContextDelimiters.EXPANDED
-                    ))
-                    appendLine(rawContent)
-                    append(ContextDelimiters.h2End("FILE $holonId.json"))
-                }
-            }
-        }.trimEnd()
     }
 
     /**

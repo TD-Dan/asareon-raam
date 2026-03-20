@@ -568,15 +568,20 @@ object AgentCognitivePipeline {
         val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store, agentState)
             ?: return null
 
-        // === Step 1: Build contextMap (structured gathered partitions, no h1 wrapping) ===
-        val (contextMap, effectiveOverrides) = buildContextMap(agent, sessionLedgers, hkgContext, agentState, statusInfo, store)
-
-        // === Step 2: Build AgentTurnContext with keys only ===
+        // === Step 1: Build session infos (needed by both contextMap and AgentTurnContext) ===
         val identityRegistry = store.state.value.identityRegistry
         val outputSessionUUID = agent.outputSessionId
         val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
         val subscribedSessionInfos = buildSessionInfos(agent, sessionLedgers, agentState, outputSessionUUID, identityRegistry)
 
+        // === Step 2: Build contextMap (structured gathered partitions, no h1 wrapping) ===
+        val isPrivateFormat = strategy.hasAutoManagedOutputSession
+        val (contextMap, effectiveOverrides) = buildContextMap(
+            agent, sessionLedgers, hkgContext, agentState, statusInfo, store,
+            subscribedSessionInfos, isPrivateFormat
+        )
+
+        // === Step 3: Build AgentTurnContext with keys only ===
         val context = AgentTurnContext(
             agentName = agent.identity.name,
             resolvedResources = resolvedResources,
@@ -676,11 +681,16 @@ object AgentCognitivePipeline {
         val resolvedResources = resolveAgentResources(agent, agentState.resources, strategy, platformDependencies, store, agentState)
             ?: return null
 
-        val (contextMap, effectiveOverrides) = buildContextMap(agent, sessionLedgers, hkgContext, agentState, statusInfo, store)
         val identityRegistry = store.state.value.identityRegistry
         val outputSessionUUID = agent.outputSessionId
         val outputSessionHandle = outputSessionUUID?.let { identityRegistry.findByUUID(it)?.handle }
         val subscribedSessionInfos = buildSessionInfos(agent, sessionLedgers, agentState, outputSessionUUID, identityRegistry)
+
+        val isPrivateFormat = strategy.hasAutoManagedOutputSession
+        val (contextMap, effectiveOverrides) = buildContextMap(
+            agent, sessionLedgers, hkgContext, agentState, statusInfo, store,
+            subscribedSessionInfos, isPrivateFormat
+        )
 
         val context = AgentTurnContext(
             agentName = agent.identity.name,
@@ -789,8 +799,8 @@ object AgentCognitivePipeline {
      * Builds the structured context map — all gathered partitions as [PromptSection]
      * entries WITHOUT h1 wrapping.
      *
-     * Flat partitions (SESSION_METADATA, AVAILABLE_ACTIONS, etc.) become [PromptSection.Section].
-     * Structured partitions (CONVERSATION_LOG, HKG_FILES, WORKSPACE_FILES) become
+     * Flat partitions (METADATA, AVAILABLE_ACTIONS, etc.) become [PromptSection.Section].
+     * Structured partitions (SESSIONS, HOLON_KNOWLEDGE_GRAPH, WORKSPACE_FILES) become
      * [PromptSection.Group] with per-item children, enabling per-child collapse and
      * budget management in the unified partition model.
      *
@@ -805,7 +815,9 @@ object AgentCognitivePipeline {
         hkgContext: JsonObject?,
         agentState: AgentRuntimeState,
         statusInfo: AgentStatusInfo,
-        store: Store
+        store: Store,
+        subscribedSessionInfos: List<SessionInfo>,
+        isPrivateFormat: Boolean
     ): ContextMapResult {
         val agentUuid = agent.identityUUID
         val platformDependencies = store.platformDependencies
@@ -836,9 +848,7 @@ object AgentCognitivePipeline {
             )
         }
 
-        // SESSION METADATA
-        val subscribedSessionNames = agent.subscribedSessionIds.mapNotNull { identityRegistry.findByUUID(it)?.name }
-        val sessionListDisplay = if (subscribedSessionNames.isNotEmpty()) subscribedSessionNames.joinToString(", ") else "none"
+        // METADATA — runtime environment info (no session data — that's in SESSIONS)
         val lastInput = statusInfo.lastInputTokens
         val lastOutput = statusInfo.lastOutputTokens
         val tokenUsageContext = if (lastInput != null || lastOutput != null) {
@@ -847,12 +857,11 @@ object AgentCognitivePipeline {
         } else {
             "\nLast request token usage: Not yet available (first turn or provider did not report usage)."
         }
-        contextMap["SESSION_METADATA"] = stringToSection("SESSION_METADATA", """
+        contextMap["METADATA"] = stringToSection("METADATA", """
             This data is provided for you to reason about your running environment and is updated on the moment of latest request to you.
             
             You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
-            Subscribed sessions: $sessionListDisplay
             Your agent handle is: '${agent.identityHandle}'
             Your agent id (internal): '${agentUuid}'
             Request Time: ${platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())}
@@ -890,7 +899,7 @@ object AgentCognitivePipeline {
             }
         }
 
-        // CONVERSATION_LOG — structured Group with per-session children
+        // SESSIONS — unified: subscription metadata + multi-agent context + per-session messages
         val outputSessionUUID = agent.outputSessionId
         val sessionSnapshots = sessionLedgers.map { (sessionUUID, messages) ->
             val sessIdentity = identityRegistry.findByUUID(sessionUUID)
@@ -902,30 +911,9 @@ object AgentCognitivePipeline {
                 isOutputSession = sessionUUID == outputSessionUUID
             )
         }
-        contextMap["CONVERSATION_LOG"] = ConversationLogFormatter.buildSections(sessionSnapshots, platformDependencies)
-
-        // MULTI_AGENT_CONTEXT
-        val participants = ConversationLogFormatter.extractParticipants(sessionSnapshots)
-        if (participants.size > 2) {
-            contextMap["MULTI_AGENT_CONTEXT"] = stringToSection("MULTI_AGENT_CONTEXT", buildString {
-                appendLine("\n--- MULTI-AGENT ENVIRONMENT ---")
-                appendLine("This is a multi-agent conversation with the following participants:")
-                participants.forEach { (id, name) ->
-                    val isSelf = (id == agentUuid.uuid || id == agent.identityHandle.handle)
-                    val type = when {
-                        isSelf -> "YOU (this agent)"
-                        agentState.agents.values.any { it.identityUUID.uuid == id || it.identityHandle.handle == id } -> "AI Agent"
-                        agentState.userIdentities.any { it.handle == id } -> "Human User"
-                        else -> "User/System"
-                    }
-                    appendLine("- $name ($id): $type")
-                }
-                appendLine()
-                appendLine("IMPORTANT: Each message in the conversation log is wrapped with sender headers.")
-                appendLine("When YOU respond, do NOT include these headers. Just write your response naturally.")
-                appendLine("The system will automatically add your name and timestamp to your messages.")
-            })
-        }
+        contextMap["SESSIONS"] = ConversationLogFormatter.buildSessionsGroup(
+            sessionSnapshots, subscribedSessionInfos, isPrivateFormat, platformDependencies
+        )
 
         return ContextMapResult(contextMap, mergedOverrides)
     }
@@ -969,7 +957,7 @@ object AgentCognitivePipeline {
      * against the structured contextMap. Returns a fully resolved section list.
      *
      * The contextMap now contains [PromptSection] entries (Section for flat partitions,
-     * Group for structured partitions like CONVERSATION_LOG, HKG_FILES, WORKSPACE_FILES).
+     * Group for structured partitions like SESSIONS, HOLON_KNOWLEDGE_GRAPH, WORKSPACE_FILES).
      * GatheredRef resolution inserts the structured form directly — no wrapping needed.
      */
     private fun mergeIntoPartitions(
@@ -992,9 +980,7 @@ object AgentCognitivePipeline {
                 }
                 is PromptSection.RemainingGathered -> {
                     val remaining = contextMap.keys - placedKeys
-                    val ordered = remaining.sortedWith(
-                        compareBy<String> { if (it == "MULTI_AGENT_CONTEXT") 0 else 1 }.thenBy { it }
-                    )
+                    val ordered = remaining.sorted()
                     for (key in ordered) {
                         val gathered = contextMap[key] ?: continue
                         if (isEmptySection(gathered)) continue
@@ -1018,7 +1004,7 @@ object AgentCognitivePipeline {
      * Wraps a raw content string as a [PromptSection.Section] with partition defaults
      * derived from [ContextCollapseLogic.resolvePartitionDefaults].
      *
-     * Used by [buildContextMap] for flat partitions (SESSION_METADATA, AVAILABLE_ACTIONS,
+     * Used by [buildContextMap] for flat partitions (METADATA, AVAILABLE_ACTIONS,
      * WORKSPACE_INDEX, etc.) that don't have internal sub-partition structure.
      */
     private fun stringToSection(key: String, content: String): PromptSection.Section {
@@ -1073,7 +1059,7 @@ object AgentCognitivePipeline {
                     } else {
                         // EXPANDED: emit a container partition for the group, then children.
                         // The container partition:
-                        // - key = group key (e.g., "CONVERSATION_LOG") → children match via parentKey
+                        // - key = group key (e.g., "SESSIONS") → children match via parentKey
                         // - fullContent = header text (may be empty) → actual content lives in children
                         // - collapsedContent = summary → shown if budget auto-collapses this group
                         // - isAutoCollapsible = true → budget can collapse the group, which hides children
