@@ -66,6 +66,10 @@
 
 - NVRAM schema adherence: Strategy sets or agent can expand?
 
+- thinking reporting: update agent current status. Upgrade status as two part status:current_task.
+
+- streaming support
+
 ## HIGH PRIORITY:
 
 - !! Need context collapse management tools to the preview turn view to debug and fix agent internal state

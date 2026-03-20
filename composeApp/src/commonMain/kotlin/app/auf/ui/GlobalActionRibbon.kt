@@ -58,7 +58,7 @@ fun GlobalActionRibbon(
     ) {
         // --- CORRECTED: Master Home Button using typesafe resources ---
         val payload = buildJsonObject { put("key", defaultViewKey) }
-        IconButton(onClick = { store.dispatch("system", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, payload)) }) {
+        IconButton(onClick = { store.deferredDispatch("system", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, payload)) }) {
             Icon(
                 painter = painterResource(Res.drawable.icon),
                 contentDescription = "Go to Default View (Session)",
