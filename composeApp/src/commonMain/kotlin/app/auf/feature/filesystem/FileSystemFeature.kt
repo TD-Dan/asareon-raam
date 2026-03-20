@@ -341,7 +341,11 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD -> {
                 val selectedFiles = findSelectedFiles(fileSystemState.rootItems)
                 if (selectedFiles.isEmpty()) {
-                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") })); return
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "COPY_SELECTION_TO_CLIPBOARD: no files selected")
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "No files selected.") }))
+                    publishActionResult(store, null, action.name, success = false,
+                        error = "No files selected")
+                    return
                 }
                 val stringBuilder = StringBuilder()
                 val rootPath = fileSystemState.currentPath ?: ""
@@ -362,6 +366,10 @@ class FileSystemFeature(
                 if (errorCount > 0) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject { put("message", "Failed to read $errorCount files.") }))
                 }
+                val successCount = selectedFiles.size - errorCount
+                publishActionResult(store, null, action.name, success = successCount > 0,
+                    summary = if (successCount > 0) "Copied $successCount files to clipboard" else null,
+                    error = if (successCount == 0) "All ${selectedFiles.size} files failed to read" else null)
             }
             ActionRegistry.Names.FILESYSTEM_ADD_WHITELIST_PATH, ActionRegistry.Names.FILESYSTEM_REMOVE_WHITELIST_PATH -> {
                 val path = action.payload?.let { json.decodeFromJsonElement<PathPayload>(it) }?.path ?: return
@@ -450,6 +458,15 @@ class FileSystemFeature(
                     targetRecipient = originator
 
                 ))
+                val requestedCount = payload.paths.size
+                if (contentMap.isEmpty() && requestedCount > 0) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "READ_MULTIPLE: all $requestedCount files failed to read for originator '$originator'")
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "All $requestedCount files failed to read")
+                } else {
+                    publishActionResult(store, correlationId, action.name, success = true,
+                        summary = "Read ${contentMap.size} of $requestedCount files")
+                }
             }
             ActionRegistry.Names.FILESYSTEM_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
@@ -559,11 +576,15 @@ class FileSystemFeature(
                         platformDependencies.log(LogLevel.INFO, identity.handle, "Created workspace directory before opening: $fullPath")
                     }
                     platformDependencies.openFolderInExplorer(fullPath)
+                    publishActionResult(store, null, action.name, success = true,
+                        summary = "Opened workspace folder")
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, identity.handle, "Failed to open workspace folder '$fullPath': ${e.message}", e)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                         put("message", "Failed to open workspace folder: ${e.message}")
                     }))
+                    publishActionResult(store, null, action.name, success = false,
+                        error = "Failed to open workspace folder: ${sanitizeErrorForBroadcast(e.message)}")
                 }
             }
             ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER -> {

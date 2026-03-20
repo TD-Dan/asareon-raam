@@ -8,10 +8,12 @@ import app.auf.util.BasePath
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -30,6 +32,8 @@ import kotlin.test.assertTrue
  */
 class FileSystemFeatureT2ContractTest {
 
+    private val featureHandle = "filesystem"
+
     // ====================================================================
     // Test-case descriptors
     // ====================================================================
@@ -37,25 +41,29 @@ class FileSystemFeatureT2ContractTest {
     /**
      * A happy-path test case. [setup] receives a vanilla FakePlatformDependencies
      * and should create whatever files/directories the action needs to succeed.
+     * [initialState] optionally seeds the feature state (needed for UI-driven actions).
      */
     private data class HappyCase(
         val label: String,
         val actionName: String,
         val originator: String,
         val payload: JsonObject,
-        val setup: (FakePlatformDependencies) -> Unit
+        val setup: (FakePlatformDependencies) -> Unit,
+        val initialState: FileSystemState? = null
     )
 
     /**
      * A failure-path test case. [buildPlatform] returns a (possibly subclassed)
      * FakePlatformDependencies wired to fail at the right moment.
+     * [initialState] optionally seeds the feature state.
      */
     private data class FailureCase(
         val label: String,
         val actionName: String,
         val originator: String,
         val payload: JsonObject,
-        val buildPlatform: () -> FakePlatformDependencies
+        val buildPlatform: () -> FakePlatformDependencies,
+        val initialState: FileSystemState? = null
     )
 
     // -- Happy cases -------------------------------------------------------
@@ -83,11 +91,27 @@ class FileSystemFeatureT2ContractTest {
             }
         ),
         HappyCase(
+            label = "READ_MULTIPLE",
+            actionName = ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE,
+            originator = "session",
+            payload = buildJsonObject {
+                putJsonArray("paths") {
+                    add(JsonPrimitive("a.txt"))
+                    add(JsonPrimitive("b.txt"))
+                }
+            },
+            setup = { platform ->
+                val sandbox = platform.getBasePathFor(BasePath.APP_ZONE) + "/session"
+                platform.writeFileContent("$sandbox/a.txt", "aaa")
+                platform.writeFileContent("$sandbox/b.txt", "bbb")
+            }
+        ),
+        HappyCase(
             label = "WRITE",
             actionName = ActionRegistry.Names.FILESYSTEM_WRITE,
             originator = "session",
             payload = buildJsonObject { put("path", "test.json"); put("content", "data") },
-            setup = { } // writeFileContent auto-creates parents
+            setup = { }
         ),
         HappyCase(
             label = "DELETE_FILE",
@@ -110,6 +134,16 @@ class FileSystemFeatureT2ContractTest {
             }
         ),
         HappyCase(
+            label = "OPEN_WORKSPACE_FOLDER",
+            actionName = ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+            originator = "agent",
+            payload = buildJsonObject { put("path", "workspace") },
+            setup = { platform ->
+                val sandbox = platform.getBasePathFor(BasePath.APP_ZONE) + "/agent/workspace"
+                platform.createDirectories(sandbox)
+            }
+        ),
+        HappyCase(
             label = "OPEN_SYSTEM_FOLDER",
             actionName = ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER,
             originator = "core",
@@ -118,6 +152,22 @@ class FileSystemFeatureT2ContractTest {
                 val appZone = platform.getBasePathFor(BasePath.APP_ZONE)
                 platform.createDirectories("$appZone/logs")
             }
+        ),
+        HappyCase(
+            label = "COPY_SELECTION_TO_CLIPBOARD",
+            actionName = ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD,
+            originator = "filesystem",
+            payload = buildJsonObject { },
+            setup = { platform ->
+                platform.createDirectories("/docs")
+                platform.writeFileContent("/docs/a.txt", "content-a")
+            },
+            initialState = FileSystemState(
+                currentPath = "/docs",
+                rootItems = listOf(
+                    FileSystemItem("/docs/a.txt", "a.txt", false, isSelected = true)
+                )
+            )
         )
     )
 
@@ -143,7 +193,18 @@ class FileSystemFeatureT2ContractTest {
             actionName = ActionRegistry.Names.FILESYSTEM_READ,
             originator = "session",
             payload = buildJsonObject { put("path", "missing.json") },
-            buildPlatform = { FakePlatformDependencies("test") } // file doesn't exist → readFileContent throws
+            buildPlatform = { FakePlatformDependencies("test") }
+        ),
+        FailureCase(
+            label = "READ_MULTIPLE",
+            actionName = ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE,
+            originator = "session",
+            payload = buildJsonObject {
+                putJsonArray("paths") {
+                    add(JsonPrimitive("missing.txt"))
+                }
+            },
+            buildPlatform = { FakePlatformDependencies("test") }
         ),
         FailureCase(
             label = "WRITE",
@@ -188,11 +249,28 @@ class FileSystemFeatureT2ContractTest {
             }
         ),
         FailureCase(
+            label = "OPEN_WORKSPACE_FOLDER",
+            actionName = ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+            originator = "agent",
+            payload = buildJsonObject { put("path", "workspace") },
+            buildPlatform = {
+                FakePlatformDependencies("test").also { it.openFolderShouldThrow = true }
+            }
+        ),
+        FailureCase(
             label = "OPEN_SYSTEM_FOLDER",
             actionName = ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER,
             originator = "core",
             payload = buildJsonObject { put("path", "app:nonexistent") },
-            buildPlatform = { FakePlatformDependencies("test") } // directory doesn't exist
+            buildPlatform = { FakePlatformDependencies("test") }
+        ),
+        FailureCase(
+            label = "COPY_SELECTION_TO_CLIPBOARD",
+            actionName = ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD,
+            originator = "filesystem",
+            payload = buildJsonObject { },
+            buildPlatform = { FakePlatformDependencies("test") },
+            initialState = FileSystemState() // empty rootItems → no files selected
         )
     )
 
@@ -206,7 +284,9 @@ class FileSystemFeatureT2ContractTest {
             val platform = FakePlatformDependencies("test")
             case.setup(platform)
             val feature = FileSystemFeature(platform)
-            val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+            val builder = TestEnvironment.create().withFeature(feature)
+            case.initialState?.let { builder.withInitialState(featureHandle, it) }
+            val harness = builder.build(platform = platform)
 
             harness.runAndLogOnFailure {
                 harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
@@ -233,7 +313,9 @@ class FileSystemFeatureT2ContractTest {
         failureCases.forEach { case ->
             val platform = case.buildPlatform()
             val feature = FileSystemFeature(platform)
-            val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+            val builder = TestEnvironment.create().withFeature(feature)
+            case.initialState?.let { builder.withInitialState(featureHandle, it) }
+            val harness = builder.build(platform = platform)
 
             harness.runAndLogOnFailure {
                 harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
@@ -262,7 +344,9 @@ class FileSystemFeatureT2ContractTest {
         failureCases.forEach { case ->
             val platform = case.buildPlatform()
             val feature = FileSystemFeature(platform)
-            val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
+            val builder = TestEnvironment.create().withFeature(feature)
+            case.initialState?.let { builder.withInitialState(featureHandle, it) }
+            val harness = builder.build(platform = platform)
 
             harness.runAndLogOnFailure {
                 harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
