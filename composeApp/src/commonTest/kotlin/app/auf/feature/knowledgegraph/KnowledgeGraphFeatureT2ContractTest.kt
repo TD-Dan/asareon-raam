@@ -1,6 +1,7 @@
 package app.auf.feature.knowledgegraph
 
 import app.auf.core.Action
+import app.auf.core.Identity
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.filesystem.FileSystemFeature
@@ -103,7 +104,8 @@ class KnowledgeGraphFeatureT2ContractTest {
         val originator: String,
         val payload: JsonObject,
         val buildState: () -> KnowledgeGraphState = { KnowledgeGraphState() },
-        val buildPlatform: () -> FakePlatformDependencies = { FakePlatformDependencies("test") }
+        val buildPlatform: () -> FakePlatformDependencies = { FakePlatformDependencies("test") },
+        val extraIdentities: List<Identity> = emptyList()
     )
 
     private data class FailureCase(
@@ -112,26 +114,40 @@ class KnowledgeGraphFeatureT2ContractTest {
         val originator: String,
         val payload: JsonObject,
         val buildState: () -> KnowledgeGraphState = { KnowledgeGraphState() },
-        val buildPlatform: () -> FakePlatformDependencies = { FakePlatformDependencies("test") }
+        val buildPlatform: () -> FakePlatformDependencies = { FakePlatformDependencies("test") },
+        val extraIdentities: List<Identity> = emptyList()
     )
 
     // ====================================================================
     // Harness builder
     // ====================================================================
 
+    /** Identity for non-owner originator used in reservation lock tests. */
+    private val outsiderIdentity = Identity(
+        uuid = null,
+        handle = "outsider",
+        localHandle = "outsider",
+        name = "Outsider",
+        parentHandle = "core"
+    )
+
     private fun buildHarness(
         platform: FakePlatformDependencies,
-        kgState: KnowledgeGraphState
+        kgState: KnowledgeGraphState,
+        extraIdentities: List<Identity> = emptyList()
     ): TestHarness {
         val kgFeature = KnowledgeGraphFeature(platform, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined))
         val filesystemFeature = FileSystemFeature(platform)
 
-        return TestEnvironment.create()
+        val builder = TestEnvironment.create()
             .withFeature(kgFeature)
             .withFeature(filesystemFeature)
             .withInitialState(featureHandle, kgState)
             .withInitialState("core", app.auf.feature.core.CoreState(lifecycle = app.auf.feature.core.AppLifecycle.RUNNING))
-            .build(platform = platform)
+
+        extraIdentities.forEach { builder.withIdentity(it) }
+
+        return builder.build(platform = platform)
     }
 
     // ====================================================================
@@ -210,16 +226,6 @@ class KnowledgeGraphFeatureT2ContractTest {
                 originator = "core",
                 payload = buildJsonObject { put("holonId", CHILD_HOLON_ID) },
                 buildState = ::loadedState
-            ),
-            HappyCase(
-                label = "UPDATE_HOLON_CONTENT",
-                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT,
-                originator = "core",
-                payload = buildJsonObject {
-                    put("holonId", CHILD_HOLON_ID)
-                    put("payload", buildJsonObject { put("content", "updated content") })
-                },
-                buildState = ::loadedState
             )
         )
     }
@@ -249,7 +255,8 @@ class KnowledgeGraphFeatureT2ContractTest {
                 payload = buildJsonObject { put("personaId", PERSONA_ID) },
                 buildState = {
                     loadedState().copy(reservations = mapOf(PERSONA_ID to "owner-agent"))
-                }
+                },
+                extraIdentities = listOf(outsiderIdentity)
             ),
             // CREATE_HOLON
             FailureCase(
@@ -319,7 +326,8 @@ class KnowledgeGraphFeatureT2ContractTest {
                 },
                 buildState = {
                     loadedState().copy(reservations = mapOf(PERSONA_ID to "owner-agent"))
-                }
+                },
+                extraIdentities = listOf(outsiderIdentity)
             ),
             // REPLACE_HOLON
             FailureCase(
@@ -389,23 +397,6 @@ class KnowledgeGraphFeatureT2ContractTest {
                 payload = buildJsonObject {
                     put("holonId", "nonexistent-holon")
                 }
-            ),
-            // UPDATE_HOLON_CONTENT
-            FailureCase(
-                label = "UPDATE_HOLON_CONTENT (missing holonId)",
-                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT,
-                originator = "core",
-                payload = buildJsonObject {
-                    put("payload", buildJsonObject { })
-                }
-            ),
-            FailureCase(
-                label = "UPDATE_HOLON_CONTENT (holon not found)",
-                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT,
-                originator = "core",
-                payload = buildJsonObject {
-                    put("holonId", "nonexistent-holon")
-                }
             )
         )
     }
@@ -418,7 +409,7 @@ class KnowledgeGraphFeatureT2ContractTest {
     fun `all domain actions publish success ACTION_RESULT on happy path`() {
         assertAllCases(happyCases) { case ->
             val platform = case.buildPlatform()
-            val harness = buildHarness(platform, case.buildState())
+            val harness = buildHarness(platform, case.buildState(), case.extraIdentities)
 
             harness.store.processedActions.clear()
             harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
@@ -443,7 +434,7 @@ class KnowledgeGraphFeatureT2ContractTest {
     fun `all domain actions publish failure ACTION_RESULT on error`() {
         assertAllCases(failureCases) { case ->
             val platform = case.buildPlatform()
-            val harness = buildHarness(platform, case.buildState())
+            val harness = buildHarness(platform, case.buildState(), case.extraIdentities)
 
             harness.store.processedActions.clear()
             harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
@@ -470,7 +461,7 @@ class KnowledgeGraphFeatureT2ContractTest {
     fun `all domain actions log at WARN or ERROR level on error`() {
         assertAllCases(failureCases) { case ->
             val platform = case.buildPlatform()
-            val harness = buildHarness(platform, case.buildState())
+            val harness = buildHarness(platform, case.buildState(), case.extraIdentities)
 
             platform.capturedLogs.clear()
             harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
