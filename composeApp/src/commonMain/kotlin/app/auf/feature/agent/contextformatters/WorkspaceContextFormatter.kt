@@ -291,7 +291,7 @@ object WorkspaceContextFormatter {
             val itemCount = countItemsUnder(entry.relativePath, allEntries)
 
             PromptSection.Group(
-                key = "ws:${entry.relativePath}",
+                key = "DIRECTORY ws:${entry.relativePath}",
                 header = "",  // no own content for directories
                 children = dirChildren.map { child ->
                     buildEntrySection(child, allEntries, childrenMap, expandedFileContents, platformDependencies)
@@ -307,7 +307,7 @@ object WorkspaceContextFormatter {
                 ?: "[File not loaded. Use agent.CONTEXT_UNCOLLAPSE to open.]"
 
             PromptSection.Section(
-                key = "ws:${entry.relativePath}",
+                key = "FILE ws:${entry.relativePath}",
                 content = content,
                 isProtected = false,
                 isCollapsible = true,
