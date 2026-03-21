@@ -1372,6 +1372,33 @@
       "required_permissions": []
     },
     {
+      "action_name": "agent.MERGE_WORKSPACE_FILE_CONTENT",
+      "summary": "[INTERNAL] Merges fetched workspace file content into the agent's transient workspace file contents map without replacing existing entries. Used for on-demand file loading triggered by CONTEXT_UNCOLLAPSE.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of workspace-relative file paths to their string content.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "agentId",
+          "contents"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
       "action_name": "agent.SET_MANAGED_PARTITIONS",
       "summary": "Stores fast-path partition data for Context Management Tab 0.",
       "public": false,

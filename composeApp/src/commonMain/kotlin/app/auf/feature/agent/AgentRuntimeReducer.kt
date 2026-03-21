@@ -86,6 +86,24 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
+            // Merges new file content into the existing transientWorkspaceFileContents map
+            // without replacing entries that are already present. Used by the on-demand
+            // workspace file fetch triggered by CONTEXT_UNCOLLAPSE when a file is expanded
+            // outside the turn-initiation context gathering pipeline.
+            ActionRegistry.Names.AGENT_MERGE_WORKSPACE_FILE_CONTENT -> {
+                val agentId = action.payload?.agentUUID() ?: return state
+                val contentsJson = action.payload?.get("contents")?.jsonObject ?: return state
+                val newContents = contentsJson.mapValues { (_, value) ->
+                    value.jsonPrimitive.contentOrNull ?: ""
+                }
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val mergedContents = currentStatus.transientWorkspaceFileContents + newContents
+                val updatedStatus = currentStatus.copy(
+                    transientWorkspaceFileContents = mergedContents
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
             ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED -> {
                 val agentId = action.payload?.agentUUID() ?: return state
                 // startedAt is null (JsonNull) when clearing the gate, Long when setting it.

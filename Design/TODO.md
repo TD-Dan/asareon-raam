@@ -74,7 +74,7 @@
 
 - BOOTING/AWAKE in SovereignStrategy is actually Strategy controlled variable so it should not live in NVRAM where the agent could modify it?
 
-- Show cognitive session when a private session is in use for agent
+- "Show cognitive session" kebab option when a private session is in use for agent
 
 - session input needs to at most take 50% of available space
 
@@ -82,19 +82,17 @@
 
 - identity visibilities to control who can see what parts of the identityscape? identity groups and permissions? If you belong to a group you see group assests (identities)? Needs planning.
 
+- NVRAM needs to be at the end of the context for optimal llm attention.
+
+- You are "Agent" at the end of the context also for persona anchoring.
+
 ## HIGH PRIORITY:
 
-- !! Need context collapse management tools to the preview turn view to debug and fix agent internal state
 
 - AUTOMATIC INCREMENTAL BACKUP at app start! And a backup central.
 
 - Get Sovereigns to work -> offloading design issue tracking and AUF App. Needs Boot and NVRAM functionality.
 
-- Build a context collapse and expand functionality for the agents. Instead of only choosing what holons to show the agent can select its  whole context content dynamically.
-
 - Rebrand and publish as 1.0.0alpha! < Asareon Raam > < Asareon AUF (Agents Universal Framework)> 
 
 - clean up deprecated code
-
-- Check that the all strategy contexes are constructed correctly for all strategies. Multiple session subsciptions are not currently put correctly to the context. PrivateSessionStrategy can work as a reference implementation for this.
-

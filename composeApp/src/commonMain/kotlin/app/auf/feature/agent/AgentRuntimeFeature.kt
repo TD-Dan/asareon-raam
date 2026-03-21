@@ -691,17 +691,11 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle,
                         "${action.name} side-effect: Missing agentId in payload. Context state not persisted.")
-                    val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-                    publishActionResult(store, correlationId, action.name, success = false,
-                        error = "Missing agentId in payload.")
                     return
                 }
                 val agent = agentState.agents[agentId] ?: run {
-                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                    platformDependencies.log(LogLevel.DEBUG, identity.handle,
                         "${action.name} side-effect: Agent '$agentId' not found (may have been deleted). Context state not persisted.")
-                    val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-                    publishActionResult(store, correlationId, action.name, success = false,
-                        error = "Agent '$agentId' not found.")
                     return
                 }
 
@@ -759,21 +753,69 @@ class AgentRuntimeFeature(
                     }
                 }
 
-                saveContextState(agent, agentState, store)
+                // ============================================================
+                // On-demand workspace file content fetch
+                //
+                // When a workspace FILE (not directory) is expanded, check if
+                // its content is already in transientWorkspaceFileContents.
+                // If not, dispatch a filesystem.READ_MULTIPLE to fetch it.
+                // Reassembly is deferred until the content arrives to avoid
+                // showing "[File not loaded]" for expanded files.
+                //
+                // Uses "wsod:" (workspace on-demand) correlation ID prefix to
+                // distinguish from turn-initiation "ws:" reads.
+                // ============================================================
+                var deferReassembly = false
 
-                // If Manage Context is open for this agent, reassemble instantly
-                val updatedAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState
-                val updatedStatusInfo = updatedAgentState?.agentStatuses?.get(agentId)
-                if (updatedStatusInfo?.managedContext != null) {
-                    reassembleOnToggle(agentId, store)
+                if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) {
+                    val wsPartitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull
+                    if (wsPartitionKey != null && wsPartitionKey.startsWith("ws:") && !wsPartitionKey.endsWith("/")) {
+                        // This is a workspace file (not directory) being expanded
+                        val relativePath = wsPartitionKey.removePrefix("ws:")
+                        val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
+
+                        if (relativePath !in statusInfo.transientWorkspaceFileContents) {
+                            // Content not yet fetched — dispatch a read
+                            val safeAgentIdStr = agentId.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                            val workspacePrefix = "$safeAgentIdStr/workspace"
+                            val sandboxPath = "$workspacePrefix/$relativePath"
+
+                            store.deferredDispatch(identity.handle, Action(
+                                ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE,
+                                buildJsonObject {
+                                    put("paths", buildJsonArray { add(sandboxPath) })
+                                    put("correlationId", "wsod:${agentId.uuid}")
+                                }
+                            ))
+
+                            platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                                "CONTEXT_UNCOLLAPSE: Dispatched on-demand READ_MULTIPLE for workspace file " +
+                                        "'$relativePath' (agent '${agentId}'). Deferring reassembly until content arrives.")
+
+                            deferReassembly = true
+                        }
+                    }
                 }
 
-                // Publish ACTION_RESULT unconditionally — monitoring features and
-                // logging plugins observe this broadcast, not just CommandBot.
+                saveContextState(agent, agentState, store)
+
+                // If Manage Context is open for this agent, reassemble instantly —
+                // unless we're waiting for an on-demand file content fetch.
+                if (!deferReassembly) {
+                    val updatedAgentState = store.state.value.featureStates["agent"] as? AgentRuntimeState
+                    val updatedStatusInfo = updatedAgentState?.agentStatuses?.get(agentId)
+                    if (updatedStatusInfo?.managedContext != null) {
+                        reassembleOnToggle(agentId, store)
+                    }
+                }
+
+                // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-                val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
-                val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
-                publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
+                if (correlationId != null) {
+                    val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                    val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
+                    publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
+                }
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->
@@ -1334,11 +1376,13 @@ class AgentRuntimeFeature(
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> handleFileSystemReadResponse(payload, store)
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
-                // Route workspace file content responses (correlationId starts with "ws:") to the pipeline.
-                // Other RETURN_FILES_CONTENT responses are command responses handled above.
-                val wsCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
-                if (wsCorrelationId != null && wsCorrelationId.startsWith("ws:")) {
+                val fileContentCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+                if (fileContentCorrelationId != null && fileContentCorrelationId.startsWith("ws:")) {
+                    // Turn-initiation workspace file reads → pipeline handler
                     CognitivePipeline.handleTargetedAction(action, store)
+                } else if (fileContentCorrelationId != null && fileContentCorrelationId.startsWith("wsod:")) {
+                    // On-demand workspace file reads (from CONTEXT_UNCOLLAPSE) → merge + reassemble
+                    handleOnDemandWorkspaceFileResponse(payload, store)
                 }
                 // If not a workspace response and not handled as a pending command above, ignore.
             }
@@ -1531,6 +1575,74 @@ class AgentRuntimeFeature(
                     put("senderId", commandBotSenderId)
                     put("message", message)
                 }))
+            }
+        }
+    }
+
+    /**
+     * Handles the response from an on-demand workspace file read triggered by
+     * CONTEXT_UNCOLLAPSE. Merges the file content into transientWorkspaceFileContents
+     * and triggers reassembly of the Manage Context view.
+     *
+     * Uses "wsod:" (workspace on-demand) correlation ID prefix to distinguish from
+     * turn-initiation "ws:" reads handled by the CognitivePipeline.
+     */
+    private fun handleOnDemandWorkspaceFileResponse(payload: JsonObject, store: Store) {
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        if (!correlationId.startsWith("wsod:")) return
+
+        val agentIdStr = correlationId.removePrefix("wsod:")
+        val agentId = IdentityUUID(agentIdStr)
+        val contentsJson = payload["contents"]?.jsonObject
+
+        if (contentsJson == null || contentsJson.isEmpty()) {
+            platformDependencies.log(LogLevel.WARN, identity.handle,
+                "handleOnDemandWorkspaceFileResponse: Empty contents for agent '$agentIdStr'. " +
+                        "File may not exist on disk.")
+            // Still trigger reassembly so the UI updates (will show placeholder)
+            val agentState = store.state.value.featureStates[identity.handle] as? AgentRuntimeState
+            val statusInfo = agentState?.agentStatuses?.get(agentId)
+            if (statusInfo?.managedContext != null) {
+                reassembleOnToggle(agentId, store)
+            }
+            return
+        }
+
+        // Strip the sandbox prefix to get workspace-relative paths,
+        // matching the convention used by CognitivePipeline.handleWorkspaceFileContentsResponse.
+        val safeAgentId = agentIdStr.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val workspacePrefix = "$safeAgentId/workspace/"
+
+        val relativeContents = buildJsonObject {
+            contentsJson.forEach { (path, content) ->
+                val normalizedPath = path.replace("\\", "/")
+                val relativePath = normalizedPath.removePrefix(workspacePrefix)
+                put(relativePath, content)
+            }
+        }
+
+        // Merge (not replace) into transientWorkspaceFileContents
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.AGENT_MERGE_WORKSPACE_FILE_CONTENT,
+            buildJsonObject {
+                put("agentId", agentIdStr)
+                put("contents", relativeContents)
+            }
+        ))
+
+        platformDependencies.log(LogLevel.DEBUG, identity.handle,
+            "handleOnDemandWorkspaceFileResponse: Merged ${contentsJson.size} file(s) for agent '$agentIdStr'. " +
+                    "Scheduling reassembly.")
+
+        // Schedule reassembly after the MERGE action processes.
+        // deferredDispatch is FIFO, so MERGE will be in the queue before this runs,
+        // but we launch a coroutine to ensure we read state AFTER the merge is applied.
+        coroutineScope.launch {
+            kotlinx.coroutines.yield()
+            val agentState = store.state.value.featureStates[identity.handle] as? AgentRuntimeState ?: return@launch
+            val statusInfo = agentState.agentStatuses[agentId] ?: return@launch
+            if (statusInfo.managedContext != null) {
+                reassembleOnToggle(agentId, store)
             }
         }
     }
