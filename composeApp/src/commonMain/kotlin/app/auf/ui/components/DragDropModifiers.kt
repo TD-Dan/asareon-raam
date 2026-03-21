@@ -3,12 +3,13 @@ package app.auf.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.draganddrop.dragAndDropSource
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragAndDropTransferAction
 import androidx.compose.ui.draganddrop.DragAndDropTransferData
+import androidx.compose.ui.draganddrop.DragAndDropTransferable
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.geometry.Offset
 import app.auf.util.DroppedFile
@@ -55,17 +56,15 @@ fun Modifier.fileDropTarget(
     target = object : DragAndDropTarget {
 
         override fun onStarted(event: DragAndDropEvent) {
-            // Drag entered our bounds with acceptable content
             onDragEntered()
         }
 
         override fun onEnded(event: DragAndDropEvent) {
-            // Drag left our bounds or operation finished
             onDragExited()
         }
 
         override fun onDrop(event: DragAndDropEvent): Boolean {
-            onDragExited() // clear hover state regardless of outcome
+            onDragExited()
             return try {
                 val transferable = event.awtTransferable
                 if (!transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return false
@@ -100,7 +99,7 @@ fun Modifier.fileDropTarget(
 
 /**
  * AWT [Transferable] that provides a list of files to the OS drag layer.
- * Used by [fileDragSource] to export sandbox files to external applications.
+ * Wrapped in [DragAndDropTransferable] before being handed to Compose.
  */
 private class FileListTransferable(private val files: List<File>) : Transferable {
     override fun getTransferDataFlavors(): Array<DataFlavor> =
@@ -122,7 +121,7 @@ private class FileListTransferable(private val files: List<File>) : Transferable
  *
  * On drag initiation, copies the sandbox file to a temp directory (so the
  * OS sees a real file path with the correct name) and provides it to the
- * system drag layer via AWT [Transferable].
+ * system drag layer via AWT [Transferable] wrapped in [DragAndDropTransferable].
  *
  * @param absolutePath The absolute filesystem path to the source file in the sandbox.
  * @param fileName The display name for the dragged file.
@@ -133,21 +132,20 @@ fun Modifier.fileDragSource(
     fileName: String
 ): Modifier = this.dragAndDropSource(
     drawDragDecoration = {
-        // Minimal drag decoration — a semi-transparent rectangle.
-        // The OS typically overlays its own file-drag chrome on top of this.
         drawRect(
             color = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.3f),
             size = size
         )
     },
-    transferData = { offset: Offset ->
+    transferData = { _: Offset ->
         val tempFile = prepareDragSourceFile(absolutePath, fileName)
         if (tempFile != null) {
             DragAndDropTransferData(
-                transferable = FileListTransferable(listOf(tempFile))
+                transferable = DragAndDropTransferable(FileListTransferable(listOf(tempFile))),
+                supportedActions = listOf(DragAndDropTransferAction.Copy)
             )
         } else {
-            null // cancel drag — source file not found
+            null
         }
     }
 )
