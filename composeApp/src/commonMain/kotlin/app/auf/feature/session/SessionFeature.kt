@@ -46,6 +46,12 @@ class SessionFeature(
     @Serializable private data class InputDraftChangedPayload(val sessionId: String, val draft: String)
     @Serializable private data class HistoryNavigatePayload(val sessionId: String, val direction: String)
 
+    // --- Workspace pane payload types ---
+    @Serializable private data class RefreshWorkspacePayload(val session: String)
+    @Serializable private data class WorkspaceFilePayload(val session: String, val fileName: String? = null)
+    @Serializable private data class WorkspaceFilesLoadedPayload(val sessionLocalHandle: String, val files: List<FileEntry>)
+    @Serializable private data class WorkspaceFileContentPayload(val fileName: String, val content: String)
+
     // --- Payload types for agent-facing message targeting ---
     @Serializable private data class LockMessagePayload(val session: String, val senderId: String, val timestamp: String)
     @Serializable private data class DeleteMessageExtPayload(val session: String, val messageId: String? = null, val senderId: String? = null, val timestamp: String? = null)
@@ -130,10 +136,38 @@ class SessionFeature(
         when (action.name) {
             // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
             // Phase 4: Updated for new folder-based file structure (uuid/localHandle.json)
+            // Phase 5 (Workspace): Workspace folder listings are routed to WORKSPACE_FILES_LOADED.
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val data = action.payload ?: return
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
+                val returnedPath = data["path"]?.jsonPrimitive?.contentOrNull ?: ""
 
+                // ── Workspace file listing ────────────────────────────────
+                // If the path contains "/workspace" or "\workspace", this is a
+                // workspace pane refresh — route to the workspace files loader.
+                val normalizedReturnedPath = returnedPath.replace('\\', '/')
+                if (normalizedReturnedPath.contains("/workspace")) {
+                    // Extract the session UUID from the path (format: "{uuid}/workspace")
+                    val uuid = normalizedReturnedPath.substringBefore("/workspace")
+                    val session = sessionState.sessions.values.find { it.identity.uuid == uuid }
+                    if (session != null) {
+                        // Filter to files only (not directories or .keep)
+                        val workspaceFiles = fileList.filter { entry ->
+                            val name = platformDependencies.getFileName(entry.path)
+                            !entry.isDirectory && name != ".keep"
+                        }
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.SESSION_WORKSPACE_FILES_LOADED,
+                            buildJsonObject {
+                                put("sessionLocalHandle", session.identity.localHandle)
+                                put("files", Json.encodeToJsonElement(workspaceFiles))
+                            }
+                        ))
+                    }
+                    return
+                }
+
+                // ── Original session file loading ─────────────────────────
                 if (startupLoadingActive) pendingStartupOps--
 
                 fileList.forEach { entry ->
@@ -152,10 +186,28 @@ class SessionFeature(
 
                 if (startupLoadingActive) checkStartupLoadComplete(store, sessionState)
             }
+            // Phase 5 (Workspace): Workspace file reads are routed to WORKSPACE_FILE_CONTENT_LOADED.
             ActionRegistry.Names.FILESYSTEM_RETURN_READ -> {
                 val data = action.payload ?: return
                 val path = data["path"]?.jsonPrimitive?.content ?: ""
                 val content = data["content"]?.jsonPrimitive?.content ?: ""
+
+                // ── Workspace file content ────────────────────────────────
+                // Route files inside a /workspace/ subfolder to the preview handler.
+                val normalizedPath = path.replace('\\', '/')
+                if (normalizedPath.contains("/workspace/")) {
+                    val fileName = platformDependencies.getFileName(path)
+                    if (content.isNotBlank()) {
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.SESSION_WORKSPACE_FILE_CONTENT_LOADED,
+                            buildJsonObject {
+                                put("fileName", fileName)
+                                put("content", content)
+                            }
+                        ))
+                    }
+                    return
+                }
 
                 // Route input.json files to the input-state handler — they are not Session objects.
                 // Check both "/" and "\" separators for cross-platform compatibility (Windows uses "\").
@@ -279,9 +331,6 @@ class SessionFeature(
                     broadcastSessionNames(sessionState, store)
                 }
                 // Signal readiness when all pending identity registrations have completed.
-                // This covers runtime SESSION_CREATE and SESSION_CLONE only — disk-loaded
-                // sessions are tracked by the startup loading counter (pendingStartupOps)
-                // and fire SESSION_FEATURE_READY from checkStartupLoadComplete instead.
                 val prevPending = (previousState as? SessionState)?.pendingCreations ?: emptyMap()
                 if (prevPending.isNotEmpty() && sessionState.pendingCreations.isEmpty()) {
                     store.deferredDispatch(identity.handle, Action(
@@ -415,14 +464,6 @@ class SessionFeature(
             ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED -> {
                 val sessionId = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return
                 if (!sessionState.sessions.containsKey(sessionId)) return
-                // Cancel any existing debounce job and start a fresh 5-second countdown.
-                // IMPORTANT: we read the CURRENT store state when the timer fires rather than
-                // capturing sessionState here — this ensures we write the most recent draft
-                // even if multiple changes arrived during the debounce window.
-                // We also call store.dispatch directly (not deferredDispatch) because this
-                // runs from a coroutine context, not from within the synchronous action
-                // processing pipeline. deferredDispatch uses the store's own internal scope,
-                // which is not the TestScope and therefore isn't controlled by testScheduler.
                 draftDebounceJobs[sessionId]?.cancel()
                 draftDebounceJobs[sessionId] = coroutineScope.launch {
                     delay(5_000)
@@ -476,7 +517,6 @@ class SessionFeature(
                 }
 
                 // For user posts: cancel the debounce and write input.json immediately
-                // so the cleared draft and updated history are persisted without waiting.
                 val activeUserId = (previousState as? SessionState)?.activeUserId ?: "user"
                 val postedSenderId = action.payload?.get("senderId")?.jsonPrimitive?.contentOrNull
                     ?: action.originator
@@ -534,7 +574,6 @@ class SessionFeature(
                     return
                 }
 
-                // --- SLICE 4 CHANGE: Support both messageId (internal) and senderId+timestamp (agent-facing) ---
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull
                 val targetSenderId = action.payload?.get("senderId")?.jsonPrimitive?.contentOrNull
                 val targetTimestamp = action.payload?.get("timestamp")?.jsonPrimitive?.contentOrNull
@@ -542,7 +581,6 @@ class SessionFeature(
                 val resolvedMessageId: String? = if (messageId != null) {
                     messageId
                 } else if (targetSenderId != null && targetTimestamp != null) {
-                    // Agent-facing path: resolve via senderId + timestamp
                     val prevState = previousState as? SessionState ?: sessionState
                     val prevSession = prevState.sessions[localHandle]
                     if (prevSession != null) {
@@ -707,12 +745,10 @@ class SessionFeature(
                     return
                 }
 
-                // Check if the reducer flagged a resolution error
                 val prevState = previousState as? SessionState
                 val prevSession = prevState?.sessions?.get(localHandle)
                 val newSession = sessionState.sessions[localHandle]
 
-                // If the ledger didn't change, the reducer couldn't find the target → post error
                 if (prevSession?.ledger == newSession?.ledger && prevSession != null) {
                     val targetSenderId = action.payload?.get("senderId")?.jsonPrimitive?.contentOrNull ?: ""
                     val targetTimestamp = action.payload?.get("timestamp")?.jsonPrimitive?.contentOrNull ?: ""
@@ -733,6 +769,57 @@ class SessionFeature(
                 publishActionResult(store, correlationId, action.name, success = true,
                     summary = "Message $verb")
             }
+
+            // ── Workspace pane: REFRESH ───────────────────────────────────
+            ActionRegistry.Names.SESSION_REFRESH_WORKSPACE -> {
+                val decoded = action.payload?.let { json.decodeFromJsonElement<RefreshWorkspacePayload>(it) } ?: return
+                val localHandle = resolveSessionId(decoded.session, sessionState) ?: return
+                val session = sessionState.sessions[localHandle] ?: return
+                val uuid = session.identity.uuid ?: return
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.FILESYSTEM_LIST,
+                    buildJsonObject { put("path", "$uuid/workspace") }
+                ))
+            }
+
+            // ── Workspace pane: SELECT FILE (triggers read for preview) ──
+            ActionRegistry.Names.SESSION_SELECT_WORKSPACE_FILE -> {
+                val decoded = action.payload?.let { json.decodeFromJsonElement<WorkspaceFilePayload>(it) } ?: return
+                val fileName = decoded.fileName ?: return // null fileName = deselect, handled by reducer only
+                val localHandle = resolveSessionId(decoded.session, sessionState) ?: return
+                val session = sessionState.sessions[localHandle] ?: return
+                val uuid = session.identity.uuid ?: return
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.FILESYSTEM_READ,
+                    buildJsonObject { put("path", "$uuid/workspace/$fileName") }
+                ))
+            }
+
+            // ── Workspace pane: DELETE FILE ───────────────────────────────
+            ActionRegistry.Names.SESSION_DELETE_WORKSPACE_FILE -> {
+                val decoded = action.payload?.let { json.decodeFromJsonElement<WorkspaceFilePayload>(it) } ?: return
+                val fileName = decoded.fileName ?: return
+                val localHandle = resolveSessionId(decoded.session, sessionState) ?: return
+                val session = sessionState.sessions[localHandle] ?: return
+                val uuid = session.identity.uuid ?: return
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.FILESYSTEM_DELETE_FILE,
+                    buildJsonObject { put("path", "$uuid/workspace/$fileName") }
+                ))
+            }
+
+            // ── Workspace pane: auto-refresh when switching sessions ──────
+            ActionRegistry.Names.SESSION_SET_ACTIVE_TAB -> {
+                if (sessionState.isWorkspacePaneOpen) {
+                    val localHandle = sessionState.activeSessionLocalHandle ?: return
+                    val session = sessionState.sessions[localHandle] ?: return
+                    val uuid = session.identity.uuid ?: return
+                    store.deferredDispatch(identity.handle, Action(
+                        ActionRegistry.Names.FILESYSTEM_LIST,
+                        buildJsonObject { put("path", "$uuid/workspace") }
+                    ))
+                }
+            }
         }
     }
 
@@ -740,10 +827,6 @@ class SessionFeature(
     // SLICE 4: Error feedback for message resolution failures
     // ========================================================================
 
-    /**
-     * Posts a resolution error message. If the action came from an agent (via CommandBot),
-     * the error goes to the originating session so the agent can see it.
-     */
     private fun postResolutionError(localHandle: String, error: String, originator: String?, store: Store) {
         val formattedError = "```text\n[SESSION] Message resolution failed:\n$error\n```"
         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
@@ -753,12 +836,6 @@ class SessionFeature(
         }))
     }
 
-    /**
-     * Publishes a lightweight broadcast notification after completing a command-dispatchable
-     * session action. CommandBot matches via correlationId to post feedback to the originating
-     * session. Follows the same pattern as FileSystemFeature.publishActionResult and
-     * KnowledgeGraphFeature.publishActionResult.
-     */
     private fun publishActionResult(
         store: Store,
         correlationId: String?,
@@ -819,15 +896,11 @@ class SessionFeature(
     // Resolves a session identifier to its localHandle (map key).
     // Accepts: localHandle, full handle, display name, or UUID.
     private fun resolveSessionId(identifier: String, state: SessionState): String? {
-        // Direct localHandle match (map key)
         if (state.sessions.containsKey(identifier)) return identifier
-        // Match by full handle (e.g., "session.cats-chat")
         state.sessions.values.singleOrNull { it.identity.handle == identifier }
             ?.let { return it.identity.localHandle }
-        // Match by UUID (immutable, preferred for cross-feature references)
         state.sessions.values.singleOrNull { it.identity.uuid == identifier }
             ?.let { return it.identity.localHandle }
-        // Match by display name
         state.sessions.values.singleOrNull { it.identity.name == identifier }
             ?.let { return it.identity.localHandle }
         return null
@@ -840,10 +913,6 @@ class SessionFeature(
         return newName
     }
 
-    /**
-     * Writes the current draft and history for [localHandle] to {uuid}/input.json.
-     * Uses [sessionState] (the post-reducer new state) so the data is always fresh.
-     */
     private fun persistInputState(localHandle: String, sessionState: SessionState, store: Store) {
         val session = sessionState.sessions[localHandle] ?: return
         val uuid = session.identity.uuid ?: return
@@ -859,15 +928,8 @@ class SessionFeature(
         ))
     }
 
-    /**
-     * Parses a {uuid}/input.json file and dispatches INPUT_HISTORIES_LOADED.
-     * Logs a warning on parse failure without crashing.
-     */
     private fun handleInputJsonRead(path: String, content: String, store: Store) {
         if (content.isBlank()) return
-        // path is always "{uuid}/input.json" (or "{uuid}\input.json" on Windows)
-        // as a relative path inside the session folder, so the UUID is always the
-        // second-to-last path segment. Replace backslashes for cross-platform compatibility.
         val normalizedPath = path.replace('\\', '/')
         val uuid = normalizedPath.trimEnd('/').substringBeforeLast("/").substringAfterLast("/")
         if (uuid.isBlank()) {
@@ -924,7 +986,6 @@ class SessionFeature(
                 )
             }
 
-            // SESSION_CREATE stashes a PendingSessionCreation — no session in the map yet
             ActionRegistry.Names.SESSION_CREATE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<CreatePayload>(it) } ?: CreatePayload()
                 val desiredName = decoded.name?.takeIf { it.isNotBlank() } ?: "New Session"
@@ -943,7 +1004,6 @@ class SessionFeature(
                 )
             }
 
-            // SESSION_CLONE stashes a PendingSessionCreation with clone source
             ActionRegistry.Names.SESSION_CLONE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<ClonePayload>(it) } ?: return currentFeatureState
                 val sourceLocalHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
@@ -965,7 +1025,6 @@ class SessionFeature(
                 )
             }
 
-            // RETURN_REGISTER_IDENTITY — create session from pending or remove pending on failure
             ActionRegistry.Names.CORE_RETURN_REGISTER_IDENTITY -> {
                 val resp = payload?.let { json.decodeFromJsonElement<RegisterIdentityResponsePayload>(it) }
                     ?: return currentFeatureState
@@ -982,9 +1041,7 @@ class SessionFeature(
                         registeredAt = platformDependencies.currentTimeMillis()
                     )
 
-                    // Build the session
                     val newSession = if (pending.cloneSourceLocalHandle != null) {
-                        // CLONE: copy ledger from source
                         val source = currentFeatureState.sessions[pending.cloneSourceLocalHandle]
                         Session(
                             identity = approvedIdentity,
@@ -996,7 +1053,6 @@ class SessionFeature(
                             orderIndex = 0
                         )
                     } else {
-                        // CREATE: fresh session
                         Session(
                             identity = approvedIdentity,
                             ledger = emptyList(),
@@ -1016,7 +1072,6 @@ class SessionFeature(
                         pendingCreations = currentFeatureState.pendingCreations - uuid
                     )
                 } else {
-                    // Registration failed — remove pending
                     val failedUuid = resp.uuid
                     if (failedUuid != null && failedUuid in currentFeatureState.pendingCreations) {
                         currentFeatureState.copy(
@@ -1029,7 +1084,6 @@ class SessionFeature(
                 }
             }
 
-            // RETURN_UPDATE_IDENTITY — reconcile handle change
             ActionRegistry.Names.CORE_RETURN_UPDATE_IDENTITY -> {
                 val resp = payload?.let { json.decodeFromJsonElement<UpdateIdentityResponsePayload>(it) }
                     ?: return currentFeatureState
@@ -1051,7 +1105,6 @@ class SessionFeature(
                 val updatedSession = session.copy(identity = updatedIdentity)
 
                 if (oldLocalHandle != newLocalHandle) {
-                    // Handle changed — re-key in the map
                     val updatedSessions = (currentFeatureState.sessions - oldLocalHandle) + (newLocalHandle to updatedSession)
                     val newActive = if (currentFeatureState.activeSessionLocalHandle == oldLocalHandle) newLocalHandle
                     else currentFeatureState.activeSessionLocalHandle
@@ -1064,7 +1117,6 @@ class SessionFeature(
                         sessionOrder = SessionState.deriveSessionOrder(updatedSessions)
                     )
                 } else {
-                    // Handle didn't change (rare — name changed but slug stayed the same)
                     currentFeatureState.copy(
                         sessions = currentFeatureState.sessions + (oldLocalHandle to updatedSession)
                     )
@@ -1077,7 +1129,6 @@ class SessionFeature(
                 val session = currentFeatureState.sessions[localHandle] ?: return currentFeatureState
                 val newName = findUniqueName(decoded.name, currentFeatureState)
 
-                // Optimistically update the session's identity name
                 val updatedIdentity = session.identity.copy(name = newName)
                 val updatedSession = session.copy(identity = updatedIdentity)
                 currentFeatureState.copy(
@@ -1090,7 +1141,6 @@ class SessionFeature(
                 val localHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
                 val targetSession = currentFeatureState.sessions[localHandle] ?: return currentFeatureState
 
-                // Resolve senderId: explicit payload field → action originator → fallback
                 val resolvedSenderId = decoded.senderId ?: action.originator ?: "unknown"
 
                 val newEntry = LedgerEntry(
@@ -1114,7 +1164,6 @@ class SessionFeature(
                 }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
 
-                // ── Draft / history management for user posts ──────────────────────
                 val activeUserId = currentFeatureState.activeUserId ?: "user"
                 val isUserPost = resolvedSenderId == activeUserId
                 val messageText = decoded.message
@@ -1130,7 +1179,6 @@ class SessionFeature(
                     newPreNavDrafts = newPreNavDrafts - localHandle
                     if (!messageText.isNullOrBlank()) {
                         val existing = newInputHistories[localHandle] ?: emptyList()
-                        // Don't add a duplicate of the most recent entry
                         if (existing.firstOrNull() != messageText) {
                             val capped = (listOf(messageText) + existing).take(MAX_HISTORY_SIZE)
                             newInputHistories = newInputHistories + (localHandle to capped)
@@ -1190,7 +1238,6 @@ class SessionFeature(
                 )
             }
             ActionRegistry.Names.SESSION_DELETE_MESSAGE -> {
-                // --- SLICE 4 CHANGE: Support senderId+timestamp in addition to messageId ---
                 val sessionIdentifier = payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val localHandle = resolveSessionId(sessionIdentifier, currentFeatureState) ?: return currentFeatureState
                 val targetSession = currentFeatureState.sessions[localHandle] ?: return currentFeatureState
@@ -1203,7 +1250,7 @@ class SessionFeature(
                     messageId != null -> messageId
                     targetSenderId != null && targetTimestamp != null -> {
                         val result = MessageResolution.resolve(targetSession.ledger, targetSenderId, targetTimestamp, platformDependencies)
-                        result.entry?.id // null if not found; handleSideEffects handles the error feedback
+                        result.entry?.id
                     }
                     else -> null
                 }
@@ -1221,7 +1268,6 @@ class SessionFeature(
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))
             }
 
-            // --- LOCK_MESSAGE / UNLOCK_MESSAGE reducer ---
             ActionRegistry.Names.SESSION_LOCK_MESSAGE, ActionRegistry.Names.SESSION_UNLOCK_MESSAGE -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<LockMessagePayload>(it) } ?: return currentFeatureState
                 val localHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
@@ -1231,7 +1277,6 @@ class SessionFeature(
                 val result = MessageResolution.resolve(targetSession.ledger, decoded.senderId, decoded.timestamp, platformDependencies)
 
                 if (result.entry == null) {
-                    // Can't update state; handleSideEffects will detect unchanged ledger and post error
                     return currentFeatureState
                 }
 
@@ -1242,18 +1287,13 @@ class SessionFeature(
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))
             }
 
-            // --- LIST_SESSIONS is handled purely in handleSideEffects (side-effect only, no state change) ---
             ActionRegistry.Names.SESSION_LIST_SESSIONS -> currentFeatureState
 
-            // ── Input draft persistence ───────────────────────────────────────────
             ActionRegistry.Names.SESSION_INPUT_DRAFT_CHANGED -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<InputDraftChangedPayload>(it) }
                     ?: return currentFeatureState
                 if (!currentFeatureState.sessions.containsKey(decoded.sessionId)) return currentFeatureState
 
-                // If the user is navigating history, any edit (text change or cursor
-                // movement) commits the recalled entry as the live draft and exits
-                // navigation mode — subsequent Up/Down start fresh from history[0].
                 val navActive = (currentFeatureState.historyNavIndex[decoded.sessionId] ?: -1) >= 0
 
                 currentFeatureState.copy(
@@ -1277,7 +1317,6 @@ class SessionFeature(
                 when (decoded.direction) {
                     "UP" -> {
                         if (currentIndex == -1) {
-                            // First UP: save the current draft, jump to history[0]
                             val savedDraft = currentFeatureState.draftInputs[sessionId] ?: ""
                             currentFeatureState.copy(
                                 historyNavIndex = currentFeatureState.historyNavIndex + (sessionId to 0),
@@ -1285,7 +1324,6 @@ class SessionFeature(
                                 preNavDrafts = currentFeatureState.preNavDrafts + (sessionId to savedDraft)
                             )
                         } else {
-                            // Subsequent UP: advance toward older entries, clamped at the last index
                             val newIndex = (currentIndex + 1).coerceAtMost(history.lastIndex)
                             currentFeatureState.copy(
                                 historyNavIndex = currentFeatureState.historyNavIndex + (sessionId to newIndex),
@@ -1295,9 +1333,8 @@ class SessionFeature(
                     }
                     "DOWN" -> {
                         when {
-                            currentIndex == -1 -> currentFeatureState // not navigating — no-op
+                            currentIndex == -1 -> currentFeatureState
                             currentIndex == 0 -> {
-                                // Back to live draft — restore preNavDraft and exit navigation mode
                                 val restored = currentFeatureState.preNavDrafts[sessionId] ?: ""
                                 currentFeatureState.copy(
                                     historyNavIndex = currentFeatureState.historyNavIndex - sessionId,
@@ -1330,14 +1367,12 @@ class SessionFeature(
 
                 val session = currentFeatureState.sessions.values.find { it.identity.uuid == uuid }
                 if (session != null) {
-                    // Session already loaded — apply directly
                     val localHandle = session.identity.localHandle
                     currentFeatureState.copy(
                         draftInputs = currentFeatureState.draftInputs + (localHandle to draft),
                         inputHistories = currentFeatureState.inputHistories + (localHandle to history)
                     )
                 } else {
-                    // Session not yet loaded — buffer until SESSION_LOADED drains it
                     val inputState = SessionInputState(draft = draft, history = history)
                     currentFeatureState.copy(
                         pendingInputLoads = currentFeatureState.pendingInputLoads + (uuid to inputState)
@@ -1348,7 +1383,12 @@ class SessionFeature(
             ActionRegistry.Names.SESSION_SET_ACTIVE_TAB -> {
                 val identifier = payload?.get("session")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val localHandle = resolveSessionId(identifier, currentFeatureState) ?: return currentFeatureState
-                currentFeatureState.copy(activeSessionLocalHandle = localHandle)
+                currentFeatureState.copy(
+                    activeSessionLocalHandle = localHandle,
+                    // Clear workspace preview when switching sessions
+                    selectedWorkspaceFile = null,
+                    workspaceFilePreview = null
+                )
             }
             ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<SetEditingSessionPayload>(it) } ?: return currentFeatureState
@@ -1389,8 +1429,6 @@ class SessionFeature(
                         .maxByOrNull { it.createdAt }
                         ?.identity?.localHandle
 
-                // Drain pending input loads for sessions that just arrived.
-                // This handles the startup race where input.json is read before localHandle.json.
                 var newDraftInputs = currentFeatureState.draftInputs
                 var newInputHistories = currentFeatureState.inputHistories
                 var newPendingInputLoads = currentFeatureState.pendingInputLoads
@@ -1524,6 +1562,83 @@ class SessionFeature(
                     messageUiState = targetSession.messageUiState.filterKeys { it in survivingIds }
                 )
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))
+            }
+
+            // ── Workspace pane reducer cases ──────────────────────────────
+
+            ActionRegistry.Names.SESSION_TOGGLE_WORKSPACE_PANE -> {
+                val isOpen = !currentFeatureState.isWorkspacePaneOpen
+                if (isOpen) {
+                    currentFeatureState.copy(isWorkspacePaneOpen = true)
+                } else {
+                    currentFeatureState.copy(
+                        isWorkspacePaneOpen = false,
+                        selectedWorkspaceFile = null,
+                        workspaceFilePreview = null
+                    )
+                }
+            }
+
+            ActionRegistry.Names.SESSION_REFRESH_WORKSPACE -> {
+                // Side-effect-only — listing arrives via WORKSPACE_FILES_LOADED
+                currentFeatureState
+            }
+
+            ActionRegistry.Names.SESSION_WORKSPACE_FILES_LOADED -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<WorkspaceFilesLoadedPayload>(it) }
+                    ?: return currentFeatureState
+                currentFeatureState.copy(
+                    workspaceFiles = currentFeatureState.workspaceFiles +
+                            (decoded.sessionLocalHandle to decoded.files)
+                )
+            }
+
+            ActionRegistry.Names.SESSION_SELECT_WORKSPACE_FILE -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<WorkspaceFilePayload>(it) }
+                    ?: return currentFeatureState
+                val fileName = decoded.fileName
+                if (fileName != null) {
+                    currentFeatureState.copy(
+                        selectedWorkspaceFile = fileName,
+                        workspaceFilePreview = null
+                    )
+                } else {
+                    currentFeatureState.copy(
+                        selectedWorkspaceFile = null,
+                        workspaceFilePreview = null
+                    )
+                }
+            }
+
+            ActionRegistry.Names.SESSION_WORKSPACE_FILE_CONTENT_LOADED -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<WorkspaceFileContentPayload>(it) }
+                    ?: return currentFeatureState
+                if (decoded.fileName == currentFeatureState.selectedWorkspaceFile) {
+                    currentFeatureState.copy(workspaceFilePreview = decoded.content)
+                } else {
+                    currentFeatureState
+                }
+            }
+
+            ActionRegistry.Names.SESSION_DELETE_WORKSPACE_FILE -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<WorkspaceFilePayload>(it) }
+                    ?: return currentFeatureState
+                val fileName = decoded.fileName ?: return currentFeatureState
+                val localHandle = resolveSessionId(decoded.session, currentFeatureState)
+                    ?: return currentFeatureState
+
+                val currentFiles = currentFeatureState.workspaceFiles[localHandle] ?: emptyList()
+                val updatedFiles = currentFiles.filter {
+                    platformDependencies.getFileName(it.path) != fileName
+                }
+
+                val clearPreview = currentFeatureState.selectedWorkspaceFile == fileName
+
+                currentFeatureState.copy(
+                    workspaceFiles = currentFeatureState.workspaceFiles + (localHandle to updatedFiles),
+                    selectedWorkspaceFile = if (clearPreview) null else currentFeatureState.selectedWorkspaceFile,
+                    workspaceFilePreview = if (clearPreview) null else currentFeatureState.workspaceFilePreview
+                )
             }
 
             else -> currentFeatureState

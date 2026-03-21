@@ -57,6 +57,14 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         file.writeText(content)
     }
 
+    actual open fun readFileBytes(path: String): ByteArray = File(path).readBytes()
+
+    actual open fun writeFileBytes(path: String, bytes: ByteArray) {
+        val file = File(path)
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+    }
+
     actual open fun fileExists(path: String): Boolean = File(path).exists()
 
     actual open fun listDirectory(path: String): List<FileEntry> {
@@ -120,6 +128,19 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     actual open fun getLastModified(path: String): Long = File(path).lastModified()
 
     actual open fun getUserHomePath(): String = System.getProperty("user.home")
+
+    actual open fun resolveAbsoluteSandboxPath(featureHandle: String, relativePath: String): String {
+        // Mirrors FileSystemFeature.getSandboxPathFor — resolves to the feature-level
+        // prefix under APP_ZONE. "session" → APP_ZONE/session, "agent.coder-1" → APP_ZONE/agent.
+        val featurePrefix = featureHandle.substringBefore('.')
+        val safePrefix = featurePrefix.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+        val sandboxRoot = "$rootDataDir${File.separatorChar}$safePrefix"
+        return if (relativePath.isNotBlank()) {
+            "$sandboxRoot${File.separatorChar}$relativePath"
+        } else {
+            sandboxRoot
+        }
+    }
 
 
     // --- Complex Operations ---

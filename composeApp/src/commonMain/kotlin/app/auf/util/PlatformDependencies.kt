@@ -14,6 +14,25 @@ data class FileEntry(
 )
 
 /**
+ * Represents a file received via drag-and-drop from outside the application.
+ * Used by platform-specific drop target composables to pass dropped files
+ * back to the shared feature layer for persistence via FileSystemFeature.
+ */
+data class DroppedFile(
+    /** The original file name (e.g., "notes.md"). */
+    val name: String,
+    /** The raw file content as bytes. For text files, decode with UTF-8. */
+    val bytes: ByteArray
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is DroppedFile) return false
+        return name == other.name && bytes.contentEquals(other.bytes)
+    }
+    override fun hashCode(): Int = 31 * name.hashCode() + bytes.contentHashCode()
+}
+
+/**
  * A type-safe enumeration of the fundamental security zones for file system access.
  * This is the implementation of the "Principle of Minimal Platform Knowledge". The platform
  * layer has no awareness of specific features like "settings" or "logs".
@@ -40,6 +59,19 @@ expect open class PlatformDependencies(appVersion: String) {
     // --- File & Directory I/O ---
     open fun readFileContent(path: String): String
     open fun writeFileContent(path: String, content: String)
+
+    /**
+     * Reads a file as raw bytes. Used by drag-and-drop to export files
+     * from the sandbox to the OS drag layer without text encoding assumptions.
+     */
+    open fun readFileBytes(path: String): ByteArray
+
+    /**
+     * Writes raw bytes to a file, creating parent directories if needed.
+     * Used by drag-and-drop to persist files dropped from outside the app.
+     */
+    open fun writeFileBytes(path: String, bytes: ByteArray)
+
     open fun fileExists(path: String): Boolean
     open fun listDirectory(path: String): List<FileEntry>
     open fun listDirectoryRecursive(path: String): List<FileEntry>
@@ -52,6 +84,16 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun getParentDirectory(path: String): String?
     open fun getLastModified(path: String): Long
     open fun getUserHomePath(): String
+
+    /**
+     * Resolves a relative sandbox path to an absolute filesystem path.
+     * Used by drag-out to provide the OS drag layer with a real file path.
+     *
+     * @param featureHandle The feature's handle (e.g., "session") — used to locate the sandbox root.
+     * @param relativePath The path relative to the feature's sandbox (e.g., "{uuid}/workspace/file.txt").
+     * @return The absolute filesystem path.
+     */
+    open fun resolveAbsoluteSandboxPath(featureHandle: String, relativePath: String): String
 
     // --- Complex Operations ---
     open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)

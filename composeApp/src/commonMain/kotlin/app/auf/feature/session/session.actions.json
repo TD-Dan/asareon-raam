@@ -331,7 +331,9 @@
           "messageId"
         ]
       },
-      "required_permissions": ["session:manage"]
+      "required_permissions": [
+        "session:manage"
+      ]
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
@@ -818,6 +820,133 @@
         },
         "required": [
           "uuid"
+        ]
+      }
+    },
+    {
+      "action_name": "session.TOGGLE_WORKSPACE_PANE",
+      "summary": "[INTERNAL] Toggles the workspace file pane visibility in SessionView. Clears file selection and preview content when closing.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "session.REFRESH_WORKSPACE",
+      "summary": "Requests a fresh file listing of the specified session's workspace folder. Dispatches FILESYSTEM_LIST and routes the response through WORKSPACE_FILES_LOADED.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:read"
+      ]
+    },
+    {
+      "action_name": "session.SELECT_WORKSPACE_FILE",
+      "summary": "[INTERNAL] Selects a workspace file for preview. Omit fileName to deselect and return to the file list. Triggers FILESYSTEM_READ for the selected file.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The file to select for preview. Omit or null to deselect."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      }
+    },
+    {
+      "action_name": "session.DELETE_WORKSPACE_FILE",
+      "summary": "[INTERNAL] Deletes a file from the session's workspace folder. Performs optimistic removal from the cached file list and dispatches FILESYSTEM_DELETE_FILE.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The name of the file to delete."
+          }
+        },
+        "required": [
+          "session",
+          "fileName"
+        ]
+      }
+    },
+    {
+      "action_name": "session.WORKSPACE_FILES_LOADED",
+      "summary": "[INTERNAL] Dispatched after a workspace folder listing has been received from FileSystemFeature. Populates the workspaceFiles cache in state.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionLocalHandle": {
+            "type": "string",
+            "description": "The localHandle of the session whose workspace was listed."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/FileEntry"
+            },
+            "description": "The list of files in the workspace folder."
+          }
+        },
+        "required": [
+          "sessionLocalHandle",
+          "files"
+        ]
+      }
+    },
+    {
+      "action_name": "session.WORKSPACE_FILE_CONTENT_LOADED",
+      "summary": "[INTERNAL] Dispatched after a workspace file's text content has been read from disk. Populates the preview panel if the file is still selected.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "fileName": {
+            "type": "string",
+            "description": "The file name that was read."
+          },
+          "content": {
+            "type": "string",
+            "description": "The text content of the file."
+          }
+        },
+        "required": [
+          "fileName",
+          "content"
         ]
       }
     },

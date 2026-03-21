@@ -137,9 +137,12 @@ class KnowledgeGraphFeature(
                 }
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG, ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+
                 if (action.name == ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG) {
                     val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
                         platformDependencies.log(LogLevel.WARN, identity.handle, "RESERVE_HKG: Missing required 'personaId' field. Ignoring.")
+                        publishActionResult(store, correlationId, action.name, false, error = "Missing required 'personaId' field.")
                         return
                     }
                     if (prevKgState?.reservations?.containsKey(personaId) == true) {
@@ -149,7 +152,18 @@ class KnowledgeGraphFeature(
                         store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                             put("message", "Failed to lock HKG: Already locked.")
                         }))
+                        publishActionResult(store, correlationId, action.name, false, error = errorMsg)
+                    } else {
+                        publishActionResult(store, correlationId, action.name, true, summary = "HKG '$personaId' reserved by '$originator'.")
                     }
+                } else {
+                    // RELEASE_HKG
+                    val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
+                        platformDependencies.log(LogLevel.WARN, identity.handle, "RELEASE_HKG: Missing required 'personaId' field. Ignoring.")
+                        publishActionResult(store, correlationId, action.name, false, error = "Missing required 'personaId' field.")
+                        return
+                    }
+                    publishActionResult(store, correlationId, action.name, true, summary = "HKG '$personaId' released.")
                 }
 
                 if (prevKgState?.reservations != kgState.reservations) {
@@ -172,12 +186,15 @@ class KnowledgeGraphFeature(
                 }))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val personaId = payload?.get("personaId")?.jsonPrimitive?.content ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "REQUEST_CONTEXT: Missing required 'personaId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'personaId' field.")
                     return
                 }
-                val correlationId = payload["correlationId"]?.jsonPrimitive?.content ?: run {
+                if (correlationId == null) {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "REQUEST_CONTEXT: Missing required 'correlationId' field. Ignoring.")
+                    publishActionResult(store, null, action.name, false, error = "Missing required 'correlationId' field.")
                     return
                 }
                 val contextMap = buildContextForPersona(personaId, kgState)
@@ -191,6 +208,7 @@ class KnowledgeGraphFeature(
                     payload = responsePayload,
                     targetRecipient = originator
                 ))
+                publishActionResult(store, correlationId, action.name, true, summary = "Context delivered for persona '$personaId'.")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS -> {
                 val correlationId = platformDependencies.generateUUID()

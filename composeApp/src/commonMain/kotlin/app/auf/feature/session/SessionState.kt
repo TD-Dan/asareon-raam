@@ -3,6 +3,7 @@ package app.auf.feature.session
 import app.auf.core.FeatureState
 import app.auf.core.Identity
 import app.auf.core.IdentityHandle
+import app.auf.util.FileEntry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
@@ -228,7 +229,27 @@ data class SessionState(
 
     /** Agent UUID → set of subscribed session UUIDs, populated from agent.AGENT_NAMES_UPDATED broadcasts. */
     @Transient
-    val knownAgentSubscriptions: Map<String, Set<String>> = emptyMap()
+    val knownAgentSubscriptions: Map<String, Set<String>> = emptyMap(),
+
+    // ── Workspace pane (all @Transient) ───────────────────────────────────
+    // UI state for the right-side file browser panel in SessionView.
+    // Files live in {uuid}/workspace/ and are accessed via FileSystemFeature.
+
+    /** Whether the workspace pane is currently visible in SessionView. */
+    @Transient
+    val isWorkspacePaneOpen: Boolean = false,
+
+    /** Cached workspace file listings, keyed by session localHandle. */
+    @Transient
+    val workspaceFiles: Map<String, List<FileEntry>> = emptyMap(),
+
+    /** Currently selected file name for preview (within the active session's workspace). Null = file list view. */
+    @Transient
+    val selectedWorkspaceFile: String? = null,
+
+    /** Text content of the selected workspace file (loaded on selection via FILESYSTEM_READ). Null when no file is selected or content has not yet arrived. */
+    @Transient
+    val workspaceFilePreview: String? = null
 
 ) : FeatureState {
 

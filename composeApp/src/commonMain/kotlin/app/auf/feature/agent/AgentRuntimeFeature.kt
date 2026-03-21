@@ -809,13 +809,11 @@ class AgentRuntimeFeature(
                     }
                 }
 
-                // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
+                // Publish ACTION_RESULT for all callers (CommandBot matches via correlationId)
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-                if (correlationId != null) {
-                    val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
-                    val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
-                    publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
-                }
+                val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
+                publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->

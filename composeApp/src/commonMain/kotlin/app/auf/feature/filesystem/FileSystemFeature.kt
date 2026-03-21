@@ -216,6 +216,7 @@ class FileSystemFeature(
                 }
             }
             ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI -> {
+                val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val requestId = platformDependencies.generateUUID()
                 store.deferredDispatch(identity.handle, Action(
                     name = ActionRegistry.Names.FILESYSTEM_STAGE_SCOPED_READ,
@@ -225,6 +226,8 @@ class FileSystemFeature(
                         put("requestPayload", action.payload ?: buildJsonObject {})
                     }
                 ))
+                publishActionResult(store, correlationId, action.name, success = true,
+                    summary = "Scoped read request staged for user confirmation.")
             }
             ActionRegistry.Names.FILESYSTEM_STAGE_SCOPED_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<StageScopedReadPayload>(it) } ?: return

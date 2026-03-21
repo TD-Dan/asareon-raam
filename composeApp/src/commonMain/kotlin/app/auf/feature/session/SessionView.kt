@@ -1,5 +1,10 @@
 package app.auf.feature.session
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -20,11 +25,9 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import app.auf.core.*
 import app.auf.core.resolveDisplayColor
 import app.auf.core.generated.ActionRegistry
@@ -40,6 +43,20 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+
+/**
+ * Max content width for the ledger pane, derived from ~80 characters
+ * of body text at Material 3 bodyLarge metrics. This is a content
+ * constraint, not a pane constraint — the pane itself fills available
+ * space, but message cards are capped for readability.
+ */
+private val LEDGER_MAX_CONTENT_WIDTH = 720.dp
+
+/** Min width for the workspace pane when open. */
+private val WORKSPACE_PANE_MIN_WIDTH = 260.dp
+
+/** Default width for the workspace pane. */
+private val WORKSPACE_PANE_DEFAULT_WIDTH = 320.dp
 
 /**
  * Derives the ordered, optionally filtered list of sessions from the canonical sessionOrder.
@@ -77,7 +94,13 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
     val activeTabIndex = if (sessions.isEmpty()) 0
     else sessions.indexOf(activeSession).coerceIn(0, sessions.lastIndex)
 
+    val isWorkspaceOpen = sessionState?.isWorkspacePaneOpen ?: false
+
     Column(modifier = Modifier.fillMaxSize()) {
+
+        // ══════════════════════════════════════════════════════════════════
+        // Tab bar row — tabs + kebab menu + workspace toggle
+        // ══════════════════════════════════════════════════════════════════
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (sessions.isNotEmpty()) {
                 // `key` forces ScrollableTabRow to fully recompose (not just
@@ -98,32 +121,87 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
-            // Hidden filter toggle — persisted via Settings feature
-            IconButton(onClick = {
-                val newValue = !(sessionState?.hideHiddenInViewer ?: true)
-                store.dispatch("session", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
-                    put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
-                    put("value", newValue.toString())
-                }))
-            }) {
+
+            // ── Session kebab menu (consolidates tab bar actions) ──────────
+            SessionKebabMenu(
+                store = store,
+                sessionState = sessionState,
+                hideHidden = hideHidden,
+                activeSession = activeSession
+            )
+
+            // ── Workspace pane toggle ─────────────────────────────────────
+            IconButton(
+                onClick = {
+                    store.dispatch("session", Action(
+                        ActionRegistry.Names.SESSION_TOGGLE_WORKSPACE_PANE
+                    ))
+                    // Refresh file list when opening
+                    if (!isWorkspaceOpen && activeSession != null) {
+                        store.dispatch("session", Action(
+                            ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
+                            buildJsonObject {
+                                put("session", activeSession.identity.localHandle)
+                            }
+                        ))
+                    }
+                }
+            ) {
                 Icon(
-                    imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                    contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
-                    tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                    Icons.Default.FolderOpen,
+                    contentDescription = if (isWorkspaceOpen) "Hide files" else "Show files",
+                    tint = if (isWorkspaceOpen) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            IconButton(onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
-                Icon(Icons.Default.Add, "New Session")
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        // Main content area
+        // ══════════════════════════════════════════════════════════════════
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
             BoxWithConstraints(modifier = Modifier.weight(1f)) {
                 val inputMaxHeight = maxHeight / 2
                 Column(Modifier.fillMaxSize()) {
-                    LedgerPane(store, activeSession, sessionState, features, platformDependencies, Modifier.weight(1f))
+
+                    // ── Ledger + Workspace row ────────────────────────────
+                    Row(modifier = Modifier.weight(1f)) {
+
+                        // Ledger pane — fills available space, content width-capped
+                        LedgerPane(
+                            store = store,
+                            activeSession = activeSession,
+                            sessionState = sessionState,
+                            features = features,
+                            platformDependencies = platformDependencies,
+                            maxContentWidth = LEDGER_MAX_CONTENT_WIDTH,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Workspace pane — slides in/out from right
+                        AnimatedVisibility(
+                            visible = isWorkspaceOpen,
+                            enter = expandHorizontally(expandFrom = Alignment.Start),
+                            exit = shrinkHorizontally(shrinkTowards = Alignment.Start)
+                        ) {
+                            Row {
+                                VerticalDivider()
+                                WorkspacePane(
+                                    store = store,
+                                    session = activeSession,
+                                    sessionState = sessionState!!,
+                                    platformDependencies = platformDependencies,
+                                    modifier = Modifier
+                                        .widthIn(min = WORKSPACE_PANE_MIN_WIDTH)
+                                        .width(WORKSPACE_PANE_DEFAULT_WIDTH)
+                                )
+                            }
+                        }
+                    }
+
+                    // ── Message input — full width below both panes ───────
                     Box(modifier = Modifier.heightIn(max = inputMaxHeight)) {
                         MessageInput(store, activeSession, platformDependencies) { message ->
                             val activeUserId = sessionState?.activeUserId ?: "user"
@@ -137,6 +215,93 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Session Kebab Menu — consolidates tab bar actions into a dropdown
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun SessionKebabMenu(
+    store: Store,
+    sessionState: SessionState?,
+    hideHidden: Boolean,
+    activeSession: Session?
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "Session options",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // New session
+            DropdownMenuItem(
+                text = { Text("New session") },
+                onClick = {
+                    store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
+                    expanded = false
+                },
+                leadingIcon = { Icon(Icons.Default.Add, null) }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            // Toggle hidden session visibility
+            DropdownMenuItem(
+                text = {
+                    Text(if (hideHidden) "Show hidden sessions" else "Hide hidden sessions")
+                },
+                onClick = {
+                    val newValue = !hideHidden
+                    store.dispatch("session", Action(
+                        ActionRegistry.Names.SETTINGS_UPDATE,
+                        buildJsonObject {
+                            put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
+                            put("value", newValue.toString())
+                        }
+                    ))
+                    expanded = false
+                },
+                leadingIcon = {
+                    Icon(
+                        if (hideHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        null
+                    )
+                }
+            )
+
+            // Open workspace folder in OS (only when a session is active)
+            if (activeSession != null) {
+                DropdownMenuItem(
+                    text = { Text("Open workspace folder") },
+                    onClick = {
+                        val uuid = activeSession.identity.uuid
+                        if (uuid != null) {
+                            store.dispatch("session", Action(
+                                ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+                                buildJsonObject { put("path", "$uuid/workspace") }
+                            ))
+                        }
+                        expanded = false
+                    },
+                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Session Tab (unchanged)
+// ═══════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -180,6 +345,10 @@ private fun SessionTab(store: Store, session: Session, isSelected: Boolean, isEd
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Ledger Pane — updated with maxContentWidth for ~80 char readability
+// ═══════════════════════════════════════════════════════════════════════════
+
 @Composable
 private fun LedgerPane(
     store: Store,
@@ -187,6 +356,7 @@ private fun LedgerPane(
     sessionState: SessionState?,
     features: List<Feature>,
     platformDependencies: PlatformDependencies,
+    maxContentWidth: Dp = LEDGER_MAX_CONTENT_WIDTH,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -207,59 +377,72 @@ private fun LedgerPane(
         }
     }
 
-    LazyColumn(state = listState, modifier = modifier.fillMaxSize().padding(8.dp)) {
+    LazyColumn(
+        state = listState,
+        modifier = modifier.fillMaxSize().padding(8.dp),
+        // Center cards when pane is wider than max content width
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         itemsIndexed(activeSession.ledger, key = { _, entry -> entry.id }) { index, entry ->
-            val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
+            // ── Width cap for readability ──────────────────────────────
+            Box(modifier = Modifier.widthIn(max = maxContentWidth).fillMaxWidth()) {
+                val isPartialView = entry.metadata?.get("render_as_partial")?.jsonPrimitive?.booleanOrNull ?: false
 
-            if (isPartialView) {
-                // --- SLICE 1 CHANGE: Generalized PartialView routing via metadata ---
-                // New cards include "partial_view_feature" and "partial_view_key" in metadata.
-                // Legacy cards (pre-migration agent avatars) fall back to the hardcoded agent path.
-                val featureName = entry.metadata?.get("partial_view_feature")
-                    ?.jsonPrimitive?.contentOrNull
-                val viewKey = entry.metadata?.get("partial_view_key")
-                    ?.jsonPrimitive?.contentOrNull
+                if (isPartialView) {
+                    // --- SLICE 1 CHANGE: Generalized PartialView routing via metadata ---
+                    // New cards include "partial_view_feature" and "partial_view_key" in metadata.
+                    // Legacy cards (pre-migration agent avatars) fall back to the hardcoded agent path.
+                    val featureName = entry.metadata?.get("partial_view_feature")
+                        ?.jsonPrimitive?.contentOrNull
+                    val viewKey = entry.metadata?.get("partial_view_key")
+                        ?.jsonPrimitive?.contentOrNull
 
-                if (featureName != null && viewKey != null) {
-                    // New generalized path: route to whichever feature owns this partial view
-                    val targetFeature = featuresByName[featureName]
-                    val partialContext = mapOf(
-                        "senderId" to entry.senderId,
-                        "sessionUUID" to (activeSession.identity.uuid ?: "")
-                    )
-                    targetFeature?.composableProvider?.PartialView(store, viewKey, partialContext)
+                    if (featureName != null && viewKey != null) {
+                        // New generalized path: route to whichever feature owns this partial view
+                        val targetFeature = featuresByName[featureName]
+                        val partialContext = mapOf(
+                            "senderId" to entry.senderId,
+                            "sessionUUID" to (activeSession.identity.uuid ?: "")
+                        )
+                        targetFeature?.composableProvider?.PartialView(store, viewKey, partialContext)
+                    } else {
+                        // Backward compatibility: legacy agent avatar cards without routing metadata
+                        val partialContext = mapOf(
+                            "senderId" to entry.senderId,
+                            "sessionUUID" to (activeSession.identity.uuid ?: "")
+                        )
+                        agentFeature?.composableProvider?.PartialView(store, "agent.avatar", partialContext)
+                    }
                 } else {
-                    // Backward compatibility: legacy agent avatar cards without routing metadata
-                    val partialContext = mapOf(
-                        "senderId" to entry.senderId,
-                        "sessionUUID" to (activeSession.identity.uuid ?: "")
+                    val senderName = remember(entry.senderId, identityRegistry) {
+                        identityRegistry[entry.senderId]?.name ?: entry.senderId
+                    }
+                    val isCurrentUserMessage = entry.senderId == activeUserId
+
+                    val senderColor = identityRegistry[entry.senderId]?.resolveDisplayColor()
+
+                    LedgerEntryCard(
+                        store = store,
+                        session = activeSession,
+                        entry = entry,
+                        senderName = senderName,
+                        isCurrentUserMessage = isCurrentUserMessage,
+                        isEditingThisMessage = sessionState?.editingMessageId == entry.id,
+                        editingContent = sessionState?.editingMessageContent,
+                        platformDependencies = platformDependencies,
+                        senderColor = senderColor
                     )
-                    agentFeature?.composableProvider?.PartialView(store, "agent.avatar", partialContext)
                 }
-            } else {
-                val senderName = remember(entry.senderId, identityRegistry) {
-                    identityRegistry[entry.senderId]?.name ?: entry.senderId
-                }
-                val isCurrentUserMessage = entry.senderId == activeUserId
-
-                val senderColor = identityRegistry[entry.senderId]?.resolveDisplayColor()
-
-                LedgerEntryCard(
-                    store = store,
-                    session = activeSession,
-                    entry = entry,
-                    senderName = senderName,
-                    isCurrentUserMessage = isCurrentUserMessage,
-                    isEditingThisMessage = sessionState?.editingMessageId == entry.id,
-                    editingContent = sessionState?.editingMessageContent,
-                    platformDependencies = platformDependencies,
-                    senderColor = senderColor
-                )
             }
             Spacer(Modifier.height(12.dp))
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Message Input (unchanged — preserves full autocomplete, history,
+// draft debounce, clear session dialog, and agent subscription menu)
+// ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun MessageInput(store: Store, activeSession: Session, platformDependencies: PlatformDependencies, onSend: (String) -> Unit) {
@@ -380,18 +563,8 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
 
     /**
      * Parses the current text field content to sync the autocomplete state.
-     * Text-driven stage resolution:
-     *   "/ses"           → FEATURE stage, query="ses"
-     *   "/session."      → ACTION stage for "session", query=""
-     *   "/session.PO"    → ACTION stage, query="PO"
-     *   "//agent.SET"    → ACTION stage (admin), query="SET"
-     *   PARAMS stage     → text changes ignored (form has taken over)
      */
     fun syncAutocompleteFromText(newText: String) {
-        // During PARAMS stage, if the user edits the main text field (e.g.
-        // backspaces), let the text re-parse naturally — it will regress
-        // the autocomplete back to ACTION or FEATURE stage as appropriate.
-
         val isAdmin = newText.startsWith("//")
         val prefix = if (isAdmin) "//" else "/"
 
@@ -408,7 +581,6 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
             val featureName = body.substring(0, dotIndex)
             val actionQuery = body.substring(dotIndex + 1)
 
-            // Ensure we're in ACTION stage for this feature
             if (acState == null || acState?.adminMode != isAdmin || acState?.selectedFeature != featureName) {
                 var s = engine.initialState(adminMode = isAdmin)
                 s = engine.selectFeature(s, featureName)
@@ -477,7 +649,7 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
         }
     }
 
-    // ── Clear session confirmation dialog (unchanged from original) ──
+    // ── Clear session confirmation dialog ──
     var sessionToClear by remember { mutableStateOf<Session?>(null) }
 
     sessionToClear?.let { session ->
@@ -632,10 +804,6 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             }
 
                             // ── History navigation (Up/Down in history mode only) ──
-                            // In history mode (!editMode), Up/Down cycle through sent-message
-                            // history. Once the user interacts with the text in any other way
-                            // (typing, caret movement, clicking), edit mode engages and
-                            // Up/Down revert to normal caret movement within multiline text.
                             if (acState == null && !editMode) {
                                 when (event.key) {
                                     Key.DirectionUp -> {
