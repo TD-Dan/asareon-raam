@@ -226,6 +226,32 @@ class KnowledgeGraphFeatureT2ContractTest {
                 originator = "core",
                 payload = buildJsonObject { put("holonId", CHILD_HOLON_ID) },
                 buildState = ::loadedState
+            ),
+            HappyCase(
+                label = "RESERVE_HKG",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
+                originator = "core",
+                payload = buildJsonObject { put("personaId", PERSONA_ID) },
+                buildState = ::loadedState
+            ),
+            HappyCase(
+                label = "RELEASE_HKG",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG,
+                originator = "core",
+                payload = buildJsonObject { put("personaId", PERSONA_ID) },
+                buildState = {
+                    loadedState().copy(reservations = mapOf(PERSONA_ID to "core"))
+                }
+            ),
+            HappyCase(
+                label = "REQUEST_CONTEXT",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
+                originator = "agent",
+                payload = buildJsonObject {
+                    put("personaId", PERSONA_ID)
+                    put("correlationId", "test-correlation-1")
+                },
+                buildState = ::loadedState
             )
         )
     }
@@ -397,6 +423,48 @@ class KnowledgeGraphFeatureT2ContractTest {
                 payload = buildJsonObject {
                     put("holonId", "nonexistent-holon")
                 }
+            ),
+            // RESERVE_HKG
+            FailureCase(
+                label = "RESERVE_HKG (missing personaId)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
+                originator = "core",
+                payload = buildJsonObject { }
+            ),
+            FailureCase(
+                label = "RESERVE_HKG (already reserved)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_RESERVE_HKG,
+                originator = "outsider",
+                payload = buildJsonObject { put("personaId", PERSONA_ID) },
+                buildState = {
+                    loadedState().copy(reservations = mapOf(PERSONA_ID to "owner-agent"))
+                },
+                extraIdentities = listOf(outsiderIdentity)
+            ),
+            // RELEASE_HKG
+            FailureCase(
+                label = "RELEASE_HKG (missing personaId)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_RELEASE_HKG,
+                originator = "core",
+                payload = buildJsonObject { }
+            ),
+            // REQUEST_CONTEXT
+            FailureCase(
+                label = "REQUEST_CONTEXT (missing personaId)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
+                originator = "agent",
+                payload = buildJsonObject {
+                    put("correlationId", "test-correlation-1")
+                }
+            ),
+            FailureCase(
+                label = "REQUEST_CONTEXT (missing correlationId)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_REQUEST_CONTEXT,
+                originator = "agent",
+                payload = buildJsonObject {
+                    put("personaId", PERSONA_ID)
+                },
+                buildState = ::loadedState
             )
         )
     }
