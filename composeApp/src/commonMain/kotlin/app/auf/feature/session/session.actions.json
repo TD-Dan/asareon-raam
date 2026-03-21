@@ -832,8 +832,8 @@
     },
     {
       "action_name": "session.REFRESH_WORKSPACE",
-      "summary": "Requests a fresh file listing of the specified session's workspace folder. Dispatches FILESYSTEM_LIST and routes the response through WORKSPACE_FILES_LOADED.",
-      "public": true,
+      "summary": "[INTERNAL] Requests a fresh file listing of the specified session's workspace folder. Dispatches FILESYSTEM_LIST and routes the response through WORKSPACE_FILES_LOADED.",
+      "public": false,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
