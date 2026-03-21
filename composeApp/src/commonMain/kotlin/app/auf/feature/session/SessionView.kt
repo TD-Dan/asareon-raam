@@ -3,6 +3,8 @@ package app.auf.feature.session
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -19,10 +21,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -34,6 +40,7 @@ import app.auf.core.generated.ActionRegistry
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.ui.components.IconRegistry
+import app.auf.ui.components.fileDropTargetModifier
 import app.auf.util.PlatformDependencies
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -157,61 +164,113 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
         }
 
         // ══════════════════════════════════════════════════════════════════
-        // Main content area
+        // Main content area — wrapped in a drop target for the entire
+        // session region. Files can be dropped even when the workspace
+        // pane is hidden; it will auto-open on drop.
         // ══════════════════════════════════════════════════════════════════
-        if (activeSession == null) {
-            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
-        } else {
-            BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                val inputMaxHeight = maxHeight / 2
-                Column(Modifier.fillMaxSize()) {
+        var isDragHovering by remember { mutableStateOf(false) }
 
-                    // ── Ledger + Workspace row ────────────────────────────
-                    Row(modifier = Modifier.weight(1f)) {
+        // Build the drop target modifier at this composable scope so the
+        // remembered DragAndDropTarget survives recomposition.
+        val dropModifier = fileDropTargetModifier(
+            onDragEntered = { isDragHovering = true },
+            onDragExited = { isDragHovering = false },
+            onFilesDropped = { droppedFiles ->
+                val session = activeSession
+                val sessionUuid = session?.identity?.uuid
+                if (session != null && sessionUuid != null) {
+                    val sessionLocalHandle = session.identity.localHandle
 
-                        // Ledger pane — fills available space, content width-capped
-                        LedgerPane(
-                            store = store,
-                            activeSession = activeSession,
-                            sessionState = sessionState,
-                            features = features,
-                            platformDependencies = platformDependencies,
-                            maxContentWidth = LEDGER_MAX_CONTENT_WIDTH,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        // Workspace pane — slides in/out from right
-                        AnimatedVisibility(
-                            visible = isWorkspaceOpen,
-                            enter = expandHorizontally(expandFrom = Alignment.Start),
-                            exit = shrinkHorizontally(shrinkTowards = Alignment.Start)
-                        ) {
-                            Row {
-                                VerticalDivider()
-                                WorkspacePane(
-                                    store = store,
-                                    session = activeSession,
-                                    sessionState = sessionState!!,
-                                    platformDependencies = platformDependencies,
-                                    modifier = Modifier
-                                        .widthIn(min = WORKSPACE_PANE_MIN_WIDTH)
-                                        .width(WORKSPACE_PANE_DEFAULT_WIDTH)
-                                )
-                            }
+                    // Write each file to the workspace folder
+                    droppedFiles.forEach { file ->
+                        try {
+                            val absPath = platformDependencies.resolveAbsoluteSandboxPath(
+                                "session",
+                                "$sessionUuid/workspace/${file.name}"
+                            )
+                            platformDependencies.writeFileBytes(absPath, file.bytes)
+                        } catch (_: Exception) {
+                            // Individual write failures are non-fatal
                         }
                     }
 
-                    // ── Message input — full width below both panes ───────
-                    Box(modifier = Modifier.heightIn(max = inputMaxHeight)) {
-                        MessageInput(store, activeSession, platformDependencies) { message ->
-                            val activeUserId = sessionState?.activeUserId ?: "user"
-                            store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                                put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
-                            }))
+                    // Auto-open the workspace pane if it was closed
+                    if (sessionState?.isWorkspacePaneOpen != true) {
+                        store.dispatch("session", Action(
+                            ActionRegistry.Names.SESSION_TOGGLE_WORKSPACE_PANE
+                        ))
+                    }
+
+                    // Refresh the file list
+                    store.dispatch("session", Action(
+                        ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
+                        buildJsonObject { put("session", sessionLocalHandle) }
+                    ))
+                }
+            }
+        )
+
+        Box(modifier = Modifier.weight(1f)) {
+            if (activeSession == null) {
+                Box(
+                    Modifier.fillMaxSize().then(dropModifier),
+                    Alignment.Center
+                ) { Text("No active session. Create one to begin.") }
+            } else {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize().then(dropModifier)) {
+                    val inputMaxHeight = maxHeight / 2
+                    Column(Modifier.fillMaxSize()) {
+
+                        // ── Ledger + Workspace row ────────────────────────────
+                        Row(modifier = Modifier.weight(1f)) {
+
+                            // Ledger pane — fills available space, content width-capped
+                            LedgerPane(
+                                store = store,
+                                activeSession = activeSession,
+                                sessionState = sessionState,
+                                features = features,
+                                platformDependencies = platformDependencies,
+                                maxContentWidth = LEDGER_MAX_CONTENT_WIDTH,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            // Workspace pane — slides in/out from right
+                            AnimatedVisibility(
+                                visible = isWorkspaceOpen,
+                                enter = expandHorizontally(expandFrom = Alignment.Start),
+                                exit = shrinkHorizontally(shrinkTowards = Alignment.Start)
+                            ) {
+                                Row {
+                                    VerticalDivider()
+                                    WorkspacePane(
+                                        store = store,
+                                        session = activeSession,
+                                        sessionState = sessionState!!,
+                                        platformDependencies = platformDependencies,
+                                        modifier = Modifier
+                                            .widthIn(min = WORKSPACE_PANE_MIN_WIDTH)
+                                            .width(WORKSPACE_PANE_DEFAULT_WIDTH)
+                                    )
+                                }
+                            }
+                        }
+
+                        // ── Message input — full width below both panes ───────
+                        Box(modifier = Modifier.heightIn(max = inputMaxHeight)) {
+                            MessageInput(store, activeSession, platformDependencies) { message ->
+                                val activeUserId = sessionState?.activeUserId ?: "user"
+                                store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                                    put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
+                                }))
+                            }
                         }
                     }
                 }
             }
+
+            // ── Drop zone overlay — covers the entire session area ─────
+            DropZoneOverlay(visible = isDragHovering)
         }
     }
 }
@@ -293,6 +352,56 @@ private fun SessionKebabMenu(
                         expanded = false
                     },
                     leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Drop Zone Overlay — full-area visual indicator during file drags
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun DropZoneOverlay(visible: Boolean) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        val borderColor = MaterialTheme.colorScheme.primary
+        val bgColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(color = bgColor)
+                    drawRect(
+                        color = borderColor,
+                        style = Stroke(
+                            width = 2.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(
+                                floatArrayOf(12.dp.toPx(), 8.dp.toPx())
+                            )
+                        )
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.FileDownload,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Drop files to import",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

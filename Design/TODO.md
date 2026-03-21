@@ -31,6 +31,7 @@
 - show only in context the Actions that the agent has permission for
 
 - BUG: Agent identities are not removed from core when agent is deleted
+- BUG: stale identities remain at the core from session, agent, others?
 
 - remove the boot sentinel from Sovereign and replace with Constitution sub-agent: instead of fragile one time check we get constant checks.
 
@@ -49,8 +50,6 @@
 - KG Editor needs approx token sizes for holons and also total approx for parent holons
 
 - Allow selecting a custom root for App files (move to C:/Daniel for automatic backups)
-
-- AVAILABLE_ACTIONS: collpasible by feature to [EXPANDED / ESSENTIAL / COLLAPSED]
 
 - CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
 
