@@ -691,11 +691,17 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull?.let { IdentityUUID(it) } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle,
                         "${action.name} side-effect: Missing agentId in payload. Context state not persisted.")
+                    val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Missing agentId in payload.")
                     return
                 }
                 val agent = agentState.agents[agentId] ?: run {
-                    platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
                         "${action.name} side-effect: Agent '$agentId' not found (may have been deleted). Context state not persisted.")
+                    val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                    publishActionResult(store, correlationId, action.name, success = false,
+                        error = "Agent '$agentId' not found.")
                     return
                 }
 
@@ -762,13 +768,12 @@ class AgentRuntimeFeature(
                     reassembleOnToggle(agentId, store)
                 }
 
-                // Publish ACTION_RESULT if this came from CommandBot (has correlationId)
+                // Publish ACTION_RESULT unconditionally — monitoring features and
+                // logging plugins observe this broadcast, not just CommandBot.
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-                if (correlationId != null) {
-                    val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
-                    val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
-                    publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
-                }
+                val partitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                val verb = if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) "Expanded" else "Collapsed"
+                publishActionResult(store, correlationId, action.name, success = true, summary = "$verb partition '$partitionKey'.")
             }
             ActionRegistry.Names.SESSION_SESSION_FEATURE_READY -> {
                 agentState.agents.forEach { (agentId, agent) ->

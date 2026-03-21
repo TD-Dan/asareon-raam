@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
  * - countSubHolons: recursive counting
  * - resolveCollapseState: default COLLAPSED, override EXPANDED
  */
-class AgentRuntimeFeatureT1HKGContextFormatterTest {
+class HKGContextFormatterT1Test {
 
     private val platform = FakePlatformDependencies("test")
 

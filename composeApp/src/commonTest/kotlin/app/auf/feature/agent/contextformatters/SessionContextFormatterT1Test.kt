@@ -7,7 +7,6 @@ import app.auf.feature.agent.SessionInfo
 import app.auf.feature.agent.SessionParticipant
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -24,7 +23,7 @@ import kotlin.test.assertTrue
  * - buildSessionContent: message entries with sender and timestamp
  * - Session ordering and chronological message ordering
  */
-class AgentRuntimeFeatureT1ConversationLogFormatterTest {
+class SessionContextFormatterT1Test {
 
     private val platform = FakePlatformDependencies("test")
 

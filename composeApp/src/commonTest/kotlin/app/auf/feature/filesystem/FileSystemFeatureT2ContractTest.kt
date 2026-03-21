@@ -259,12 +259,42 @@ class FileSystemFeatureT2ContractTest {
     )
 
     // ====================================================================
+    // Failure-collecting helper
+    //
+    // Runs every case in a batch, collects all failures, and reports them
+    // together at the end. This ensures a single test run surfaces ALL
+    // broken contracts, not just the first one encountered.
+    // ====================================================================
+
+    /**
+     * Runs [block] for each item in the list, catching assertion failures.
+     * After all items have been evaluated, throws a single [AssertionError]
+     * listing every failure — or passes silently if all succeeded.
+     */
+    private fun <T> assertAllCases(cases: List<T>, block: (T) -> Unit) {
+        val failures = mutableListOf<String>()
+        for (case in cases) {
+            try {
+                block(case)
+            } catch (e: Throwable) {
+                failures.add(e.message ?: e.toString())
+            }
+        }
+        if (failures.isNotEmpty()) {
+            throw AssertionError(
+                "${failures.size} of ${cases.size} cases failed:\n\n" +
+                        failures.joinToString("\n\n") { "  • $it" }
+            )
+        }
+    }
+
+    // ====================================================================
     // Contract: ACTION_RESULT on success
     // ====================================================================
 
     @Test
     fun `all domain actions publish success ACTION_RESULT on happy path`() {
-        happyCases.forEach { case ->
+        assertAllCases(happyCases) { case ->
             val platform = FakePlatformDependencies("test")
             case.setup(platform)
             val feature = FileSystemFeature(platform)
@@ -272,19 +302,17 @@ class FileSystemFeatureT2ContractTest {
             case.initialState?.let { builder.withInitialState(featureHandle, it) }
             val harness = builder.build(platform = platform)
 
-            harness.runAndLogOnFailure {
-                harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
+            harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
 
-                val result = harness.processedActions.find {
-                    it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
-                }
-                assertNotNull(result,
-                    "[${case.label}] should publish FILESYSTEM_ACTION_RESULT on success.")
-                assertEquals(true, result.payload?.get("success")?.jsonPrimitive?.boolean,
-                    "[${case.label}] ACTION_RESULT should have success=true.")
-                assertEquals(case.actionName, result.payload?.get("requestAction")?.jsonPrimitive?.content,
-                    "[${case.label}] ACTION_RESULT.requestAction should match the dispatched action.")
+            val result = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
             }
+            assertNotNull(result,
+                "[${case.label}] should publish FILESYSTEM_ACTION_RESULT on success.")
+            assertEquals(true, result.payload?.get("success")?.jsonPrimitive?.boolean,
+                "[${case.label}] ACTION_RESULT should have success=true.")
+            assertEquals(case.actionName, result.payload?.get("requestAction")?.jsonPrimitive?.content,
+                "[${case.label}] ACTION_RESULT.requestAction should match the dispatched action.")
         }
     }
 
@@ -294,28 +322,26 @@ class FileSystemFeatureT2ContractTest {
 
     @Test
     fun `all domain actions publish failure ACTION_RESULT on error`() {
-        failureCases.forEach { case ->
+        assertAllCases(failureCases) { case ->
             val platform = case.buildPlatform()
             val feature = FileSystemFeature(platform)
             val builder = TestEnvironment.create().withFeature(feature)
             case.initialState?.let { builder.withInitialState(featureHandle, it) }
             val harness = builder.build(platform = platform)
 
-            harness.runAndLogOnFailure {
-                harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
+            harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
 
-                val result = harness.processedActions.find {
-                    it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
-                }
-                assertNotNull(result,
-                    "[${case.label}] should publish FILESYSTEM_ACTION_RESULT on failure.")
-                assertEquals(false, result.payload?.get("success")?.jsonPrimitive?.boolean,
-                    "[${case.label}] ACTION_RESULT should have success=false.")
-                assertEquals(case.actionName, result.payload?.get("requestAction")?.jsonPrimitive?.content,
-                    "[${case.label}] ACTION_RESULT.requestAction should match the dispatched action.")
-                assertNotNull(result.payload?.get("error")?.jsonPrimitive?.content,
-                    "[${case.label}] ACTION_RESULT should contain a non-null error field.")
+            val result = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_ACTION_RESULT
             }
+            assertNotNull(result,
+                "[${case.label}] should publish FILESYSTEM_ACTION_RESULT on failure.")
+            assertEquals(false, result.payload?.get("success")?.jsonPrimitive?.boolean,
+                "[${case.label}] ACTION_RESULT should have success=false.")
+            assertEquals(case.actionName, result.payload?.get("requestAction")?.jsonPrimitive?.content,
+                "[${case.label}] ACTION_RESULT.requestAction should match the dispatched action.")
+            assertNotNull(result.payload?.get("error")?.jsonPrimitive?.content,
+                "[${case.label}] ACTION_RESULT should contain a non-null error field.")
         }
     }
 
@@ -325,21 +351,19 @@ class FileSystemFeatureT2ContractTest {
 
     @Test
     fun `all domain actions log at ERROR level on error`() {
-        failureCases.forEach { case ->
+        assertAllCases(failureCases) { case ->
             val platform = case.buildPlatform()
             val feature = FileSystemFeature(platform)
             val builder = TestEnvironment.create().withFeature(feature)
             case.initialState?.let { builder.withInitialState(featureHandle, it) }
             val harness = builder.build(platform = platform)
 
-            harness.runAndLogOnFailure {
-                harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
+            harness.store.dispatch(case.originator, Action(case.actionName, case.payload))
 
-                assertTrue(
-                    platform.capturedLogs.any { it.level == LogLevel.ERROR },
-                    "[${case.label}] should log at ERROR level on failure."
-                )
-            }
+            assertTrue(
+                platform.capturedLogs.any { it.level == LogLevel.ERROR },
+                "[${case.label}] should log at ERROR level on failure."
+            )
         }
     }
 }
