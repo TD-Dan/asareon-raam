@@ -47,7 +47,7 @@ import kotlinx.serialization.json.*
  */
 object SovereignStrategy : CognitiveStrategy {
     override val identityHandle: IdentityHandle = IdentityHandle("agent.strategy.sovereign")
-    override val displayName: String = "Sovereign (Constitutional)"
+    override val displayName: String = "Sovereign (Flagship strategy)"
     override val hasAutoManagedOutputSession: Boolean = true
 
     private const val SLOT_CONSTITUTION = "constitution"

@@ -4,6 +4,7 @@ import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.core.Version
+import app.auf.feature.agent.contextformatters.ActionsContextFormatter
 import app.auf.feature.agent.contextformatters.HkgContextFormatter
 import app.auf.feature.agent.contextformatters.SessionContextFormatter
 import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
@@ -875,7 +876,7 @@ object CognitivePipeline {
         // AVAILABLE_ACTIONS — structured Group with per-feature children
         val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
         if (agentIdentity != null) {
-            contextMap["AVAILABLE_ACTIONS"] = ExposedActionsContextProvider.buildSections(store, agentIdentity)
+            contextMap["AVAILABLE_ACTIONS"] = ActionsContextFormatter.buildSections(store, agentIdentity)
         }
 
         // Workspace two-partition view (INDEX + FILES)

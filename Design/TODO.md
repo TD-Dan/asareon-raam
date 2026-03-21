@@ -76,6 +76,12 @@
 
 - Show cognitive session when a private session is in use for agent
 
+- session input needs to at most take 50% of available space
+
+- session workspace: division to two folders with two permission sets?
+
+- identity visibilities to control who can see what parts of the identityscape? identity groups and permissions? If you belong to a group you see group assests (identities)? Needs planning.
+
 ## HIGH PRIORITY:
 
 - !! Need context collapse management tools to the preview turn view to debug and fix agent internal state
