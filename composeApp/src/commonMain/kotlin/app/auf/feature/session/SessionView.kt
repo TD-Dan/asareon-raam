@@ -120,12 +120,19 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
         if (activeSession == null) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No active session. Create one to begin.") }
         } else {
-            LedgerPane(store, activeSession, sessionState, features, platformDependencies, Modifier.weight(1f))
-            MessageInput(store, activeSession, platformDependencies) { message ->
-                val activeUserId = sessionState?.activeUserId ?: "user"
-                store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                    put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
-                }))
+            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                val inputMaxHeight = maxHeight / 2
+                Column(Modifier.fillMaxSize()) {
+                    LedgerPane(store, activeSession, sessionState, features, platformDependencies, Modifier.weight(1f))
+                    Box(modifier = Modifier.heightIn(max = inputMaxHeight)) {
+                        MessageInput(store, activeSession, platformDependencies) { message ->
+                            val activeUserId = sessionState?.activeUserId ?: "user"
+                            store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                                put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
+                            }))
+                        }
+                    }
+                }
             }
         }
     }
