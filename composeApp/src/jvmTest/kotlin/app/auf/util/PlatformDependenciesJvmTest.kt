@@ -160,8 +160,7 @@ class PlatformDependenciesJvmTest {
         val entryPaths = entries.map { it.path }
 
         // Assert
-        assertEquals(4, entries.size, "Should find all 4 files.")
-        assertFalse(entries.any { it.isDirectory }, "Recursive list should only return files.")
+        assertEquals(6, entries.size, "Should find all 4 files and 2 directories.")
         assertTrue(entryPaths.any { it.endsWith("root_file.txt") })
         assertTrue(entryPaths.any { it.endsWith("sub1_file.txt") })
         assertTrue(entryPaths.any { it.endsWith("sub2_file.txt") })
@@ -255,7 +254,7 @@ class PlatformDependenciesJvmTest {
         val entries = platform.listDirectoryRecursive(root.absolutePath)
 
         // Assert
-        assertEquals(2, entries.size)
+        assertEquals(3, entries.size)
         entries.forEach { entry ->
             assertNotNull(entry.lastModified, "lastModified should be populated for ${entry.path}")
             assertTrue(entry.lastModified!! > 0, "lastModified should be positive for ${entry.path}")

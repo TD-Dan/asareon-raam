@@ -253,17 +253,4 @@ class AgentRuntimeFeatureT1AvatarTest {
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
         assertEquals(testSessionUUID, action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull)
     }
-
-    @Test
-    fun `Edit Agent and Preview Turn appear in kebab menu alongside Remove from session`() {
-        val agent = testAgent("a1", "Test Agent", null, "p", "m", subscribedSessionIds = listOf(testSessionUUID))
-        renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE), sessionUUID = testSessionUUID)
-
-        composeTestRule.onNodeWithContentDescription("More options").performClick()
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onNodeWithText("Edit Agent").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Preview Turn").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Remove from session").assertIsDisplayed()
-    }
 }

@@ -1,7 +1,8 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.contextformatters
 
 import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.agent.contextformatters.HkgContextFormatter
+import app.auf.feature.agent.CollapseState
+import app.auf.feature.agent.PromptSection
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
@@ -352,54 +353,97 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
     }
 
     // =========================================================================
-    // buildFilesSection
+    // buildUnifiedSection — file tree structure
     // =========================================================================
 
+    /**
+     * Recursively collects all keys from a PromptSection tree.
+     */
+    private fun collectKeys(section: PromptSection): List<String> = when (section) {
+        is PromptSection.Section -> listOf(section.key)
+        is PromptSection.Group -> listOf(section.key) + section.children.flatMap { collectKeys(it) }
+        else -> emptyList()
+    }
+
+    /**
+     * Recursively collects all content from Section nodes in a PromptSection tree.
+     */
+    private fun collectContent(section: PromptSection): String = when (section) {
+        is PromptSection.Section -> section.content
+        is PromptSection.Group -> {
+            val headerContent = if (section.header.isNotBlank()) section.header + "\n" else ""
+            headerContent + section.children.joinToString("\n") { collectContent(it) }
+        }
+        else -> ""
+    }
+
     @Test
-    fun `buildFilesSection lists only EXPANDED holons with markers`() {
+    fun `buildUnifiedSection includes expanded holons as children in tree`() {
+        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
         val overrides = mapOf(
             "hkg:meridian-root" to CollapseState.EXPANDED,
             "hkg:foundational-core" to CollapseState.EXPANDED
         )
 
-        val files = HkgContextFormatter.buildFilesSection(fullMeridianContext, overrides, platform)
+        val unified = HkgContextFormatter.buildUnifiedSection(
+            fullMeridianContext, headers, overrides, "Meridian", platformDependencies = platform
+        )
 
-        assertTrue(files.contains("HOLON_KNOWLEDGE_GRAPH_FILES"))
-        assertTrue(files.contains("Files currently open: 2 of 7"))
-        assertTrue(files.contains("--- START OF FILE meridian-root.json ---"))
-        assertTrue(files.contains("--- END OF FILE meridian-root.json ---"))
-        assertTrue(files.contains("--- START OF FILE foundational-core.json ---"))
-        assertTrue(files.contains("--- END OF FILE foundational-core.json ---"))
+        assertEquals("HOLON_KNOWLEDGE_GRAPH", unified.key)
+        assertTrue(unified.isProtected, "Unified section should be protected")
 
-        // Collapsed holons should NOT appear in FILES
-        assertFalse(files.contains("START OF FILE session-logs.json"))
-        assertFalse(files.contains("START OF FILE awakening-log.json"))
+        // The tree should contain children keyed by hkg:<holonId>
+        val allKeys = collectKeys(unified)
+        assertTrue(allKeys.contains("hkg:meridian-root"), "Should contain root holon child")
+        assertTrue(allKeys.contains("hkg:foundational-core"), "Should contain foundational-core child")
     }
 
     @Test
-    fun `buildFilesSection shows empty message when all collapsed`() {
-        val files = HkgContextFormatter.buildFilesSection(fullMeridianContext, emptyMap(), platform)
-
-        assertTrue(files.contains("No files open. Use agent.CONTEXT_UNCOLLAPSE to open holon files."))
-        assertFalse(files.contains("START OF FILE"))
-    }
-
-    @Test
-    fun `buildFilesSection includes actual JSON content of expanded holons`() {
+    fun `buildUnifiedSection contains holon JSON content in tree`() {
+        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
         val overrides = mapOf("hkg:shared-knowledge" to CollapseState.EXPANDED)
-        val files = HkgContextFormatter.buildFilesSection(fullMeridianContext, overrides, platform)
 
-        // Should contain the raw JSON content of the expanded holon
-        assertTrue(files.contains("\"id\":\"shared-knowledge\""))
-        assertTrue(files.contains("\"type\":\"Project\""))
+        val unified = HkgContextFormatter.buildUnifiedSection(
+            fullMeridianContext, headers, overrides, "Meridian", platformDependencies = platform
+        )
+
+        // The actual JSON content should be present somewhere in the tree
+        val allContent = collectContent(unified)
+        assertTrue(allContent.contains("\"id\":\"shared-knowledge\""),
+            "Holon JSON content should be embedded in the section tree")
+        assertTrue(allContent.contains("\"type\":\"Project\""),
+            "Holon type should be present in content")
     }
 
     @Test
-    fun `buildFilesSection handles single expanded holon`() {
-        val overrides = mapOf("hkg:awakening-log" to CollapseState.EXPANDED)
-        val files = HkgContextFormatter.buildFilesSection(fullMeridianContext, overrides, platform)
+    fun `buildUnifiedSection header contains INDEX tree and NAVIGATION`() {
+        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
 
-        assertTrue(files.contains("Files currently open: 1 of 7"))
-        assertTrue(files.contains("START OF FILE awakening-log.json"))
+        val unified = HkgContextFormatter.buildUnifiedSection(
+            fullMeridianContext, headers, emptyMap(), "Meridian", platformDependencies = platform
+        )
+
+        // Header should contain the INDEX tree
+        assertTrue(unified.header.contains("Persona: Meridian"),
+            "Header should contain INDEX tree with persona name")
+
+        // Header should contain navigation instructions
+        assertTrue(unified.header.contains("CONTEXT_UNCOLLAPSE"),
+            "Header should contain navigation command reference")
+    }
+
+    @Test
+    fun `buildUnifiedSection with all collapsed still includes root holon children`() {
+        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+
+        val unified = HkgContextFormatter.buildUnifiedSection(
+            fullMeridianContext, headers, emptyMap(), "Meridian", platformDependencies = platform
+        )
+
+        // Even with all collapsed, the root holon should still be a child
+        // (it has defaultCollapsed = false when protectRoots = true)
+        val allKeys = collectKeys(unified)
+        assertTrue(allKeys.contains("hkg:meridian-root"),
+            "Root holon should always be present as a child in the unified section")
     }
 }

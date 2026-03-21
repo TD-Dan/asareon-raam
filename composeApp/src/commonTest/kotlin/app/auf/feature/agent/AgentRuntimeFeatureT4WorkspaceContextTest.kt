@@ -5,6 +5,7 @@ import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
+import app.auf.feature.agent.PromptSection
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
@@ -445,7 +446,14 @@ class AgentRuntimeFeatureT4WorkspaceContextTest {
     }
 
     @Test
-    fun `buildFilesSection only includes EXPANDED files`() {
+    fun `buildFilesSections only includes EXPANDED files in tree`() {
+        // Build entries from a listing that includes both files
+        val listing = buildJsonArray {
+            add(buildJsonObject { put("path", "a/workspace/readme.md"); put("isDirectory", false) })
+            add(buildJsonObject { put("path", "a/workspace/secret.md"); put("isDirectory", false) })
+        }
+        val entries = WorkspaceContextFormatter.parseListingEntries(listing, "a/workspace")
+
         val contents = mapOf(
             "readme.md" to "# README",
             "secret.md" to "should not appear"
@@ -455,11 +463,24 @@ class AgentRuntimeFeatureT4WorkspaceContextTest {
             "ws:secret.md" to CollapseState.COLLAPSED
         )
 
-        val filesSection = WorkspaceContextFormatter.buildFilesSection(contents, overrides)
+        val group = WorkspaceContextFormatter.buildFilesSections(
+            entries, contents, overrides
+        )
 
-        assertTrue(filesSection.contains("# README"), "Expanded file content should appear")
-        assertFalse(filesSection.contains("should not appear"), "Collapsed file content should NOT appear")
-        assertTrue(filesSection.contains("START OF FILE readme.md"), "File delimiter should include path")
+        assertEquals("WORKSPACE_FILES", group.key, "Group key should be WORKSPACE_FILES")
+
+        // The expanded file should be a child section with its content
+        val readmeChild = group.children.filterIsInstance<PromptSection.Section>()
+            .find { it.key == "ws:readme.md" }
+        assertNotNull(readmeChild, "Expanded file should be a child section")
+        assertTrue(readmeChild.content.contains("# README"), "Expanded file content should appear")
+
+        // The collapsed file should also be a child but with placeholder content
+        val secretChild = group.children.filterIsInstance<PromptSection.Section>()
+            .find { it.key == "ws:secret.md" }
+        assertNotNull(secretChild, "Collapsed file should also be a child section")
+        assertFalse(secretChild.content.contains("should not appear"),
+            "Collapsed file should NOT have its actual content")
     }
 
     @Test
