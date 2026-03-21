@@ -60,17 +60,21 @@
 
 - Dont show the AVAILABLE_ACTIONS partial if no actions are available for the agent.
 
-- Show newest 3 files in the WORKSPACE_INDEX
-
-- WORKSPACE_INDEX should default to uncollapsed?
-
-- NVRAM schema adherence: Strategy sets or agent can expand?
-
 - thinking reporting: update agent current status. Upgrade status as two part status:current_task.
 
 - streaming support for gateways
 
-- show big < and > arrowbuttons when more content available in the permissions manager
+- show big howering  < and > arrow buttons when more content available in the permissions manager
+
+- web search 
+
+- wikipedia API andpoint as feature
+
+- NVRAM schema adherence: Strategy sets or agent can expand?
+
+- BOOTING/AWAKE in SovereignStrategy is actually Strategy controlled variable so it should not live in NVRAM where the agent could modify it?
+
+- Show cognitive session when a private session is in use for agent
 
 ## HIGH PRIORITY:
 

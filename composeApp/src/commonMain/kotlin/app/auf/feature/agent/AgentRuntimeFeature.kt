@@ -11,6 +11,11 @@ import androidx.compose.runtime.getValue
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionRegistry
+import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
+import app.auf.feature.agent.ui.AgentAvatarCard
+import app.auf.feature.agent.ui.AgentAvatarLogic
+import app.auf.feature.agent.ui.AgentManagerView
+import app.auf.feature.agent.ui.ManageContextView
 import app.auf.ui.components.colorToHex
 import app.auf.ui.components.hslToColor
 import app.auf.util.*
@@ -137,7 +142,7 @@ class AgentRuntimeFeature(
                 delay(1000)
                 val state = store.state.value.featureStates[identity.handle] as? AgentRuntimeState
                 if (state != null) {
-                    AgentAutoTriggerLogic.checkAndDispatchTriggers(store, state, platformDependencies, identity.handle)
+                    AutoTriggerLogic.checkAndDispatchTriggers(store, state, platformDependencies, identity.handle)
                 }
             }
         }
@@ -489,12 +494,12 @@ class AgentRuntimeFeature(
                 val correlationId = action.payload?.correlationId()
                 val agentId = resolveAgentId(action.payload, store, correlationId, action.name) ?: return
                 val agent = agentState.agents[agentId]
-                AgentCognitivePipeline.startCognitiveCycle(agentId, store)
+                CognitivePipeline.startCognitiveCycle(agentId, store)
                 publishActionResult(store, correlationId, action.name, true, summary = "Turn initiated for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_STAGE_TURN_CONTEXT -> {
                 val agentId = action.payload?.agentUUID() ?: return
-                AgentCognitivePipeline.evaluateTurnContext(agentId, store)
+                CognitivePipeline.evaluateTurnContext(agentId, store)
             }
             ActionRegistry.Names.AGENT_ACCUMULATE_SESSION_LEDGER -> {
                 // After the reducer stores this session's ledger and removes it
@@ -504,12 +509,12 @@ class AgentRuntimeFeature(
                 val statusInfo = updatedState.agentStatuses[agentId] ?: return
                 if (statusInfo.pendingLedgerSessionIds.isEmpty()) {
                     // All session ledgers accumulated — proceed to context gathering
-                    AgentCognitivePipeline.evaluateTurnContext(agentId, store)
+                    CognitivePipeline.evaluateTurnContext(agentId, store)
                 }
             }
             ActionRegistry.Names.AGENT_SET_HKG_CONTEXT -> {
                 val agentId = action.payload?.agentUUID() ?: return
-                AgentCognitivePipeline.evaluateFullContext(agentId, store)
+                CognitivePipeline.evaluateFullContext(agentId, store)
             }
             // Trigger initial API preview when managed context is first set (view opened)
             ActionRegistry.Names.AGENT_SET_MANAGED_CONTEXT -> {
@@ -520,12 +525,12 @@ class AgentRuntimeFeature(
                 // Listing received — evaluateFullContext checks if file reads are pending.
                 // If no expanded files, workspace is ready and the gate proceeds.
                 val agentId = action.payload?.agentUUID() ?: return
-                AgentCognitivePipeline.evaluateFullContext(agentId, store)
+                CognitivePipeline.evaluateFullContext(agentId, store)
             }
             ActionRegistry.Names.AGENT_SET_WORKSPACE_FILE_CONTENTS -> {
                 // Expanded file contents received — workspace context is now complete.
                 val agentId = action.payload?.agentUUID() ?: return
-                AgentCognitivePipeline.evaluateFullContext(agentId, store)
+                CognitivePipeline.evaluateFullContext(agentId, store)
             }
             ActionRegistry.Names.AGENT_CONTEXT_GATHERING_TIMEOUT -> {
                 val agentId = action.payload?.agentUUID() ?: return
@@ -540,7 +545,7 @@ class AgentRuntimeFeature(
                         "Stale context gathering timeout for agent '$agentId' (expected startedAt=${statusInfo.contextGatheringStartedAt}, got=$startedAt). Ignoring.")
                     return
                 }
-                AgentCognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
+                CognitivePipeline.evaluateFullContext(agentId, store, isTimeout = true)
             }
             ActionRegistry.Names.AGENT_EXECUTE_MANAGED_TURN -> {
                 val correlationId = action.payload?.correlationId()
@@ -627,7 +632,7 @@ class AgentRuntimeFeature(
                 }
             }
             ActionRegistry.Names.AGENT_CHECK_AUTOMATIC_TRIGGERS -> {
-                AgentAutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, identity.handle)
+                AutoTriggerLogic.checkAndDispatchTriggers(store, agentState, platformDependencies, identity.handle)
             }
             ActionRegistry.Names.SESSION_SESSION_NAMES_UPDATED -> {
                 // Polymorphic infrastructure check.
@@ -1052,11 +1057,11 @@ class AgentRuntimeFeature(
         val snapshot = statusInfo.managedContext?.transientDataSnapshot ?: return
 
         // Fast path: partition metadata only, no string assembly
-        val result = AgentCognitivePipeline.assemblePartitions(
+        val result = CognitivePipeline.assemblePartitions(
             agent, snapshot.sessionLedgers, snapshot.hkgContext, agentState, store
         )
         if (result != null) {
-            AgentCognitivePipeline.pendingManagedPartitions = result
+            CognitivePipeline.pendingManagedPartitions = result
             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_SET_MANAGED_PARTITIONS, buildJsonObject {
                 put("agentId", agentId.uuid)
             }))
@@ -1081,7 +1086,7 @@ class AgentRuntimeFeature(
             val snapshot = statusInfo.managedContext?.transientDataSnapshot ?: return@launch
 
             // Full assembly for updated system prompt
-            val result = AgentCognitivePipeline.assembleContext(
+            val result = CognitivePipeline.assembleContext(
                 agent, snapshot.sessionLedgers, snapshot.hkgContext, agentState, store
             ) ?: return@launch
 
@@ -1312,12 +1317,12 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.KNOWLEDGEGRAPH_RETURN_CONTEXT,
             ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
             ActionRegistry.Names.GATEWAY_RETURN_PREVIEW -> {
-                AgentCognitivePipeline.handleTargetedAction(action, store)
+                CognitivePipeline.handleTargetedAction(action, store)
             }
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val hasCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull != null
                 if (hasCorrelationId) {
-                    AgentCognitivePipeline.handleTargetedAction(action, store)
+                    CognitivePipeline.handleTargetedAction(action, store)
                 } else {
                     handleFileSystemListResponse(payload, store)
                 }
@@ -1328,7 +1333,7 @@ class AgentRuntimeFeature(
                 // Other RETURN_FILES_CONTENT responses are command responses handled above.
                 val wsCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
                 if (wsCorrelationId != null && wsCorrelationId.startsWith("ws:")) {
-                    AgentCognitivePipeline.handleTargetedAction(action, store)
+                    CognitivePipeline.handleTargetedAction(action, store)
                 }
                 // If not a workspace response and not handled as a pending command above, ignore.
             }
@@ -1731,7 +1736,12 @@ class AgentRuntimeFeature(
                             "Known UUIDs: ${state.agents.keys}, known handles: ${state.agents.values.map { it.identityHandle }}")
                 return
             }
-            AgentAvatarCard(agent = agent, sessionUUID = sessionUUID, store = store, platformDependencies = platformDependencies)
+            AgentAvatarCard(
+                agent = agent,
+                sessionUUID = sessionUUID,
+                store = store,
+                platformDependencies = platformDependencies
+            )
         }
     }
 }

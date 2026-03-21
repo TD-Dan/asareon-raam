@@ -164,8 +164,8 @@ object AgentRuntimeReducer {
                 // ContextAssemblyResult is too complex for JSON payloads.
                 // The side-effect stores it in AgentCognitivePipeline.pendingManagedContext
                 // and the reducer retrieves it here. Single-threaded dispatch ensures safety.
-                val result = AgentCognitivePipeline.pendingManagedContext
-                AgentCognitivePipeline.pendingManagedContext = null
+                val result = CognitivePipeline.pendingManagedContext
+                CognitivePipeline.pendingManagedContext = null
                 if (result == null) return state
 
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
@@ -187,8 +187,8 @@ object AgentRuntimeReducer {
 
             ActionRegistry.Names.AGENT_SET_MANAGED_PARTITIONS -> {
                 val agentId = action.payload?.agentUUID() ?: return state
-                val result = AgentCognitivePipeline.pendingManagedPartitions
-                AgentCognitivePipeline.pendingManagedPartitions = null
+                val result = CognitivePipeline.pendingManagedPartitions
+                CognitivePipeline.pendingManagedPartitions = null
                 if (result == null) return state
 
                 val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()

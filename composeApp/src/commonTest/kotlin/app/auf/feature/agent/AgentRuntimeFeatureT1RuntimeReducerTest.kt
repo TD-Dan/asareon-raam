@@ -5,7 +5,6 @@ import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonArray
@@ -764,7 +763,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             maxBudgetChars = 500_000,
             transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
         )
-        AgentCognitivePipeline.pendingManagedContext = fakeResult
+        CognitivePipeline.pendingManagedContext = fakeResult
 
         val action = Action(ActionRegistry.Names.AGENT_SET_MANAGED_CONTEXT, buildJsonObject {
             put("agentId", agentId)
@@ -775,7 +774,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
         assertNotNull(newState.agentStatuses[uid(agentId)]?.managedPartitions)
         assertEquals(uid(agentId), newState.managingContextForAgentId)
         // Stash should be cleared after consumption
-        assertNull(AgentCognitivePipeline.pendingManagedContext)
+        assertNull(CognitivePipeline.pendingManagedContext)
     }
 
     @Test

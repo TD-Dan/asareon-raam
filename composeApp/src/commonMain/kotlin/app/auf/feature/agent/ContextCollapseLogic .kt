@@ -286,7 +286,7 @@ object ContextCollapseLogic {
     /**
      * Resolves defaults for well-known partition keys.
      *
-     * Used by [buildPartition] (internal) and by [AgentCognitivePipeline.mergeIntoPartitions]
+     * Used by [buildPartition] (internal) and by [CognitivePipeline.mergeIntoPartitions]
      * to assign collapse/priority properties when converting contextMap entries to
      * [PromptSection.Section] objects.
      *

@@ -4,6 +4,7 @@ import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.agent.ui.AgentAvatarLogic
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.feature.filesystem.FileSystemFeature

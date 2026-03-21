@@ -1,7 +1,6 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -21,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontFamily
@@ -32,6 +30,12 @@ import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
+import app.auf.feature.agent.AgentRuntimeState
+import app.auf.feature.agent.AgentStatusInfo
+import app.auf.feature.agent.CollapseState
+import app.auf.feature.agent.ContextAssemblyResult
+import app.auf.feature.agent.ContextCollapseLogic
+import app.auf.feature.agent.ContextDelimiters
 import app.auf.ui.components.hslToColor
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put

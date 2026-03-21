@@ -4,6 +4,7 @@ import app.auf.core.Action
 import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
 import app.auf.feature.filesystem.FileSystemFeature
 import app.auf.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope

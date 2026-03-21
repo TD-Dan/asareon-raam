@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.fakes.FakePlatformDependencies
+import app.auf.feature.agent.contextformatters.SessionContextFormatter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -35,7 +36,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
         handle: String,
         messages: List<GatewayMessage>,
         isOutput: Boolean = false
-    ) = ConversationLogFormatter.SessionLedgerSnapshot(
+    ) = SessionContextFormatter.SessionLedgerSnapshot(
         sessionName = name,
         sessionUUID = uuid,
         sessionHandle = handle,
@@ -62,7 +63,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "Hello!", "user.alice", "Alice", 1000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.startsWith("--- CONVERSATION LOG ---"), "Should open with top-level delimiter")
         assertTrue(result.trimEnd().endsWith("--- END OF CONVERSATION LOG ---"), "Should close with top-level delimiter")
@@ -78,7 +79,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 ))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("SESSION: Chat"), "Should include session name")
         assertTrue(result.contains("uuid: s1-uuid"), "Should include session UUID")
@@ -92,7 +93,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "What is 2+2?", "user.alice", "Alice", 5000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("Alice (user.alice)"), "Should include sender name and ID")
         assertTrue(result.contains("2026-01-01T00:00:05Z"), "Should format timestamp via platform")
@@ -106,7 +107,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "Hello world", "u1", "Alice", 1000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         val lines = result.lines()
         val contentLine = lines.find { it.contains("Hello world") }
@@ -125,7 +126,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "Hey", "u1", "Alice", 1000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
         val lines = result.lines()
 
         assertTrue(lines.any { it.startsWith("---") && it.contains("CONVERSATION LOG") },
@@ -143,7 +144,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "Hey", "u1", "Alice", 1000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains(" --- END OF SESSION ---"),
             "Each session should close with indented END OF SESSION")
@@ -162,7 +163,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "World", "u2", "Bob", 2000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         val chatPos = result.indexOf("SESSION: Chat")
         val generalPos = result.indexOf("SESSION: General")
@@ -181,7 +182,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             ))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         val firstPos = result.indexOf("First")
         val secondPos = result.indexOf("Second")
@@ -202,7 +203,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 isOutput = true)
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("output: true"),
             "Output session should be tagged in header")
@@ -216,7 +217,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 isOutput = false)
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertFalse(result.contains("output:"),
             "Non-output sessions should not have output tag")
@@ -233,7 +234,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 isOutput = true)
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         val chatHeader = result.lines().find { it.contains("SESSION: Chat") }!!
         val privateHeader = result.lines().find { it.contains("SESSION: Private") }!!
@@ -253,14 +254,14 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             snapshot("General", "s2", "session.general", emptyList())
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("No messages in any subscribed session"))
     }
 
     @Test
     fun `format with empty session list should show no-messages notice`() {
-        val result = ConversationLogFormatter.format(emptyList(), platform)
+        val result = SessionContextFormatter.format(emptyList(), platform)
 
         assertTrue(result.contains("No messages in any subscribed session"))
         assertTrue(result.contains("--- END OF CONVERSATION LOG ---"))
@@ -274,7 +275,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             snapshot("Empty Room", "s2", "session.empty", emptyList())
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("(no messages)"))
         assertTrue(result.contains("Hello"))
@@ -286,7 +287,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             snapshot("Chat", "s1", "session.chat", emptyList())
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("No messages in any subscribed session"))
     }
@@ -308,7 +309,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             ))
         )
 
-        val participants = ConversationLogFormatter.extractParticipants(sessions)
+        val participants = SessionContextFormatter.extractParticipants(sessions)
 
         assertEquals(3, participants.size, "Should deduplicate Alice across sessions")
         assertTrue(participants.contains("user.alice" to "Alice"))
@@ -318,7 +319,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
 
     @Test
     fun `extractParticipants with empty sessions should return empty list`() {
-        val participants = ConversationLogFormatter.extractParticipants(emptyList())
+        val participants = SessionContextFormatter.extractParticipants(emptyList())
         assertTrue(participants.isEmpty())
     }
 
@@ -331,7 +332,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             ))
         )
 
-        val participants = ConversationLogFormatter.extractParticipants(sessions)
+        val participants = SessionContextFormatter.extractParticipants(sessions)
 
         assertEquals(1, participants.size)
         assertEquals("user.alice" to "Alice", participants.first())
@@ -348,7 +349,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "Here is a divider:\n---\nEnd.", "u1", "Alice", 1000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("Here is a divider:"))
         assertTrue(result.contains("End."))
@@ -361,7 +362,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
                 listOf(msg("user", "", "u1", "Alice", 1000L)))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("Alice (u1)"))
     }
@@ -380,7 +381,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             ))
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         assertTrue(result.contains("3 messages"))
     }
@@ -393,7 +394,7 @@ class AgentRuntimeFeatureT1ConversationLogFormatterTest {
             snapshot("Empty", "s2", "session.empty", emptyList())
         )
 
-        val result = ConversationLogFormatter.format(sessions, platform)
+        val result = SessionContextFormatter.format(sessions, platform)
 
         val emptyHeader = result.lines().find { it.contains("SESSION: Empty") }
         assertTrue(emptyHeader != null && emptyHeader.contains("0 messages"))

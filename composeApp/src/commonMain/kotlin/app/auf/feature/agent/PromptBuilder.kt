@@ -1,6 +1,7 @@
 package app.auf.feature.agent
 
 import app.auf.core.IdentityUUID
+import app.auf.feature.agent.contextformatters.SessionContextFormatter
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
@@ -74,7 +75,7 @@ sealed class PromptSection {
 
 data class FormatOverrides(
     val formatMessage: ((GatewayMessage) -> String?)? = null,
-    val formatSession: ((ConversationLogFormatter.SessionLedgerSnapshot, String) -> String?)? = null,
+    val formatSession: ((SessionContextFormatter.SessionLedgerSnapshot, String) -> String?)? = null,
     val formatEntry: ((key: String, content: String) -> String?)? = null
 )
 

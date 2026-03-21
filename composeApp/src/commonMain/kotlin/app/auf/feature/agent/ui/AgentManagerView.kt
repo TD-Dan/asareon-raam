@@ -1,4 +1,4 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -26,12 +26,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
+import app.auf.feature.agent.AgentInstance
+import app.auf.feature.agent.AgentResource
+import app.auf.feature.agent.AgentResourceType
+import app.auf.feature.agent.AgentRuntimeState
+import app.auf.feature.agent.CognitiveStrategy
+import app.auf.feature.agent.CognitiveStrategyRegistry
+import app.auf.feature.agent.StrategyConfigField
+import app.auf.feature.agent.StrategyConfigFieldType
 import app.auf.ui.components.CodeEditor
 import app.auf.ui.components.ColorPicker
 import app.auf.ui.components.IconRegistry
 import app.auf.ui.components.colorToHex
 import app.auf.ui.components.hexToColor
+import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
+import kotlinx.serialization.json.put
 
 // ============================================================================
 // Helpers for knowledgeGraphId, which lives in strategyConfig as a
@@ -55,7 +65,7 @@ private fun AgentInstance.withKnowledgeGraphId(kgId: String?): AgentInstance {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDependencies) {
+fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
     val agentState = remember(appState.featureStates) {
         appState.featureStates["agent"] as? AgentRuntimeState
@@ -105,7 +115,7 @@ fun AgentManagerView(store: Store, platformDependencies: app.auf.util.PlatformDe
 private fun AgentListView(
     agentState: AgentRuntimeState,
     store: Store,
-    platformDependencies: app.auf.util.PlatformDependencies
+    platformDependencies: PlatformDependencies
 ) {
     var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
     val editingAgentId = agentState.editingAgentId
@@ -184,7 +194,7 @@ private fun AgentCard(
     store: Store,
     onDeleteRequest: (AgentInstance) -> Unit,
     onEditRequest: () -> Unit,
-    platformDependencies: app.auf.util.PlatformDependencies,
+    platformDependencies: PlatformDependencies,
     showExtendedInfo: Boolean = false
 ) {
     Card(

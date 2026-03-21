@@ -4,10 +4,11 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.auf.core.AppState
 import app.auf.core.Identity
-import app.auf.core.IdentityUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import app.auf.feature.agent.ui.AgentAvatarCard
+import app.auf.feature.agent.ui.AgentAvatarLogic
 import app.auf.ui.AppTheme
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull

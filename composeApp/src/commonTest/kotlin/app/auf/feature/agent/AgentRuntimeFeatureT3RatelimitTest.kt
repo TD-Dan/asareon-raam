@@ -12,7 +12,6 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.*
@@ -372,7 +371,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                 .build(scope = testScope, platform = harnessPlatform)
 
             // ACT
-            AgentAutoTriggerLogic.checkAndDispatchTriggers(
+            AutoTriggerLogic.checkAndDispatchTriggers(
                 harness.store, agentState, harnessPlatform, "agent"
             )
             runCurrent()
@@ -411,7 +410,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                 .build(scope = testScope, platform = harnessPlatform)
 
             // ACT
-            AgentAutoTriggerLogic.checkAndDispatchTriggers(
+            AutoTriggerLogic.checkAndDispatchTriggers(
                 harness.store, agentState, harnessPlatform, "agent"
             )
             runCurrent()
@@ -448,7 +447,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                 .build(scope = testScope, platform = harnessPlatform)
 
             // ACT
-            AgentAutoTriggerLogic.checkAndDispatchTriggers(
+            AutoTriggerLogic.checkAndDispatchTriggers(
                 harness.store, agentState, harnessPlatform, "agent"
             )
             runCurrent()
@@ -486,7 +485,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                 .build(scope = testScope, platform = harnessPlatform)
 
             // ACT
-            AgentAutoTriggerLogic.checkAndDispatchTriggers(
+            AutoTriggerLogic.checkAndDispatchTriggers(
                 harness.store, agentState, harnessPlatform, "agent"
             )
             runCurrent()
@@ -528,7 +527,7 @@ class AgentRuntimeFeatureT3RateLimitTest {
                 .build(scope = testScope, platform = harnessPlatform)
 
             // ACT
-            AgentAutoTriggerLogic.checkAndDispatchTriggers(
+            AutoTriggerLogic.checkAndDispatchTriggers(
                 harness.store, agentState, harnessPlatform, "agent"
             )
             runCurrent()

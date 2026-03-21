@@ -1,4 +1,4 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,6 +22,11 @@ import app.auf.core.Store
 import app.auf.core.findByUUID
 import app.auf.core.generated.ActionRegistry
 import app.auf.core.resolveDisplayColor
+import app.auf.feature.agent.AgentInstance
+import app.auf.feature.agent.AgentRuntimeState
+import app.auf.feature.agent.AgentStatus
+import app.auf.feature.agent.AgentStatusInfo
+import app.auf.feature.agent.CognitiveStrategyRegistry
 import app.auf.ui.components.CodeEditor
 import app.auf.ui.components.IconRegistry
 import app.auf.util.LogLevel
@@ -429,7 +433,7 @@ fun AgentControlCard(
                             // ── Avatar-only items ────────────────────────
                             if (!showManagementActions) {
                                 DropdownMenuItem(
-                                    text = { Text("Preview Turn") },
+                                    text = { Text("Context Manager") },
                                     onClick = {
                                         store.dispatch("agent", Action(ActionRegistry.Names.AGENT_INITIATE_TURN, buildJsonObject {
                                             put("agentId", agentUuidStr)

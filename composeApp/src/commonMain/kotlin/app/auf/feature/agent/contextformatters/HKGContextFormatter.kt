@@ -1,8 +1,11 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.contextformatters
 
+import app.auf.feature.agent.CollapseState
+import app.auf.feature.agent.PromptSection
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.*
+import kotlin.collections.iterator
 
 /**
  * Pipeline-level utility for transforming raw HKG context into the two-partition
@@ -221,9 +224,9 @@ object HkgContextFormatter {
     }
 
     /**
-     * Build the FILES section as a [PromptSection.Group] whose internal structure
-     * mirrors the actual holon tree. Branch holons become nested [PromptSection.Group]s;
-     * leaf holons become [PromptSection.Section]s.
+     * Build the FILES section as a [app.auf.feature.agent.PromptSection.Group] whose internal structure
+     * mirrors the actual holon tree. Branch holons become nested [app.auf.feature.agent.PromptSection.Group]s;
+     * leaf holons become [app.auf.feature.agent.PromptSection.Section]s.
      *
      * The child key convention is `hkg:<holonId>`, matching the existing
      * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
@@ -254,10 +257,10 @@ object HkgContextFormatter {
      * @param platformDependencies For logging.
      */
     /**
-     * Recursively builds a [PromptSection] for a single holon.
+     * Recursively builds a [app.auf.feature.agent.PromptSection] for a single holon.
      *
-     * - **Leaf holon** (no children in the loaded set) → [PromptSection.Section]
-     * - **Branch holon** (has children in the loaded set) → [PromptSection.Group]
+     * - **Leaf holon** (no children in the loaded set) → [app.auf.feature.agent.PromptSection.Section]
+     * - **Branch holon** (has children in the loaded set) → [app.auf.feature.agent.PromptSection.Group]
      *   whose `header` is the holon's own file content and whose `children` are
      *   the recursive results of its sub-holons.
      *

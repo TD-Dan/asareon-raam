@@ -20,7 +20,7 @@ import kotlinx.serialization.json.put
  * agent — manual or automatic — may hit a rate limit during generation.
  *
  */
-object AgentAutoTriggerLogic {
+object AutoTriggerLogic {
 
     fun checkAndDispatchTriggers(
         store: Store,

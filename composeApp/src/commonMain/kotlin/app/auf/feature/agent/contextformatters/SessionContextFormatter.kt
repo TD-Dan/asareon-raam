@@ -1,5 +1,9 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.contextformatters
 
+import app.auf.feature.agent.ContextDelimiters
+import app.auf.feature.agent.GatewayMessage
+import app.auf.feature.agent.PromptSection
+import app.auf.feature.agent.SessionInfo
 import app.auf.util.PlatformDependencies
 
 /**
@@ -26,7 +30,7 @@ import app.auf.util.PlatformDependencies
  * ## Truncation Direction
  *
  * Sessions truncate from the START (oldest messages removed first).
- * This is set via [ContextCollapseLogic.ContextPartition.truncateFromStart]
+ * This is set via [app.auf.feature.agent.ContextCollapseLogic.ContextPartition.truncateFromStart]
  * in the pipeline, not by this formatter.
  *
  * ## Design Decisions
@@ -36,7 +40,7 @@ import app.auf.util.PlatformDependencies
  * - The formatter is a pure function — no state, no side effects.
  * - Pipeline-level utility, not strategy-owned (§2.3 absolute decoupling).
  */
-object ConversationLogFormatter {
+object SessionContextFormatter {
 
     /**
      * A snapshot of one session's ledger for formatting.
@@ -50,7 +54,7 @@ object ConversationLogFormatter {
     )
 
     /**
-     * Builds a unified `SESSIONS` [PromptSection.Group] that consolidates session
+     * Builds a unified `SESSIONS` [app.auf.feature.agent.PromptSection.Group] that consolidates session
      * subscription metadata, multi-agent participant context, and conversation
      * messages into one coherent structure.
      *

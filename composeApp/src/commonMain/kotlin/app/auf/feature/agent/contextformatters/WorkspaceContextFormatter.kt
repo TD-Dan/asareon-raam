@@ -1,8 +1,14 @@
-package app.auf.feature.agent
+package app.auf.feature.agent.contextformatters
 
+import app.auf.feature.agent.CollapseState
+import app.auf.feature.agent.PromptSection
 import app.auf.util.LogLevel
 import app.auf.util.PlatformDependencies
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Pipeline-level utility for transforming raw workspace file listings into the
@@ -193,9 +199,9 @@ object WorkspaceContextFormatter {
     }
 
     /**
-     * Build the WORKSPACE_FILES section as a [PromptSection.Group] whose internal
+     * Build the WORKSPACE_FILES section as a [app.auf.feature.agent.PromptSection.Group] whose internal
      * structure mirrors the actual directory tree. Directories become nested
-     * [PromptSection.Group]s; files become [PromptSection.Section]s.
+     * [app.auf.feature.agent.PromptSection.Group]s; files become [app.auf.feature.agent.PromptSection.Section]s.
      *
      * The child key convention is `ws:<relativePath>`, matching the existing
      * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.

@@ -4,6 +4,10 @@ import app.auf.core.*
 import app.auf.core.generated.ActionRegistry
 import app.auf.util.LogLevel
 import app.auf.core.Version
+import app.auf.feature.agent.contextformatters.HkgContextFormatter
+import app.auf.feature.agent.contextformatters.SessionContextFormatter
+import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
+import app.auf.feature.agent.ui.AgentAvatarLogic
 import app.auf.util.PlatformDependencies
 import app.auf.util.abbreviate
 import kotlinx.serialization.encodeToString
@@ -23,7 +27,7 @@ import kotlinx.serialization.json.*
  * [CognitiveStrategy.requestAdditionalContext] and gated via
  * [CognitiveStrategy.needsAdditionalContext].
  */
-object AgentCognitivePipeline {
+object CognitivePipeline {
 
     private val json = Json { ignoreUnknownKeys = true }
     private const val LOG_TAG = "AgentCognitivePipeline"
@@ -904,7 +908,7 @@ object AgentCognitivePipeline {
         val outputSessionUUID = agent.outputSessionId
         val sessionSnapshots = sessionLedgers.map { (sessionUUID, messages) ->
             val sessIdentity = identityRegistry.findByUUID(sessionUUID)
-            ConversationLogFormatter.SessionLedgerSnapshot(
+            SessionContextFormatter.SessionLedgerSnapshot(
                 sessionName = sessIdentity?.name ?: agentState.subscribableSessionNames[sessionUUID] ?: sessionUUID.uuid,
                 sessionUUID = sessionUUID.uuid,
                 sessionHandle = sessIdentity?.handle ?: sessionUUID.uuid,
@@ -912,7 +916,7 @@ object AgentCognitivePipeline {
                 isOutputSession = sessionUUID == outputSessionUUID
             )
         }
-        contextMap["SESSIONS"] = ConversationLogFormatter.buildSessionsGroup(
+        contextMap["SESSIONS"] = SessionContextFormatter.buildSessionsGroup(
             sessionSnapshots, subscribedSessionInfos, isPrivateFormat, platformDependencies
         )
 

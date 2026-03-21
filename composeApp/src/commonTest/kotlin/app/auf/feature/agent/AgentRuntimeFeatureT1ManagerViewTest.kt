@@ -6,6 +6,7 @@ import app.auf.core.AppState
 import app.auf.core.generated.ActionRegistry
 import app.auf.fakes.FakePlatformDependencies
 import app.auf.fakes.FakeStore
+import app.auf.feature.agent.ui.AgentManagerView
 import app.auf.ui.AppTheme
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
