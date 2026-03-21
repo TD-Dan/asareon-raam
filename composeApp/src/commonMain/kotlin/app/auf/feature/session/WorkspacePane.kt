@@ -30,7 +30,7 @@ import app.auf.core.Store
 import app.auf.core.generated.ActionRegistry
 import app.auf.ui.components.CodeEditor
 import app.auf.ui.components.fileDragSource
-import app.auf.ui.components.fileDropTarget
+import app.auf.ui.components.fileDropTargetModifier
 import app.auf.util.FileEntry
 import app.auf.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
@@ -61,34 +61,36 @@ fun WorkspacePane(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .fileDropTarget(
+                .then(fileDropTargetModifier(
                     onDragEntered = { isDragHovering = true },
                     onDragExited = { isDragHovering = false },
                     onFilesDropped = { droppedFiles ->
-                        if (uuid == null) return@fileDropTarget
-                        // Write each file directly to the workspace folder.
-                        // We use platformDependencies.writeFileBytes for binary safety,
-                        // resolving the absolute sandbox path to mirror FileSystemFeature's
-                        // sandbox layout: APP_ZONE/session/{uuid}/workspace/{name}
-                        droppedFiles.forEach { file ->
-                            try {
-                                val absPath = platformDependencies.resolveAbsoluteSandboxPath(
-                                    "session",
-                                    "$uuid/workspace/${file.name}"
-                                )
-                                platformDependencies.writeFileBytes(absPath, file.bytes)
-                            } catch (_: Exception) {
-                                // Individual write failures are non-fatal — remaining files
-                                // still land. The refresh will show what actually persisted.
+                        val sessionUuid = uuid
+                        if (sessionUuid != null) {
+                            // Write each file directly to the workspace folder.
+                            // We use platformDependencies.writeFileBytes for binary safety,
+                            // resolving the absolute sandbox path to mirror FileSystemFeature's
+                            // sandbox layout: APP_ZONE/session/{uuid}/workspace/{name}
+                            droppedFiles.forEach { file ->
+                                try {
+                                    val absPath = platformDependencies.resolveAbsoluteSandboxPath(
+                                        "session",
+                                        "$sessionUuid/workspace/${file.name}"
+                                    )
+                                    platformDependencies.writeFileBytes(absPath, file.bytes)
+                                } catch (_: Exception) {
+                                    // Individual write failures are non-fatal — remaining files
+                                    // still land. The refresh will show what actually persisted.
+                                }
                             }
+                            // Sync state with disk
+                            store.dispatch("session", Action(
+                                ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
+                                buildJsonObject { put("session", localHandle) }
+                            ))
                         }
-                        // Sync state with disk
-                        store.dispatch("session", Action(
-                            ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
-                            buildJsonObject { put("session", localHandle) }
-                        ))
                     }
-                )
+                ))
         ) {
             // ── Header ────────────────────────────────────────────────────
             WorkspacePaneHeader(store, session)
