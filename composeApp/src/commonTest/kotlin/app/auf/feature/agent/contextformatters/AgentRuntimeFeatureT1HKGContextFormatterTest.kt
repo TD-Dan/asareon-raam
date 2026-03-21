@@ -62,10 +62,10 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
     // A Meridian-like test HKG for reuse across tests
     // =========================================================================
 
-    private val meridianRoot = holonJson(
-        id = "meridian-root",
+    private val sovereignRoot = holonJson(
+        id = "sovereign-root",
         type = "AI_Persona_Root",
-        name = "Meridian",
+        name = "Sovereign",
         summary = "A cartographic intelligence.",
         subHolons = listOf(
             Triple("foundational-core", "Project", "Origin story."),
@@ -78,7 +78,7 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
         id = "foundational-core",
         type = "Project",
         name = "Foundational Core",
-        summary = "Meridian's origin.",
+        summary = "Sovereign's origin.",
         subHolons = listOf(
             Triple("awakening-log", "Document", "First boot log.")
         )
@@ -112,8 +112,8 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
         summary = "Universal artifacts."
     )
 
-    private val fullMeridianContext = hkgContext(
-        "meridian-root" to meridianRoot,
+    private val fullSovereignContext = hkgContext(
+        "sovereign-root" to sovereignRoot,
         "foundational-core" to foundationalCore,
         "awakening-log" to awakeningLog,
         "session-logs" to sessionLogs,
@@ -127,11 +127,11 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
     // =========================================================================
 
     @Test
-    fun `parseHolonHeaders extracts all holons from Meridian-like context`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+    fun `parseHolonHeaders extracts all holons from Sovereign-like context`() {
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
         assertEquals(7, headers.size)
-        assertTrue(headers.containsKey("meridian-root"))
+        assertTrue(headers.containsKey("sovereign-root"))
         assertTrue(headers.containsKey("foundational-core"))
         assertTrue(headers.containsKey("awakening-log"))
         assertTrue(headers.containsKey("session-logs"))
@@ -139,9 +139,9 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `parseHolonHeaders computes correct depth for tree`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
-        assertEquals(0, headers["meridian-root"]!!.depth)
+        assertEquals(0, headers["sovereign-root"]!!.depth)
         assertEquals(1, headers["foundational-core"]!!.depth)
         assertEquals(1, headers["session-logs"]!!.depth)
         assertEquals(1, headers["shared-knowledge"]!!.depth)
@@ -152,20 +152,20 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `parseHolonHeaders assigns correct parentId`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
-        assertEquals(null, headers["meridian-root"]!!.parentId)
-        assertEquals("meridian-root", headers["foundational-core"]!!.parentId)
-        assertEquals("meridian-root", headers["session-logs"]!!.parentId)
+        assertEquals(null, headers["sovereign-root"]!!.parentId)
+        assertEquals("sovereign-root", headers["foundational-core"]!!.parentId)
+        assertEquals("sovereign-root", headers["session-logs"]!!.parentId)
         assertEquals("foundational-core", headers["awakening-log"]!!.parentId)
         assertEquals("session-logs", headers["session-001"]!!.parentId)
     }
 
     @Test
     fun `parseHolonHeaders extracts sub-holon refs`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
-        val root = headers["meridian-root"]!!
+        val root = headers["sovereign-root"]!!
         assertEquals(3, root.subHolonRefs.size)
         assertTrue(root.subHolonRefs.any { it.id == "foundational-core" })
         assertTrue(root.subHolonRefs.any { it.id == "session-logs" })
@@ -211,11 +211,11 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `countSubHolons counts recursively`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
         // root has 3 direct children; foundational-core has 1 child; session-logs has 2
         // Total under root: 3 + 1 + 2 = 6
-        assertEquals(6, HkgContextFormatter.countSubHolons("meridian-root", headers))
+        assertEquals(6, HkgContextFormatter.countSubHolons("sovereign-root", headers))
 
         // foundational-core has 1 direct child (awakening-log), which has 0
         assertEquals(1, HkgContextFormatter.countSubHolons("foundational-core", headers))
@@ -229,7 +229,7 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `countSubHolons returns 0 for unknown holonId`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
         assertEquals(0, HkgContextFormatter.countSubHolons("nonexistent", headers))
     }
 
@@ -258,15 +258,15 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
     // =========================================================================
 
     @Test
-    fun `buildIndexTree renders all-collapsed Meridian tree with badges`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
-        val index = HkgContextFormatter.buildIndexTree(headers, emptyMap(), "Meridian")
+    fun `buildIndexTree renders all-collapsed Sovereign tree with badges`() {
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
+        val index = HkgContextFormatter.buildIndexTree(headers, emptyMap(), "Sovereign")
 
         assertTrue(index.contains("HOLON_KNOWLEDGE_GRAPH_INDEX"))
-        assertTrue(index.contains("Persona: Meridian | Total holons: 7"))
+        assertTrue(index.contains("Persona: Sovereign | Total holons: 7"))
 
         // Root should be COLLAPSED (no overrides)
-        assertTrue(index.contains("""meridian-root (AI_Persona_Root) — "Meridian" [COLLAPSED]"""))
+        assertTrue(index.contains("""sovereign-root (AI_Persona_Root) — "Sovereign" [COLLAPSED]"""))
 
         // Root's sub-holon count badge (all 6 descendants)
         assertTrue(index.contains("<contains 6 sub-holons>"))
@@ -274,13 +274,13 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildIndexTree shows EXPANDED tag and reveals children`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
-        val overrides = mapOf("hkg:meridian-root" to CollapseState.EXPANDED)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
+        val overrides = mapOf("hkg:sovereign-root" to CollapseState.EXPANDED)
 
-        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Meridian")
+        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Sovereign")
 
         // Root is EXPANDED
-        assertTrue(index.contains("""meridian-root (AI_Persona_Root) — "Meridian" [EXPANDED]"""))
+        assertTrue(index.contains("""sovereign-root (AI_Persona_Root) — "Sovereign" [EXPANDED]"""))
 
         // Children are visible (but themselves COLLAPSED)
         assertTrue(index.contains("""foundational-core (Project) — "Foundational Core" [COLLAPSED]"""))
@@ -290,10 +290,10 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildIndexTree COLLAPSED branch hides children`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
-        val overrides = mapOf("hkg:meridian-root" to CollapseState.COLLAPSED)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
+        val overrides = mapOf("hkg:sovereign-root" to CollapseState.COLLAPSED)
 
-        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Meridian")
+        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Sovereign")
 
         // Root is collapsed — children should NOT appear
         assertFalse(index.contains("foundational-core"))
@@ -305,14 +305,14 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildIndexTree mixed collapse states render correctly`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
         val overrides = mapOf(
-            "hkg:meridian-root" to CollapseState.EXPANDED,
+            "hkg:sovereign-root" to CollapseState.EXPANDED,
             "hkg:session-logs" to CollapseState.EXPANDED,
             "hkg:foundational-core" to CollapseState.COLLAPSED
         )
 
-        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Meridian")
+        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Sovereign")
 
         // Root expanded → children visible
         assertTrue(index.contains("""foundational-core (Project) — "Foundational Core" [COLLAPSED]"""))
@@ -336,16 +336,16 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildIndexTree uses 2-space indentation per depth level`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
         val overrides = mapOf(
-            "hkg:meridian-root" to CollapseState.EXPANDED,
+            "hkg:sovereign-root" to CollapseState.EXPANDED,
             "hkg:foundational-core" to CollapseState.EXPANDED
         )
 
-        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Meridian")
+        val index = HkgContextFormatter.buildIndexTree(headers, overrides, "Sovereign")
 
         // depth 0: no indent
-        assertTrue(index.contains("meridian-root (AI_Persona_Root)"))
+        assertTrue(index.contains("sovereign-root (AI_Persona_Root)"))
         // depth 1: 2 spaces
         assertTrue(index.contains("  foundational-core (Project)"))
         // depth 2: 4 spaces
@@ -379,14 +379,14 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildUnifiedSection includes expanded holons as children in tree`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
         val overrides = mapOf(
-            "hkg:meridian-root" to CollapseState.EXPANDED,
+            "hkg:sovereign-root" to CollapseState.EXPANDED,
             "hkg:foundational-core" to CollapseState.EXPANDED
         )
 
         val unified = HkgContextFormatter.buildUnifiedSection(
-            fullMeridianContext, headers, overrides, "Meridian", platformDependencies = platform
+            fullSovereignContext, headers, overrides, "Sovereign", platformDependencies = platform
         )
 
         assertEquals("HOLON_KNOWLEDGE_GRAPH", unified.key)
@@ -394,17 +394,17 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
         // The tree should contain children keyed by hkg:<holonId>
         val allKeys = collectKeys(unified)
-        assertTrue(allKeys.contains("hkg:meridian-root"), "Should contain root holon child")
+        assertTrue(allKeys.contains("hkg:sovereign-root"), "Should contain root holon child")
         assertTrue(allKeys.contains("hkg:foundational-core"), "Should contain foundational-core child")
     }
 
     @Test
     fun `buildUnifiedSection contains holon JSON content in tree`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
         val overrides = mapOf("hkg:shared-knowledge" to CollapseState.EXPANDED)
 
         val unified = HkgContextFormatter.buildUnifiedSection(
-            fullMeridianContext, headers, overrides, "Meridian", platformDependencies = platform
+            fullSovereignContext, headers, overrides, "Sovereign", platformDependencies = platform
         )
 
         // The actual JSON content should be present somewhere in the tree
@@ -417,14 +417,14 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildUnifiedSection header contains INDEX tree and NAVIGATION`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
         val unified = HkgContextFormatter.buildUnifiedSection(
-            fullMeridianContext, headers, emptyMap(), "Meridian", platformDependencies = platform
+            fullSovereignContext, headers, emptyMap(), "Sovereign", platformDependencies = platform
         )
 
         // Header should contain the INDEX tree
-        assertTrue(unified.header.contains("Persona: Meridian"),
+        assertTrue(unified.header.contains("Persona: Sovereign"),
             "Header should contain INDEX tree with persona name")
 
         // Header should contain navigation instructions
@@ -434,16 +434,16 @@ class AgentRuntimeFeatureT1HKGContextFormatterTest {
 
     @Test
     fun `buildUnifiedSection with all collapsed still includes root holon children`() {
-        val headers = HkgContextFormatter.parseHolonHeaders(fullMeridianContext, platform)
+        val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
 
         val unified = HkgContextFormatter.buildUnifiedSection(
-            fullMeridianContext, headers, emptyMap(), "Meridian", platformDependencies = platform
+            fullSovereignContext, headers, emptyMap(), "Sovereign", platformDependencies = platform
         )
 
         // Even with all collapsed, the root holon should still be a child
         // (it has defaultCollapsed = false when protectRoots = true)
         val allKeys = collectKeys(unified)
-        assertTrue(allKeys.contains("hkg:meridian-root"),
+        assertTrue(allKeys.contains("hkg:sovereign-root"),
             "Root holon should always be present as a child in the unified section")
     }
 }
