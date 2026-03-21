@@ -679,4 +679,29 @@ class AgentRuntimeFeatureT2ContractTest {
             )
         }
     }
+
+    // ====================================================================
+    // Discovery Audit: every public action must have contract coverage
+    // ====================================================================
+
+    @Test
+    fun `all public agent actions are covered by contract test cases`() {
+        val featureDescriptor = ActionRegistry.features[featureHandle]
+            ?: throw AssertionError("Feature '$featureHandle' not found in ActionRegistry.")
+
+        val publicActions = featureDescriptor.actions.values
+            .filter { it.public }
+            .map { it.fullName }
+            .toSet()
+
+        val testedActions = (happyCases.map { it.actionName } + failureCases.map { it.actionName }).toSet()
+        val untested = publicActions - testedActions
+
+        assertTrue(
+            untested.isEmpty(),
+            "The following public '$featureHandle' actions have no contract test coverage:\n" +
+                    untested.sorted().joinToString("\n") { "  • $it" } +
+                    "\n\nAdd HappyCase and/or FailureCase entries for each."
+        )
+    }
 }
