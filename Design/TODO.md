@@ -83,10 +83,11 @@
 
 - NVRAM needs to be at the end of the context for optimal llm attention.
 
-- You are "Agent" at the end of the context also for persona anchoring.
+- "You are <Agentname>" at the end of the context also for persona anchoring.
 
 ## HIGH PRIORITY:
 
+- Session files shown in the agent context as session child-partials. Needs to go trough session to retrieve files: session files are sandboxed out of agents reach.
 
 - AUTOMATIC INCREMENTAL BACKUP at app start! And a backup central.
 
