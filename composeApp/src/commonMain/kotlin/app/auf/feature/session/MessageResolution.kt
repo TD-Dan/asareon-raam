@@ -71,15 +71,17 @@ object MessageResolution {
         val suggestions = mutableListOf<String>()
 
         // 3a. Right sender, wrong timestamp? Find closest by time.
-        //     Normalize entry timestamps through format→parse so distance is computed
-        //     in the same domain as targetTimestamp.
+        //     Compare formatted ISO strings directly to avoid domain mismatches
+        //     between raw millis and parseIsoTimestamp output. Extracting digits
+        //     from fixed-format ISO 8601 UTC strings gives a numeric representation
+        //     where arithmetic distance ≈ chronological distance.
         val senderMessages = ledger.filter { it.senderId == senderId }
         if (senderMessages.isNotEmpty()) {
+            val targetNumeric = timestampStr.filter { it.isDigit() }.toLongOrNull() ?: 0L
             val closest = senderMessages.minByOrNull {
-                val entryParsed = platformDependencies.parseIsoTimestamp(
-                    platformDependencies.formatIsoTimestamp(it.timestamp)
-                ) ?: it.timestamp
-                kotlin.math.abs(entryParsed - targetTimestamp)
+                val entryIso = platformDependencies.formatIsoTimestamp(it.timestamp)
+                val entryNumeric = entryIso.filter { ch -> ch.isDigit() }.toLongOrNull() ?: 0L
+                kotlin.math.abs(entryNumeric - targetNumeric)
             }!!
             val closestIso = platformDependencies.formatIsoTimestamp(closest.timestamp)
             suggestions.add(

@@ -142,6 +142,9 @@ class SessionFeature(
     private fun checkStartupLoadComplete(store: Store, sessionState: SessionState) {
         if (startupLoadingActive && pendingStartupOps <= 0) {
             startupLoadingActive = false
+            // Single authoritative broadcast now that all sessions are in state.
+            // Individual SESSION_LOADED handlers skip their broadcast during startup.
+            broadcastSessionNames(sessionState, store)
             store.deferredDispatch(identity.handle, Action(
                 ActionRegistry.Names.SESSION_SESSION_FEATURE_READY,
                 buildJsonObject {
@@ -554,7 +557,11 @@ class SessionFeature(
             }
 
             ActionRegistry.Names.SESSION_LOADED -> {
-                broadcastSessionNames(sessionState, store)
+                // During startup, skip per-session broadcasts — checkStartupLoadComplete
+                // fires a single authoritative broadcast once all sessions are loaded.
+                if (!startupLoadingActive) {
+                    broadcastSessionNames(sessionState, store)
+                }
                 val prevSessions = (previousState as? SessionState)?.sessions ?: emptyMap()
 
                 // Persist sessions whose orderIndex was normalized
@@ -617,13 +624,23 @@ class SessionFeature(
                     return
                 }
 
-                persistSession(localHandle, sessionState, store)
                 val updatedSession = sessionState.sessions[localHandle] ?: return
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull
                 val postedEntry = if (messageId != null) {
                     updatedSession.ledger.find { it.id == messageId }
                 } else {
                     updatedSession.ledger.lastOrNull()
+                }
+
+                // Skip disk write for transient entries — persistSession filters them
+                // out anyway, so the write would produce identical content. This avoids
+                // redundant I/O during startup (avatar cards) and at runtime.
+                val isTransient = postedEntry?.metadata?.let { meta ->
+                    meta["is_transient"]?.jsonPrimitive?.booleanOrNull == true ||
+                            meta["render_as_partial"]?.jsonPrimitive?.booleanOrNull == true
+                } ?: false
+                if (!isTransient) {
+                    persistSession(localHandle, sessionState, store)
                 }
 
                 if (postedEntry != null) {
