@@ -9,7 +9,6 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": []
     },
     {
       "action_name": "system.RUNNING",
@@ -17,7 +16,6 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": []
     },
     {
       "action_name": "system.CLOSING",
@@ -25,7 +23,6 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": []
     },
     {
       "action_name": "system.SHUTDOWN",
@@ -33,7 +30,6 @@
       "public": false,
       "broadcast": true,
       "targeted": false,
-      "required_permissions": []
     }
   ]
 }

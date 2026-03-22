@@ -666,8 +666,7 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "agent.SELECT_RESOURCE",
@@ -685,8 +684,7 @@
             ]
           }
         }
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "agent.SET_MANAGER_TAB",
@@ -704,8 +702,7 @@
         "required": [
           "tabIndex"
         ]
-      },
-      "required_permissions": []
+      }
     },
     {
       "action_name": "agent.VALIDATE_SOVEREIGN_STATE",
