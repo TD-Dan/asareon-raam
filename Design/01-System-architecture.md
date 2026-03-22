@@ -235,6 +235,15 @@ The runtime speaks exclusively to the `CognitiveStrategy` interface. Strategy-sp
 Each target (JVM, Android, iOS, wasmJs) provides its own `actual` implementation. Features interact with the platform exclusively through this interface and through FileSystem actions.
 
 
+## Testing Architecture
+
+Testing is an integral part of the system architecture, not a separate concern. The unidirectional data flow, absolute decoupling, and manifest-driven contracts that define the runtime architecture also define how the system is tested. Every feature, guard, and cross-feature workflow has a corresponding test tier with explicit mandates, infrastructure, and patterns.
+
+The testing framework is organized into five tiers of increasing scope, from pure function tests to real-platform integration. A dedicated `TestEnvironment` builder and `RecordingStore` allow multi-feature integration tests to run against the real Store — including its guards, lifecycle, and routing — while recording all processed actions for assertion. Fake infrastructure (`FakePlatformDependencies`, `FakeStore`) isolates platform I/O and side effects where needed.
+
+The full testing strategy, tier definitions, infrastructure contracts, and authoring guidelines are documented in the companion document **02-Unit-testing**.
+
+
 ## Build and Targets
 
 **Kotlin Multiplatform** with **Compose Multiplatform** for UI.
