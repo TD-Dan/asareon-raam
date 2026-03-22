@@ -288,7 +288,25 @@ data class AgentStatusInfo(
     val pendingLedgerSessionIds: Set<IdentityUUID> = emptySet(),
 
     /** Accumulated per-session ledger messages. Key = session UUID, value = enriched messages. */
-    val accumulatedSessionLedgers: Map<IdentityUUID, List<GatewayMessage>> = emptyMap()
+    val accumulatedSessionLedgers: Map<IdentityUUID, List<GatewayMessage>> = emptyMap(),
+
+    // ========================================================================
+    // Session Workspace Files (Cross-Sandbox Delegation)
+    //
+    // When a turn starts, the pipeline dispatches N REQUEST_WORKSPACE_FILES
+    // actions (one per subscribed session). As responses arrive, each session's
+    // listing and file contents are accumulated here. When
+    // pendingSessionFileListingIds is empty, all session files have arrived.
+    // ========================================================================
+
+    /** Session UUIDs whose workspace file responses have not yet arrived. Empty = all received. */
+    val pendingSessionFileListingIds: Set<IdentityUUID> = emptySet(),
+
+    /** Accumulated per-session workspace listings. Key = session UUID, value = raw listing JsonArray. */
+    val transientSessionFileListings: Map<IdentityUUID, JsonArray> = emptyMap(),
+
+    /** Accumulated per-session workspace file contents. Key = session UUID, value = (relativePath → content). */
+    val transientSessionFileContents: Map<IdentityUUID, Map<String, String>> = emptyMap()
 )
 
 @Serializable

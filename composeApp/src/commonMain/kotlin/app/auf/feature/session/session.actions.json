@@ -16,6 +16,16 @@
       "key": "session:manage",
       "description": "Create, delete, clone, and configure sessions. Modify and delete all messages.",
       "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "session:read-files",
+      "description": "List and read workspace files in sessions the requester is subscribed to",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "session:write-files",
+      "description": "Write, edit, and delete workspace files in sessions",
+      "dangerLevel": "CAUTION"
     }
   ],
   "actions": [
@@ -1092,6 +1102,150 @@
           "name",
           "handle",
           "localHandle"
+        ]
+      }
+    },
+    {
+      "action_name": "session.REQUEST_WORKSPACE_FILES",
+      "summary": "Requests the workspace file listing and expanded file contents for a specific session. The session feature validates access, performs filesystem I/O within its own sandbox, and returns the data via a targeted RETURN_WORKSPACE_FILES response.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID to request files from."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Correlation ID for response matching (format: sf:{agentUUID}:{sessionUUID})."
+          },
+          "requesterId": {
+            "type": "string",
+            "description": "The identity handle of the requester (for access validation)."
+          },
+          "expandedFilePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Relative file paths to pre-read. Session cross-references against actual listing and drops invalid paths."
+          }
+        },
+        "required": [
+          "sessionId",
+          "correlationId",
+          "requesterId"
+        ]
+      },
+      "required_permissions": [
+        "session:read-files"
+      ]
+    },
+    {
+      "action_name": "session.RETURN_WORKSPACE_FILES",
+      "summary": "Targeted response containing workspace file listing and expanded file contents for a session delegation request.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "listing": {
+            "type": "array",
+            "description": "Raw workspace listing entries."
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of relative path to file content for requested expanded files."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if the request failed. Null on success."
+          }
+        },
+        "required": [
+          "correlationId",
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name": "session.READ_WORKSPACE_FILE",
+      "summary": "On-demand request to read a single workspace file from a session. Used when an agent expands a session file via CONTEXT_UNCOLLAPSE outside the turn-init pipeline.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID."
+          },
+          "path": {
+            "type": "string",
+            "description": "Relative path of the file to read."
+          },
+          "requesterId": {
+            "type": "string",
+            "description": "The identity handle of the requester."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Correlation ID (format: sfod:{agentUUID}:{sessionUUID})."
+          }
+        },
+        "required": [
+          "sessionId",
+          "path",
+          "requesterId",
+          "correlationId"
+        ]
+      },
+      "required_permissions": [
+        "session:read-files"
+      ]
+    },
+    {
+      "action_name": "session.RETURN_WORKSPACE_FILE",
+      "summary": "Targeted response containing a single workspace file's content for an on-demand read request.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "description": "File content. Null if the file was not found."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if the request failed."
+          }
+        },
+        "required": [
+          "correlationId",
+          "sessionId",
+          "path"
         ]
       }
     }

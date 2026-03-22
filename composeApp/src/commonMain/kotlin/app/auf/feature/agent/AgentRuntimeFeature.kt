@@ -168,7 +168,9 @@ class AgentRuntimeFeature(
             ActionRegistry.Names.GATEWAY_RETURN_PREVIEW,
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST,
             ActionRegistry.Names.FILESYSTEM_RETURN_READ,
-            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT,
+            ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
+            ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE -> {
                 handleTargetedResponse(action, store, agentState)
             }
             // --- Startup ---
@@ -532,6 +534,23 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.agentUUID() ?: return
                 CognitivePipeline.evaluateFullContext(agentId, store)
             }
+            ActionRegistry.Names.AGENT_STORE_SESSION_FILES -> {
+                // Session file listing+contents received — check if all sessions are done.
+                val agentId = action.payload?.agentUUID() ?: return
+                CognitivePipeline.evaluateFullContext(agentId, store)
+            }
+            ActionRegistry.Names.AGENT_MERGE_SESSION_FILE_CONTENT -> {
+                // On-demand session file content merged — trigger reassembly if Manage Context is open
+                val agentId = action.payload?.agentUUID() ?: return
+                coroutineScope.launch {
+                    kotlinx.coroutines.yield()
+                    val updatedAgentState = store.state.value.featureStates[identity.handle] as? AgentRuntimeState ?: return@launch
+                    val updatedStatusInfo = updatedAgentState.agentStatuses[agentId] ?: return@launch
+                    if (updatedStatusInfo.managedContext != null) {
+                        reassembleOnToggle(agentId, store)
+                    }
+                }
+            }
             ActionRegistry.Names.AGENT_CONTEXT_GATHERING_TIMEOUT -> {
                 val agentId = action.payload?.agentUUID() ?: return
                 val startedAt = action.payload?.get("startedAt")?.jsonPrimitive?.longOrNull ?: return
@@ -793,6 +812,61 @@ class AgentRuntimeFeature(
                                         "'$relativePath' (agent '${agentId}'). Deferring reassembly until content arrives.")
 
                             deferReassembly = true
+                        }
+                    }
+                }
+
+                // ============================================================
+                // On-demand SESSION FILE content fetch (sf: keys)
+                //
+                // Same pattern as workspace files, but uses cross-sandbox
+                // delegation via session.READ_WORKSPACE_FILE instead of
+                // direct filesystem access.
+                // ============================================================
+                if (action.name == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE) {
+                    val sfPartitionKey = action.payload?.get("partitionKey")?.jsonPrimitive?.contentOrNull
+                    if (sfPartitionKey != null && sfPartitionKey.startsWith("sf:") && !sfPartitionKey.endsWith("/")) {
+                        // Parse sf:<sessionHandle>:<relativePath>
+                        val sfBody = sfPartitionKey.removePrefix("sf:")
+                        val colonIndex = sfBody.indexOf(':')
+                        if (colonIndex > 0) {
+                            val sessionHandle = sfBody.substring(0, colonIndex)
+                            val relativePath = sfBody.substring(colonIndex + 1)
+
+                            if (relativePath.isNotBlank()) {
+                                val statusInfo = agentState.agentStatuses[agentId] ?: AgentStatusInfo()
+
+                                // Resolve session UUID from handle
+                                val identityRegistry = store.state.value.identityRegistry
+                                val sessionIdentity = identityRegistry[sessionHandle]
+                                val sessionUUID = sessionIdentity?.uuid
+
+                                if (sessionUUID != null) {
+                                    val existingContents = statusInfo.transientSessionFileContents[IdentityUUID(sessionUUID)]
+                                    if (existingContents == null || relativePath !in existingContents) {
+                                        store.deferredDispatch(identity.handle, Action(
+                                            ActionRegistry.Names.SESSION_READ_WORKSPACE_FILE,
+                                            buildJsonObject {
+                                                put("sessionId", sessionUUID)
+                                                put("path", relativePath)
+                                                put("requesterId", agent.identityHandle.handle)
+                                                put("correlationId", "sfod:${agentId.uuid}:$sessionUUID")
+                                            }
+                                        ))
+
+                                        platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                                            "CONTEXT_UNCOLLAPSE: Dispatched on-demand session file read for " +
+                                                    "'$relativePath' (session '$sessionHandle', agent '$agentId'). " +
+                                                    "Deferring reassembly.")
+
+                                        deferReassembly = true
+                                    }
+                                } else {
+                                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                                        "CONTEXT_UNCOLLAPSE: Cannot resolve session handle '$sessionHandle' to UUID. " +
+                                                "On-demand session file read skipped.")
+                                }
+                            }
                         }
                     }
                 }
@@ -1383,6 +1457,10 @@ class AgentRuntimeFeature(
                     handleOnDemandWorkspaceFileResponse(payload, store)
                 }
                 // If not a workspace response and not handled as a pending command above, ignore.
+            }
+            ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
+            ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE -> {
+                CognitivePipeline.handleTargetedAction(action, store)
             }
         }
     }

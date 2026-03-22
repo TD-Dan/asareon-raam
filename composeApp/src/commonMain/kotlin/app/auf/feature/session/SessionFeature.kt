@@ -52,6 +52,20 @@ class SessionFeature(
     @Serializable private data class WorkspaceFilesLoadedPayload(val sessionLocalHandle: String, val files: List<FileEntry>)
     @Serializable private data class WorkspaceFileContentPayload(val fileName: String, val content: String)
 
+    // --- Session workspace file delegation payload types ---
+    @Serializable private data class RequestWorkspaceFilesPayload(
+        val sessionId: String,
+        val correlationId: String,
+        val requesterId: String,
+        val expandedFilePaths: List<String> = emptyList()
+    )
+    @Serializable private data class ReadWorkspaceFilePayload(
+        val sessionId: String,
+        val path: String,
+        val requesterId: String,
+        val correlationId: String
+    )
+
     // --- Payload types for agent-facing message targeting ---
     @Serializable private data class LockMessagePayload(val session: String, val senderId: String, val timestamp: String)
     @Serializable private data class DeleteMessageExtPayload(val session: String, val messageId: String? = null, val senderId: String? = null, val timestamp: String? = null)
@@ -100,6 +114,26 @@ class SessionFeature(
     private var startupLoadingActive = false
     private var pendingStartupOps = 0
 
+    // --- Session workspace file delegation tracking ---
+    // Tracks in-flight cross-sandbox workspace file requests from agents.
+    // Keyed by the original correlationId from the agent's request.
+    private data class PendingWorkspaceDelegation(
+        val correlationId: String,
+        val sessionUUID: String,
+        val requester: String,
+        val expandedFilePaths: List<String>,
+        val workspacePath: String,
+        val cachedListing: JsonArray? = null
+    )
+    private data class PendingOnDemandFileRead(
+        val correlationId: String,
+        val sessionUUID: String,
+        val relativePath: String,
+        val requester: String
+    )
+    private val pendingWorkspaceDelegations = mutableMapOf<String, PendingWorkspaceDelegation>()
+    private val pendingOnDemandFileReads = mutableMapOf<String, PendingOnDemandFileRead>()
+
     /**
      * Fires [SESSION_FEATURE_READY] once when all startup filesystem operations
      * (folder listings + file reads) have completed. Resets the loading flag so
@@ -141,6 +175,17 @@ class SessionFeature(
                 val data = action.payload ?: return
                 val fileList = data["listing"]?.jsonArray?.map { json.decodeFromJsonElement<FileEntry>(it) } ?: return
                 val returnedPath = data["path"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                // ── Session file delegation listing response ───────────────
+                val listCorrelationId = data["correlationId"]?.jsonPrimitive?.contentOrNull
+                if (listCorrelationId != null && listCorrelationId.startsWith("sf-delegation:")) {
+                    val originalCorrelationId = listCorrelationId.removePrefix("sf-delegation:")
+                    val delegation = pendingWorkspaceDelegations[originalCorrelationId]
+                    if (delegation != null) {
+                        handleDelegationListingResponse(delegation, fileList, data, store)
+                        return
+                    }
+                }
 
                 // ── Workspace file listing ────────────────────────────────
                 // If the path contains "/workspace" or "\workspace", this is a
@@ -192,6 +237,26 @@ class SessionFeature(
                 val path = data["path"]?.jsonPrimitive?.content ?: ""
                 val content = data["content"]?.jsonPrimitive?.content ?: ""
 
+                // ── Session file on-demand read response ──────────────────
+                val readCorrelationId = data["correlationId"]?.jsonPrimitive?.contentOrNull
+                if (readCorrelationId != null && readCorrelationId.startsWith("sfod-delegation:")) {
+                    val originalCorrelationId = readCorrelationId.removePrefix("sfod-delegation:")
+                    val pending = pendingOnDemandFileReads.remove(originalCorrelationId)
+                    if (pending != null) {
+                        store.deferredDispatch(identity.handle, Action(
+                            name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE,
+                            payload = buildJsonObject {
+                                put("correlationId", pending.correlationId)
+                                put("sessionId", pending.sessionUUID)
+                                put("path", pending.relativePath)
+                                if (content.isNotBlank()) put("content", content) else put("error", "File not found or empty.")
+                            },
+                            targetRecipient = pending.requester
+                        ))
+                        return
+                    }
+                }
+
                 // ── Workspace file content ────────────────────────────────
                 // Route files inside a /workspace/ subfolder to the preview handler.
                 val normalizedPath = path.replace('\\', '/')
@@ -236,6 +301,45 @@ class SessionFeature(
                     if (startupLoadingActive) {
                         pendingStartupOps--
                         checkStartupLoadComplete(store, sessionState)
+                    }
+                }
+            }
+            // Phase 6 (Session Files): READ_MULTIPLE responses for workspace file delegation.
+            ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> {
+                val data = action.payload ?: return
+                val correlationId = data["correlationId"]?.jsonPrimitive?.contentOrNull
+                if (correlationId != null && correlationId.startsWith("sf-delegation-files:")) {
+                    val originalCorrelationId = correlationId.removePrefix("sf-delegation-files:")
+                    val delegation = pendingWorkspaceDelegations.remove(originalCorrelationId)
+                    if (delegation != null) {
+                        val contentsJson = data["contents"]?.jsonObject ?: buildJsonObject {}
+
+                        // Strip session workspace prefix from paths
+                        val workspacePrefix = "${delegation.sessionUUID}/workspace/"
+                        val relativeContents = buildJsonObject {
+                            contentsJson.forEach { (path, content) ->
+                                val normalizedPath = path.replace("\\", "/")
+                                val relativePath = normalizedPath.removePrefix(workspacePrefix)
+                                put(relativePath, content)
+                            }
+                        }
+
+                        val listing = delegation.cachedListing ?: JsonArray(emptyList())
+
+                        store.deferredDispatch(identity.handle, Action(
+                            name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
+                            payload = buildJsonObject {
+                                put("correlationId", delegation.correlationId)
+                                put("sessionId", delegation.sessionUUID)
+                                put("listing", listing)
+                                put("contents", relativeContents)
+                            },
+                            targetRecipient = delegation.requester
+                        ))
+
+                        platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                            "[SF-TRACE] RETURN_WORKSPACE_FILES sent for session '${delegation.sessionUUID}' " +
+                                    "(${listing.size} entries, ${contentsJson.size} file contents).")
                     }
                 }
             }
@@ -657,6 +761,107 @@ class SessionFeature(
                     summary = "Ledger returned (${messages.size} entries)")
             }
 
+            // ================================================================
+            // Session Workspace File Delegation (Cross-Sandbox)
+            // ================================================================
+            ActionRegistry.Names.SESSION_REQUEST_WORKSPACE_FILES -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<RequestWorkspaceFilesPayload>(it) }
+                if (payload == null) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle,
+                        "REQUEST_WORKSPACE_FILES: Invalid payload.")
+                    return
+                }
+
+                val localHandle = resolveSessionId(payload.sessionId, sessionState)
+                val session = localHandle?.let { sessionState.sessions[it] }
+                if (session == null) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "REQUEST_WORKSPACE_FILES: Could not resolve session '${payload.sessionId}'.")
+                    // Send error response so the agent gate doesn't hang
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
+                        payload = buildJsonObject {
+                            put("correlationId", payload.correlationId)
+                            put("sessionId", payload.sessionId)
+                            put("error", "Session '${payload.sessionId}' not found.")
+                        },
+                        targetRecipient = action.originator ?: "unknown"
+                    ))
+                    return
+                }
+
+                val uuid = session.identity.uuid ?: return
+                val workspacePath = "$uuid/workspace"
+
+                platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                    "[SF-TRACE] REQUEST_WORKSPACE_FILES received for session '$uuid' " +
+                            "(requested by '${payload.requesterId}'). " +
+                            "Expanded paths: ${payload.expandedFilePaths}")
+
+                // Dispatch filesystem LIST within our own sandbox
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.FILESYSTEM_LIST,
+                    buildJsonObject {
+                        put("path", workspacePath)
+                        put("recursive", true)
+                        put("correlationId", "sf-delegation:${payload.correlationId}")
+                    }
+                ))
+
+                // Stash the delegation context for when the filesystem responds
+                pendingWorkspaceDelegations[payload.correlationId] = PendingWorkspaceDelegation(
+                    correlationId = payload.correlationId,
+                    sessionUUID = uuid,
+                    requester = action.originator ?: "unknown",
+                    expandedFilePaths = payload.expandedFilePaths,
+                    workspacePath = workspacePath
+                )
+            }
+
+            ActionRegistry.Names.SESSION_READ_WORKSPACE_FILE -> {
+                val payload = action.payload?.let { json.decodeFromJsonElement<ReadWorkspaceFilePayload>(it) }
+                if (payload == null) {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle,
+                        "READ_WORKSPACE_FILE: Invalid payload.")
+                    return
+                }
+
+                val localHandle = resolveSessionId(payload.sessionId, sessionState)
+                val session = localHandle?.let { sessionState.sessions[it] }
+                if (session == null) {
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE,
+                        payload = buildJsonObject {
+                            put("correlationId", payload.correlationId)
+                            put("sessionId", payload.sessionId)
+                            put("path", payload.path)
+                            put("error", "Session '${payload.sessionId}' not found.")
+                        },
+                        targetRecipient = action.originator ?: "unknown"
+                    ))
+                    return
+                }
+
+                val uuid = session.identity.uuid ?: return
+                val filePath = "$uuid/workspace/${payload.path}"
+
+                // Stash on-demand context
+                pendingOnDemandFileReads[payload.correlationId] = PendingOnDemandFileRead(
+                    correlationId = payload.correlationId,
+                    sessionUUID = uuid,
+                    relativePath = payload.path,
+                    requester = action.originator ?: "unknown"
+                )
+
+                store.deferredDispatch(identity.handle, Action(
+                    ActionRegistry.Names.FILESYSTEM_READ,
+                    buildJsonObject {
+                        put("path", filePath)
+                        put("correlationId", "sfod-delegation:${payload.correlationId}")
+                    }
+                ))
+            }
+
             ActionRegistry.Names.SESSION_TOGGLE_SESSION_HIDDEN -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
@@ -854,6 +1059,74 @@ class SessionFeature(
                 error?.let { put("error", it) }
             }
         ))
+    }
+
+    /**
+     * Handles the filesystem listing response for a session file delegation.
+     * Cross-references expanded paths against the actual listing, then dispatches
+     * READ_MULTIPLE for valid files (or sends the response immediately if no
+     * files need reading).
+     */
+    private fun handleDelegationListingResponse(
+        delegation: PendingWorkspaceDelegation,
+        fileList: List<FileEntry>,
+        rawPayload: JsonObject,
+        store: Store
+    ) {
+        val listing = rawPayload["listing"]?.jsonArray ?: JsonArray(emptyList())
+
+        // Filter to files only (not directories, not .keep)
+        val availableFiles = fileList
+            .filter { !it.isDirectory }
+            .map {
+                val normalized = it.path.replace("\\", "/")
+                normalized.removePrefix("${delegation.sessionUUID}/workspace/")
+            }
+            .filter { it.isNotBlank() && !it.endsWith(".keep") }
+            .toSet()
+
+        // Cross-reference expanded paths against actual listing (§6 recommendation)
+        val validExpandedPaths = delegation.expandedFilePaths
+            .filter { it.isNotBlank() && it in availableFiles }
+
+        if (validExpandedPaths.isEmpty()) {
+            // No files to read — send response immediately with listing only
+            pendingWorkspaceDelegations.remove(delegation.correlationId)
+
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
+                payload = buildJsonObject {
+                    put("correlationId", delegation.correlationId)
+                    put("sessionId", delegation.sessionUUID)
+                    put("listing", listing)
+                    put("contents", buildJsonObject {})
+                },
+                targetRecipient = delegation.requester
+            ))
+
+            platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                "[SF-TRACE] RETURN_WORKSPACE_FILES sent (listing only, no expanded files) " +
+                        "for session '${delegation.sessionUUID}'.")
+        } else {
+            // Cache the listing on the delegation and dispatch READ_MULTIPLE
+            pendingWorkspaceDelegations[delegation.correlationId] = delegation.copy(
+                cachedListing = listing
+            )
+
+            val sandboxPaths = validExpandedPaths.map { "${delegation.sessionUUID}/workspace/$it" }
+
+            store.deferredDispatch(identity.handle, Action(
+                ActionRegistry.Names.FILESYSTEM_READ_MULTIPLE,
+                buildJsonObject {
+                    put("paths", buildJsonArray { sandboxPaths.forEach { add(it) } })
+                    put("correlationId", "sf-delegation-files:${delegation.correlationId}")
+                }
+            ))
+
+            platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                "[SF-TRACE] Dispatched READ_MULTIPLE for ${validExpandedPaths.size} expanded files " +
+                        "in session '${delegation.sessionUUID}'.")
+        }
     }
 
     private fun resolveSessionIdFromGenericPayload(payload: JsonObject?, state: SessionState): String? {

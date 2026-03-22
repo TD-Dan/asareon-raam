@@ -1448,6 +1448,91 @@
         ]
       },
       "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_PENDING_SESSION_FILE_LISTINGS",
+      "summary": "[INTERNAL] Initializes the set of session UUIDs whose workspace file listings are being requested. Clears stale transient session file data from the previous turn.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Session UUIDs whose workspace files are being requested."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionIds"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.STORE_SESSION_FILES",
+      "summary": "[INTERNAL] Stores the workspace file listing and expanded file contents for one session. Removes the session from the pending set.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID this data belongs to."
+          },
+          "listing": {
+            "type": "array",
+            "description": "Raw listing entries from session.RETURN_WORKSPACE_FILES."
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of relative path to file content for expanded files."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.MERGE_SESSION_FILE_CONTENT",
+      "summary": "[INTERNAL] Merges on-demand session file content into the agent's transient session file contents map. Used by CONTEXT_UNCOLLAPSE when an sf: file is expanded outside the turn-initiation pipeline.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID this content belongs to."
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of relative path to file content to merge."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId",
+          "contents"
+        ]
+      }
     }
   ]
 }

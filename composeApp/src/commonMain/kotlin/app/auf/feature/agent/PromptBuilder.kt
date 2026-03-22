@@ -122,6 +122,16 @@ class PromptBuilder(private val context: AgentTurnContext) {
         place("SESSIONS")
     }
 
+    /**
+     * Places all gathered SESSION_FILES partitions at this position.
+     * This includes the SESSION_FILES_INDEX and all per-session file Groups.
+     * Individual session Groups (SESSION_FILES:<handle>) that aren't explicitly
+     * placed will be picked up by [everythingElse].
+     */
+    fun sessionFiles() {
+        place("SESSION_FILES_INDEX")
+    }
+
     fun privateSessionRouting() {
         val content = buildString {
             appendLine("Your responses are routed to your PRIVATE session. This session is your")
@@ -282,5 +292,7 @@ data class TransientDataSnapshot(
     val sessionLedgers: Map<IdentityUUID, List<GatewayMessage>>,
     val hkgContext: JsonObject?,
     val workspaceListing: JsonArray?,
-    val workspaceFileContents: Map<String, String>
+    val workspaceFileContents: Map<String, String>,
+    val sessionFileListings: Map<IdentityUUID, JsonArray>,
+    val sessionFileContents: Map<IdentityUUID, Map<String, String>>
 )

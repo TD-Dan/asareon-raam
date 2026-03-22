@@ -156,7 +156,10 @@ object AgentRuntimeReducer {
                     contextGatheringStartedAt = null,
                     rateLimitedUntilMs = null, // Clear rate limit state on new turn
                     pendingLedgerSessionIds = emptySet(),
-                    accumulatedSessionLedgers = emptyMap()
+                    accumulatedSessionLedgers = emptyMap(),
+                    pendingSessionFileListingIds = emptySet(),
+                    transientSessionFileListings = emptyMap(),
+                    transientSessionFileContents = emptyMap()
                 )
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
@@ -548,6 +551,62 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
+            // ================================================================
+            // Session Workspace Files (Cross-Sandbox Delegation)
+            // ================================================================
+            ActionRegistry.Names.AGENT_SET_PENDING_SESSION_FILE_LISTINGS -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val sessionIds = payload["sessionIds"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull?.let { id -> IdentityUUID(id) } }
+                    ?.toSet()
+                    ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(
+                    pendingSessionFileListingIds = sessionIds,
+                    transientSessionFileListings = emptyMap(),
+                    transientSessionFileContents = emptyMap()
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_STORE_SESSION_FILES -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull
+                    ?.let { IdentityUUID(it) } ?: return state
+                val listing = payload["listing"]?.jsonArray ?: JsonArray(emptyList())
+                val contentsJson = payload["contents"]?.jsonObject
+                val contents = contentsJson?.mapValues { (_, value) ->
+                    value.jsonPrimitive.contentOrNull ?: ""
+                } ?: emptyMap()
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(
+                    transientSessionFileListings = currentStatus.transientSessionFileListings + (sessionId to listing),
+                    transientSessionFileContents = currentStatus.transientSessionFileContents + (sessionId to contents),
+                    pendingSessionFileListingIds = currentStatus.pendingSessionFileListingIds - sessionId
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
+            ActionRegistry.Names.AGENT_MERGE_SESSION_FILE_CONTENT -> {
+                val payload = action.payload ?: return state
+                val agentId = payload.agentUUID() ?: return state
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull
+                    ?.let { IdentityUUID(it) } ?: return state
+                val contentsJson = payload["contents"]?.jsonObject ?: return state
+                val newContents = contentsJson.mapValues { (_, value) ->
+                    value.jsonPrimitive.contentOrNull ?: ""
+                }
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val existingContents = currentStatus.transientSessionFileContents[sessionId] ?: emptyMap()
+                val mergedContents = existingContents + newContents
+                val updatedStatus = currentStatus.copy(
+                    transientSessionFileContents = currentStatus.transientSessionFileContents + (sessionId to mergedContents)
+                )
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
             else -> state
         }
     }
@@ -604,6 +663,9 @@ object AgentRuntimeReducer {
             contextGatheringStartedAt = if (shouldClearContext) null else currentStatus.contextGatheringStartedAt,
             pendingLedgerSessionIds = if (shouldClearContext) emptySet() else currentStatus.pendingLedgerSessionIds,
             accumulatedSessionLedgers = if (shouldClearContext) emptyMap() else currentStatus.accumulatedSessionLedgers,
+            pendingSessionFileListingIds = if (shouldClearContext) emptySet() else currentStatus.pendingSessionFileListingIds,
+            transientSessionFileListings = if (shouldClearContext) emptyMap() else currentStatus.transientSessionFileListings,
+            transientSessionFileContents = if (shouldClearContext) emptyMap() else currentStatus.transientSessionFileContents,
             // Preserve previous token data unless new data is provided in this update
             lastInputTokens = payloadInputTokens ?: currentStatus.lastInputTokens,
             lastOutputTokens = payloadOutputTokens ?: currentStatus.lastOutputTokens,

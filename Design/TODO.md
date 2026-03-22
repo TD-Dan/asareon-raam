@@ -77,13 +77,33 @@
 
 - session input needs to at most take 50% of available space
 
-- session workspace: division to two folders with two permission sets?
-
+# CORE
 - identity visibilities to control who can see what parts of the identityscape? identity groups and permissions? If you belong to a group you see group assests (identities)? Needs planning.
 
+
+# AGENT
+
+## Avatar Card
+- BUG: Triple and double agent avatar cards in the session and private session for new agents in sovereign mode
+
+##Context management
+- "You are <Agentname>" at the end of the context also for persona anchoring.
 - NVRAM needs to be at the end of the context for optimal llm attention.
 
-- "You are <Agentname>" at the end of the context also for persona anchoring.
+# SESSION
+- Need to be able to edit session names and reorder from the tab bar
+- "add agent" isnt visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents"
+
+## WorkspacePane
+- session files pane does not support folders and files in folders
+- clicking an editable file should open the ui codeEditor
+
+- How to handle input for and output files from agents without overriding the originals? session workspace: division to two folders with two permission sets?
+
+# COMMANDBOT
+- CommandBot by default posts collapsed messages when OK
+
+
 
 ## HIGH PRIORITY:
 

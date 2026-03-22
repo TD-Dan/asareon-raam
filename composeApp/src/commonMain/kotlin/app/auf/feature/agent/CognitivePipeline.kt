@@ -7,6 +7,7 @@ import app.auf.core.Version
 import app.auf.feature.agent.contextformatters.ActionsContextFormatter
 import app.auf.feature.agent.contextformatters.HkgContextFormatter
 import app.auf.feature.agent.contextformatters.SessionContextFormatter
+import app.auf.feature.agent.contextformatters.SessionFilesContextFormatter
 import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
 import app.auf.feature.agent.ui.AgentAvatarLogic
 import app.auf.util.PlatformDependencies
@@ -133,6 +134,8 @@ object CognitivePipeline {
             ActionRegistry.Names.FILESYSTEM_RETURN_FILES_CONTENT -> handleWorkspaceFileContentsResponse(payload, store)
             ActionRegistry.Names.GATEWAY_RETURN_RESPONSE -> handleGatewayResponse(payload, store)
             ActionRegistry.Names.GATEWAY_RETURN_PREVIEW -> handleGatewayPreviewResponse(payload, store)
+            ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES -> handleSessionWorkspaceFilesResponse(payload, store)
+            ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE -> handleOnDemandSessionFileResponse(payload, store)
             else -> {
                 store.platformDependencies.log(
                     LogLevel.WARN, LOG_TAG,
@@ -378,6 +381,95 @@ object CognitivePipeline {
     }
 
     /**
+     * Handles the targeted session.RETURN_WORKSPACE_FILES response from the session feature.
+     * Extracts listing + contents and stores them via AGENT_STORE_SESSION_FILES.
+     */
+    private fun handleSessionWorkspaceFilesResponse(payload: JsonObject, store: Store) {
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleSessionWorkspaceFilesResponse: Missing correlationId. Ignoring.")
+            return
+        }
+        if (!correlationId.startsWith("sf:")) return
+
+        // Correlation format: "sf:{agentUUID}:{sessionUUID}"
+        val parts = correlationId.removePrefix("sf:").split(":", limit = 2)
+        if (parts.size != 2) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleSessionWorkspaceFilesResponse: Malformed correlationId '$correlationId'.")
+            return
+        }
+        val agentIdStr = parts[0]
+        val sessionIdStr = parts[1]
+
+        val error = payload["error"]?.jsonPrimitive?.contentOrNull
+        if (error != null) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleSessionWorkspaceFilesResponse: Session error for agent '$agentIdStr', " +
+                        "session '$sessionIdStr': $error. Storing empty data.")
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_STORE_SESSION_FILES, buildJsonObject {
+                put("agentId", agentIdStr)
+                put("sessionId", sessionIdStr)
+                put("listing", JsonArray(emptyList()))
+                put("contents", buildJsonObject {})
+            }))
+            return
+        }
+
+        val listing = payload["listing"]?.jsonArray ?: JsonArray(emptyList())
+        val contentsJson = payload["contents"]?.jsonObject ?: buildJsonObject {}
+
+        val normalizedContents = buildJsonObject {
+            contentsJson.forEach { (path, content) ->
+                put(path.replace("\\", "/"), content)
+            }
+        }
+
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_STORE_SESSION_FILES, buildJsonObject {
+            put("agentId", agentIdStr)
+            put("sessionId", sessionIdStr)
+            put("listing", listing)
+            put("contents", normalizedContents)
+        }))
+
+        store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+            "handleSessionWorkspaceFilesResponse: Stored session files for agent '$agentIdStr', " +
+                    "session '$sessionIdStr' (${listing.size} entries, ${contentsJson.size} file contents).")
+    }
+
+    /**
+     * Handles the targeted session.RETURN_WORKSPACE_FILE response for on-demand
+     * single-file reads triggered by CONTEXT_UNCOLLAPSE on sf: keys.
+     */
+    private fun handleOnDemandSessionFileResponse(payload: JsonObject, store: Store) {
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
+        if (!correlationId.startsWith("sfod:")) return
+
+        val parts = correlationId.removePrefix("sfod:").split(":", limit = 2)
+        if (parts.size != 2) return
+        val agentIdStr = parts[0]
+        val sessionIdStr = parts[1]
+
+        val path = payload["path"]?.jsonPrimitive?.contentOrNull
+        val content = payload["content"]?.jsonPrimitive?.contentOrNull
+        val error = payload["error"]?.jsonPrimitive?.contentOrNull
+
+        if (error != null) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleOnDemandSessionFileResponse: Error reading '$path' from session '$sessionIdStr': $error")
+            return
+        }
+
+        if (path != null && content != null) {
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_MERGE_SESSION_FILE_CONTENT, buildJsonObject {
+                put("agentId", agentIdStr)
+                put("sessionId", sessionIdStr)
+                put("contents", buildJsonObject { put(path, content) })
+            }))
+        }
+    }
+
+    /**
      * Called after the ledger is staged. Dispatches ALL context requests in parallel
      * and sets up a timeout. Does NOT call executeTurn directly — the gate handles it.
      */
@@ -420,6 +512,48 @@ object CognitivePipeline {
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId.uuid); put("step", "Gathering Context")
         }))
+
+        // 3. Dispatch session workspace file requests (parallel, cross-sandbox delegation)
+        val sessionsForFiles = buildSet {
+            addAll(agent.subscribedSessionIds)
+            agent.outputSessionId?.let { add(it) }
+        }.filter { sessionUUID ->
+            store.state.value.identityRegistry.findByUUID(sessionUUID) != null
+        }
+
+        if (sessionsForFiles.isNotEmpty()) {
+            // Initialize pending set BEFORE dispatching requests
+            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PENDING_SESSION_FILE_LISTINGS, buildJsonObject {
+                put("agentId", agentId.uuid)
+                put("sessionIds", buildJsonArray {
+                    sessionsForFiles.forEach { add(it.uuid) }
+                })
+            }))
+
+            sessionsForFiles.forEach { sessionUUID ->
+                val sessionIdentity = store.state.value.identityRegistry.findByUUID(sessionUUID)
+                val sessionHandle = sessionIdentity?.handle ?: sessionUUID.uuid
+
+                // Determine which session files the agent has expanded
+                val sfPrefix = "sf:$sessionHandle:"
+                val expandedPaths = statusInfo.contextCollapseOverrides
+                    .filter { (key, collapseState) ->
+                        collapseState == CollapseState.EXPANDED &&
+                                key.startsWith(sfPrefix) &&
+                                !key.removePrefix(sfPrefix).endsWith("/")
+                    }
+                    .keys
+                    .map { it.removePrefix(sfPrefix) }
+                    .filter { it.isNotBlank() }
+
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_REQUEST_WORKSPACE_FILES, buildJsonObject {
+                    put("sessionId", sessionUUID.uuid)
+                    put("correlationId", "sf:${agentId.uuid}:${sessionUUID.uuid}")
+                    put("requesterId", agent.identityHandle.handle)
+                    put("expandedFilePaths", buildJsonArray { expandedPaths.forEach { add(it) } })
+                }))
+            }
+        }
 
         // Polymorphic: let the strategy request any additional context it needs.
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
@@ -485,13 +619,14 @@ object CognitivePipeline {
         }
 
         val workspaceReady = statusInfo.transientWorkspaceListing != null && !statusInfo.pendingWorkspaceFileReads
+        val sessionFilesReady = statusInfo.pendingSessionFileListingIds.isEmpty()
 
         // Polymorphic: ask the strategy if it expects additional context.
         val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
         val expectsAdditionalContext = strategy.needsAdditionalContext(agent)
         val additionalContextReady = !expectsAdditionalContext || statusInfo.transientHkgContext != null
 
-        if (workspaceReady && additionalContextReady) {
+        if (workspaceReady && additionalContextReady && sessionFilesReady) {
             // Close the gate immediately before dispatching executeTurn so that a concurrent
             // timeout callback cannot re-enter and produce a duplicate GATEWAY_GENERATE_CONTENT.
             store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_CONTEXT_GATHERING_STARTED, buildJsonObject {
@@ -503,6 +638,7 @@ object CognitivePipeline {
             val missing = mutableListOf<String>()
             if (!workspaceReady) missing.add("workspace")
             if (!additionalContextReady) missing.add("strategy-context")
+            if (!sessionFilesReady) missing.add("session-files")
             store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
                 "Context gathering timeout for agent '$agentId'. Missing: ${missing.joinToString(", ")}. Proceeding without.")
             // Same gate-closing dispatch on the timeout path.
@@ -662,7 +798,9 @@ object CognitivePipeline {
                 sessionLedgers = sessionLedgers,
                 hkgContext = hkgContext,
                 workspaceListing = statusInfo.transientWorkspaceListing,
-                workspaceFileContents = statusInfo.transientWorkspaceFileContents
+                workspaceFileContents = statusInfo.transientWorkspaceFileContents,
+                sessionFileListings = statusInfo.transientSessionFileListings,
+                sessionFileContents = statusInfo.transientSessionFileContents
             )
         )
     }
@@ -920,6 +1058,52 @@ object CognitivePipeline {
         contextMap["SESSIONS"] = SessionContextFormatter.buildSessionsGroup(
             sessionSnapshots, subscribedSessionInfos, isPrivateFormat, platformDependencies
         )
+
+        // SESSION_FILES — per-session workspace file context (cross-sandbox delegation)
+        val sessionFileListings = statusInfo.transientSessionFileListings
+        val sessionFileContents = statusInfo.transientSessionFileContents
+        if (sessionFileListings.isNotEmpty()) {
+            val allSessionFileIndices = mutableListOf<String>()
+
+            sessionFileListings.forEach { (sessionUUID, listing) ->
+                if (listing.isEmpty()) return@forEach
+
+                val sessIdentity = identityRegistry.findByUUID(sessionUUID)
+                val sessionHandle = sessIdentity?.handle ?: sessionUUID.uuid
+                val sessionName = sessIdentity?.name ?: agentState.subscribableSessionNames[sessionUUID] ?: sessionUUID.uuid
+
+                val entries = SessionFilesContextFormatter.parseListingEntries(
+                    listing, sessionUUID.uuid, platformDependencies
+                )
+                if (entries.isEmpty()) return@forEach
+
+                // Auto-expand root directories for session files
+                entries.filter { it.parentPath == null && it.isDirectory }.forEach { rootDir ->
+                    val key = "sf:$sessionHandle:${rootDir.relativePath}"
+                    if (key !in mergedOverrides) mergedOverrides[key] = CollapseState.EXPANDED
+                }
+
+                val fileContentsForSession = sessionFileContents[sessionUUID] ?: emptyMap()
+
+                allSessionFileIndices.add(
+                    SessionFilesContextFormatter.buildIndexTree(
+                        sessionHandle, sessionName, entries, mergedOverrides
+                    )
+                )
+
+                val groupKey = "SESSION_FILES:$sessionHandle"
+                contextMap[groupKey] = SessionFilesContextFormatter.buildSessionFilesGroup(
+                    sessionHandle, sessionName, entries, fileContentsForSession, mergedOverrides, platformDependencies
+                )
+            }
+
+            if (allSessionFileIndices.isNotEmpty()) {
+                contextMap["SESSION_FILES_INDEX"] = stringToSection(
+                    "SESSION_FILES_INDEX",
+                    allSessionFileIndices.joinToString("\n\n")
+                )
+            }
+        }
 
         return ContextMapResult(contextMap, mergedOverrides)
     }

@@ -54,6 +54,7 @@ object VanillaStrategy : CognitiveStrategy {
             identity()
             instructions()
             sessions()
+            sessionFiles()
             everythingElse()
         }
 
