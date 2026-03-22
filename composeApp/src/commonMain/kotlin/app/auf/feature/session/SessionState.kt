@@ -219,18 +219,6 @@ data class SessionState(
     @Transient
     val pendingInputLoads: Map<String, SessionInputState> = emptyMap(),
 
-    // ── Agent subscription discovery (from agent.AGENT_NAMES_UPDATED) ─────
-    // Transient data used by the session view to offer "Add agent to session".
-    // No agent types are imported — the data is stored as plain strings.
-
-    /** Agent UUID → display name, populated from agent.AGENT_NAMES_UPDATED broadcasts. */
-    @Transient
-    val knownAgentNames: Map<String, String> = emptyMap(),
-
-    /** Agent UUID → set of subscribed session UUIDs, populated from agent.AGENT_NAMES_UPDATED broadcasts. */
-    @Transient
-    val knownAgentSubscriptions: Map<String, Set<String>> = emptyMap(),
-
     // ── Workspace pane (all @Transient) ───────────────────────────────────
     // UI state for the right-side file browser panel in SessionView.
     // Files live in {uuid}/workspace/ and are accessed via FileSystemFeature.

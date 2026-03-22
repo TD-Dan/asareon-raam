@@ -258,7 +258,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
 
                         // ── Message input — full width below both panes ───────
                         Box(modifier = Modifier.heightIn(max = inputMaxHeight)) {
-                            MessageInput(store, activeSession, platformDependencies) { message ->
+                            MessageInput(store, activeSession, features, platformDependencies) { message ->
                                 val activeUserId = sessionState?.activeUserId ?: "user"
                                 store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
                                     put("session", activeSession.identity.localHandle); put("senderId", activeUserId); put("message", message)
@@ -554,7 +554,7 @@ private fun LedgerPane(
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun MessageInput(store: Store, activeSession: Session, platformDependencies: PlatformDependencies, onSend: (String) -> Unit) {
+private fun MessageInput(store: Store, activeSession: Session, features: List<Feature>, platformDependencies: PlatformDependencies, onSend: (String) -> Unit) {
     var menuExpanded by remember { mutableStateOf(false) }
 
     // ── Autocomplete state ──
@@ -989,66 +989,18 @@ private fun MessageInput(store: Store, activeSession: Session, platformDependenc
                             leadingIcon = { Icon(Icons.Default.ClearAll, null) }
                         )
 
-                        // --- Add Agent to this session (submenu) ---
+                        // --- Feature-contributed menu items ---
                         val activeSessionUUID = activeSession.identity.uuid
-                        val agentNames = sessionState?.knownAgentNames ?: emptyMap()
-                        val agentSubs = sessionState?.knownAgentSubscriptions ?: emptyMap()
-                        if (activeSessionUUID != null && agentNames.isNotEmpty()) {
-                            val unsubscribedAgents = agentNames.filter { (uuid, _) ->
-                                val subs = agentSubs[uuid] ?: emptySet()
-                                !subs.contains(activeSessionUUID)
-                            }
-                            if (unsubscribedAgents.isNotEmpty()) {
-                                var addAgentSubmenuExpanded by remember { mutableStateOf(false) }
-                                HorizontalDivider()
-                                Box {
-                                    DropdownMenuItem(
-                                        text = { Text("Add agent") },
-                                        onClick = { addAgentSubmenuExpanded = true },
-                                        leadingIcon = { Icon(Icons.Default.PersonAdd, null) },
-                                        trailingIcon = { Icon(Icons.Default.ArrowRight, null) }
+                        if (activeSessionUUID != null) {
+                            features.forEach { feature ->
+                                feature.composableProvider?.PartialView(
+                                    store = store,
+                                    partId = "session.message.menu",
+                                    context = mapOf(
+                                        "sessionUUID" to activeSessionUUID,
+                                        "onDismiss" to { menuExpanded = false }
                                     )
-                                    DropdownMenu(
-                                        expanded = addAgentSubmenuExpanded,
-                                        onDismissRequest = { addAgentSubmenuExpanded = false }
-                                    ) {
-                                        unsubscribedAgents.forEach { (agentUuid, agentName) ->
-                                            // Resolve agent identity for icon and color
-                                            val agentIdentity = appState.identityRegistry.values.find { it.uuid == agentUuid }
-                                            val agentColor = agentIdentity?.resolveDisplayColor()
-                                                ?: MaterialTheme.colorScheme.primary
-
-                                            DropdownMenuItem(
-                                                text = { Text(agentName, color = agentColor) },
-                                                onClick = {
-                                                    store.dispatch("session", Action(
-                                                        ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
-                                                        buildJsonObject {
-                                                            put("agentId", agentUuid)
-                                                            put("sessionId", activeSessionUUID)
-                                                        }
-                                                    ))
-                                                    addAgentSubmenuExpanded = false
-                                                    menuExpanded = false
-                                                },
-                                                leadingIcon = {
-                                                    if (agentIdentity?.displayEmoji != null) {
-                                                        Text(
-                                                            agentIdentity.displayEmoji!!,
-                                                            fontSize = 20.sp,
-                                                            color = agentColor,
-                                                            textAlign = TextAlign.Center
-                                                        )
-                                                    } else {
-                                                        val iconVector = IconRegistry.resolve(agentIdentity?.displayIcon)
-                                                            ?: IconRegistry.defaultAgentIcon
-                                                        Icon(iconVector, null, tint = agentColor)
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
+                                )
                             }
                         }
                     }

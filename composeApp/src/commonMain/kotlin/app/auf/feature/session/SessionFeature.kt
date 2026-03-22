@@ -1818,27 +1818,6 @@ class SessionFeature(
                 currentFeatureState.copy(sessions = updatedSessions.toMap(), sessionOrder = fullOrder)
             }
 
-            // --- Agent Discovery (from agent.AGENT_NAMES_UPDATED broadcast) ---
-            ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED -> {
-                val agentsArray = payload?.get("agents")?.jsonArray ?: return currentFeatureState
-                val names = mutableMapOf<String, String>()
-                val subscriptions = mutableMapOf<String, Set<String>>()
-                agentsArray.forEach { element ->
-                    val obj = element.jsonObject
-                    val uuid = obj["uuid"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                    val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                    val sessionIds = obj["subscribedSessionIds"]?.jsonArray
-                        ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                        ?.toSet() ?: emptySet()
-                    names[uuid] = name
-                    subscriptions[uuid] = sessionIds
-                }
-                currentFeatureState.copy(
-                    knownAgentNames = names,
-                    knownAgentSubscriptions = subscriptions
-                )
-            }
-
             // --- Settings Hydration ---
 
             ActionRegistry.Names.SETTINGS_LOADED -> {

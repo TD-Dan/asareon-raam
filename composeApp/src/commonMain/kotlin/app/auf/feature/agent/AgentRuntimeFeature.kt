@@ -1,13 +1,25 @@
 package app.auf.feature.agent
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowRight
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import app.auf.core.*
 import app.auf.core.Feature.ComposableProvider
 import app.auf.core.generated.ActionRegistry
@@ -16,6 +28,7 @@ import app.auf.feature.agent.ui.AgentAvatarCard
 import app.auf.feature.agent.ui.AgentAvatarLogic
 import app.auf.feature.agent.ui.AgentManagerView
 import app.auf.feature.agent.ui.ManageContextView
+import app.auf.ui.components.IconRegistry
 import app.auf.ui.components.colorToHex
 import app.auf.ui.components.hslToColor
 import app.auf.util.*
@@ -200,7 +213,6 @@ class AgentRuntimeFeature(
                 if (store.state.value.identityRegistry.values.any { it.parentHandle == "session" }) {
                     dispatchEnsureInfrastructureForAll(agentState, store)
                 }
-                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_VALIDATE_SOVEREIGN_STATE -> {
                 // Generalized: run ensureInfrastructure for all agents.
@@ -259,7 +271,6 @@ class AgentRuntimeFeature(
                 ))
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Agent '${agentToSave.identity.name}' created.")
-                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_CLONE -> {
                 val payload = action.payload
@@ -318,7 +329,6 @@ class AgentRuntimeFeature(
                 }
                 saveAgentConfig(agent, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
-                broadcastAgentNames(agentState, store)
 
                 val sessionIdStr = payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: ""
                 val verb = if (action.name == ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION) "added to" else "removed from"
@@ -390,7 +400,6 @@ class AgentRuntimeFeature(
                 }
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Agent '${newAgent.identity.name}' configuration updated.")
-                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_NVRAM_LOADED -> {
                 val agentId = action.payload?.agentUUID() ?: return
@@ -438,7 +447,6 @@ class AgentRuntimeFeature(
                 }
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Agent '$deleteName' deleted.")
-                broadcastAgentNames(agentState, store)
             }
 
             // --- Resource CRUD Side Effects ---
@@ -1244,31 +1252,6 @@ class AgentRuntimeFeature(
         // No-op — Phase 5 implementation
     }
 
-    /**
-     * Broadcasts the current agent names and subscriptions snapshot.
-     * Called after agent CRUD operations and subscription changes so that
-     * other features (e.g., SessionFeature) can discover agents without
-     * cross-feature imports.
-     */
-    private fun broadcastAgentNames(agentState: AgentRuntimeState, store: Store) {
-        store.deferredDispatch(identity.handle, Action(
-            name = ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
-            payload = buildJsonObject {
-                putJsonArray("agents") {
-                    agentState.agents.values.forEach { agent ->
-                        add(buildJsonObject {
-                            put("uuid", agent.identityUUID.uuid)
-                            put("name", agent.identity.name)
-                            putJsonArray("subscribedSessionIds") {
-                                agent.subscribedSessionIds.forEach { sid -> add(sid.uuid) }
-                            }
-                        })
-                    }
-                }
-            }
-        ))
-    }
-
     // ========================================================================
     // Polymorphic lifecycle dispatch helpers
     // ========================================================================
@@ -1904,7 +1887,14 @@ class AgentRuntimeFeature(
         }
         @Composable
         override fun PartialView(store: Store, partId: String, context: Any?) {
-            if (partId != "agent.avatar") return
+            when (partId) {
+                "agent.avatar" -> AgentAvatarPartial(store, context)
+                "session.message.menu" -> AddAgentMenuPartial(store, context)
+            }
+        }
+
+        @Composable
+        private fun AgentAvatarPartial(store: Store, context: Any?) {
             // Context may be a plain String (legacy) or a Map with "senderId" and "sessionUUID"
             val agentId: String?
             val sessionUUID: String?
@@ -1943,6 +1933,72 @@ class AgentRuntimeFeature(
                 store = store,
                 platformDependencies = platformDependencies
             )
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        @Composable
+        private fun AddAgentMenuPartial(store: Store, context: Any?) {
+            val ctx = context as? Map<*, *> ?: return
+            val sessionUUID = ctx["sessionUUID"] as? String ?: return
+            val onDismiss = ctx["onDismiss"] as? () -> Unit ?: {}
+
+            val appState by store.state.collectAsState()
+            val agentState = appState.featureStates[identity.handle] as? AgentRuntimeState ?: return
+
+            val unsubscribedAgents = agentState.agents.values.filter { agent ->
+                agent.subscribedSessionIds.none { it.uuid == sessionUUID }
+            }
+            if (unsubscribedAgents.isEmpty()) return
+
+            var submenuExpanded by remember { mutableStateOf(false) }
+            HorizontalDivider()
+            Box {
+                DropdownMenuItem(
+                    text = { Text("Add agent") },
+                    onClick = { submenuExpanded = true },
+                    leadingIcon = { Icon(Icons.Default.PersonAdd, null) },
+                    trailingIcon = { Icon(Icons.Default.ArrowRight, null) }
+                )
+                DropdownMenu(
+                    expanded = submenuExpanded,
+                    onDismissRequest = { submenuExpanded = false }
+                ) {
+                    unsubscribedAgents.forEach { agent ->
+                        val agentIdentity = appState.identityRegistry.values.find { it.uuid == agent.identityUUID.uuid }
+                        val agentColor = agentIdentity?.resolveDisplayColor()
+                            ?: MaterialTheme.colorScheme.primary
+
+                        DropdownMenuItem(
+                            text = { Text(agent.identity.name, color = agentColor) },
+                            onClick = {
+                                store.dispatch(identity.handle, Action(
+                                    ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                                    buildJsonObject {
+                                        put("agentId", agent.identityUUID.uuid)
+                                        put("sessionId", sessionUUID)
+                                    }
+                                ))
+                                submenuExpanded = false
+                                onDismiss()
+                            },
+                            leadingIcon = {
+                                if (agentIdentity?.displayEmoji != null) {
+                                    Text(
+                                        agentIdentity.displayEmoji!!,
+                                        fontSize = 20.sp,
+                                        color = agentColor,
+                                        textAlign = TextAlign.Center
+                                    )
+                                } else {
+                                    val iconVector = IconRegistry.resolve(agentIdentity?.displayIcon)
+                                        ?: IconRegistry.defaultAgentIcon
+                                    Icon(iconVector, null, tint = agentColor)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }
