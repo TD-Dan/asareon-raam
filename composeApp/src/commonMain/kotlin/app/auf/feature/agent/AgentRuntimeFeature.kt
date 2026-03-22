@@ -595,7 +595,7 @@ class AgentRuntimeFeature(
                     managedContext.gatewayRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT, buildJsonObject { put("agentId", agentId.uuid) }))
-                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Managed turn executed for agent '${agent.identity.name}'.")
             }
@@ -614,7 +614,7 @@ class AgentRuntimeFeature(
                         put("agentId", agentId.uuid); put("step", JsonNull)
                     }))
                 }
-                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
                 publishActionResult(store, correlationId, action.name, true, summary = "Managed context discarded for agent '${agent?.identity?.name ?: agentId.uuid}'.")
             }
             ActionRegistry.Names.AGENT_CANCEL_TURN -> {
