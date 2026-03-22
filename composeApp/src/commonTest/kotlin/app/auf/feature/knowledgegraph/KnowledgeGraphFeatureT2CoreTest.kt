@@ -9,6 +9,7 @@ import app.auf.fakes.FakePlatformDependencies
 import app.auf.feature.core.AppLifecycle
 import app.auf.feature.core.CoreState
 import app.auf.test.TestEnvironment
+import app.auf.test.testDescriptorsFor
 import app.auf.util.FileEntry
 import app.auf.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
@@ -100,7 +101,7 @@ class KnowledgeGraphFeatureT2CoreTest {
     fun `full load sequence correctly populates and synchronizes holons`() {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1-20251112T190000Z") }))
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "persona-1-20251112T190000Z") }))
 
             // [MIGRATED] Targeted dispatch replaces deliverPrivateData
             harness.store.deferredDispatch("filesystem", Action(
@@ -146,7 +147,7 @@ class KnowledgeGraphFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
         harness.runAndLogOnFailure {
             // ACT 1: Initiate load
-            harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "empty-persona") }))
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", "empty-persona") }))
 
             // ACT 2: Simulate empty recursive listing response — targeted dispatch
             harness.store.deferredDispatch("filesystem", Action(
@@ -308,7 +309,11 @@ class KnowledgeGraphFeatureT2CoreTest {
                 reservations = mapOf(personaId to ownerAgent),
                 holons = mapOf(holonId to holon, personaId to Holon(HolonHeader(personaId, "AI_Persona_Root", "P"), buildJsonObject{}))
             )
+            // [FIX] Override modification action descriptors to public so they pass the Store's
+            // authorization guard and reach the feature's own reservation guard (which is what
+            // this test validates). Without this, the Store blocks non-owner agents at Step 2.
             val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
+                .withExtraDescriptors(testDescriptorsFor(actionsToTest.keys.map { it.name }.toSet()))
                 .withInitialState("knowledgegraph", initialState).build(platform = platform)
 
             harness.runAndLogOnFailure {
@@ -344,7 +349,11 @@ class KnowledgeGraphFeatureT2CoreTest {
                 reservations = mapOf(personaId to ownerAgent),
                 holons = mapOf(holonId to holon, personaId to Holon(HolonHeader(personaId, "AI_Persona_Root", "P"), buildJsonObject{}))
             )
+            // [FIX] Override modification action descriptors to public so agent originators
+            // pass the Store's authorization guard. This test validates the feature's
+            // reservation logic allows the owner — not the Store's public-flag enforcement.
             val harness = TestEnvironment.create().withFeature(feature).withIdentity(agentAlphaIdentity).withIdentity(agentBetaIdentity)
+                .withExtraDescriptors(testDescriptorsFor(actionsToTest.keys.map { it.name }.toSet()))
                 .withInitialState("knowledgegraph", initialState).build(platform = platform)
 
             harness.runAndLogOnFailure {

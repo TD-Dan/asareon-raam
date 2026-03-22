@@ -68,7 +68,8 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
         harness.runAndLogOnFailure {
             // Act
-            harness.store.dispatch("session", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+            // [FIX] EXECUTE_IMPORT is non-public; only the owning feature can dispatch it.
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
             // Assert: Find the two write actions
             val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
@@ -130,7 +131,8 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT
-            harness.store.dispatch("session", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+            // [FIX] EXECUTE_IMPORT is non-public; only the owning feature can dispatch it.
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
 
             // ASSERT
             val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }

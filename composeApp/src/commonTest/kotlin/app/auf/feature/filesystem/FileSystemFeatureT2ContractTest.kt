@@ -152,6 +152,17 @@ class FileSystemFeatureT2ContractTest {
                 val appZone = platform.getBasePathFor(BasePath.APP_ZONE)
                 platform.createDirectories("$appZone/logs")
             }
+        ),
+        HappyCase(
+            label = "REQUEST_SCOPED_READ_UI",
+            actionName = ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI,
+            originator = "agent",
+            payload = buildJsonObject {
+                put("correlationId", "test-corr-1")
+                put("recursive", true)
+                putJsonArray("fileExtensions") { add(JsonPrimitive("kt")); add(JsonPrimitive("md")) }
+            },
+            setup = { } // No filesystem setup needed — handler only stages the request
         )
     )
 

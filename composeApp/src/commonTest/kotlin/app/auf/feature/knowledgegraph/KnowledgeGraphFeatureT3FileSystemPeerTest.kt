@@ -125,7 +125,8 @@ class KnowledgeGraphFeatureT3FileSystemPeerTest {
 
         harness.runAndLogOnFailure {
             // ACT 1: Load the data from the fake disk.
-            harness.store.dispatch("system", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject {
+            // [FIX] LOAD_PERSONA is non-public; only the owning feature can dispatch it.
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject {
                 put("personaId", personaId)
             }))
 
