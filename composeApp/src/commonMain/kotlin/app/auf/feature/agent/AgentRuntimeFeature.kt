@@ -595,7 +595,7 @@ class AgentRuntimeFeature(
                     managedContext.gatewayRequest.systemPrompt?.let { put("systemPrompt", it) }
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_DISCARD_MANAGED_CONTEXT, buildJsonObject { put("agentId", agentId.uuid) }))
-                store.deferredDispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                store.dispatch("agent", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Managed turn executed for agent '${agent.identity.name}'.")
             }
@@ -866,7 +866,15 @@ class AgentRuntimeFeature(
                                         "CONTEXT_UNCOLLAPSE: Cannot resolve session handle '$sessionHandle' to UUID. " +
                                                 "On-demand session file read skipped.")
                                 }
+                            } else {
+                                platformDependencies.log(LogLevel.WARN, identity.handle,
+                                    "CONTEXT_UNCOLLAPSE: Empty relativePath in sf: key '$sfPartitionKey' " +
+                                            "for agent '$agentId'. Likely a trailing colon in the partition key. Ignoring.")
                             }
+                        } else {
+                            platformDependencies.log(LogLevel.WARN, identity.handle,
+                                "CONTEXT_UNCOLLAPSE: Malformed sf: partition key '$sfPartitionKey' — " +
+                                        "expected 'sf:<sessionHandle>:<relativePath>'. Ignoring.")
                         }
                     }
                 }

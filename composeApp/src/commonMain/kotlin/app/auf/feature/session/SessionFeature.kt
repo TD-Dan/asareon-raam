@@ -184,6 +184,11 @@ class SessionFeature(
                     if (delegation != null) {
                         handleDelegationListingResponse(delegation, fileList, data, store)
                         return
+                    } else {
+                        platformDependencies.log(LogLevel.WARN, identity.handle,
+                            "[SF-TRACE] FILESYSTEM_RETURN_LIST: sf-delegation correlationId '$originalCorrelationId' " +
+                                    "has no matching pending delegation. May have been cleaned up or timed out.")
+                        // Fall through to normal workspace handling
                     }
                 }
 
@@ -254,6 +259,11 @@ class SessionFeature(
                             targetRecipient = pending.requester
                         ))
                         return
+                    } else {
+                        platformDependencies.log(LogLevel.WARN, identity.handle,
+                            "[SF-TRACE] FILESYSTEM_RETURN_READ: sfod-delegation correlationId '$originalCorrelationId' " +
+                                    "has no matching pending on-demand read. May have been cleaned up or timed out.")
+                        return // Do NOT fall through to workspace preview handler — this was a delegation read
                     }
                 }
 
@@ -324,7 +334,13 @@ class SessionFeature(
                             }
                         }
 
-                        val listing = delegation.cachedListing ?: JsonArray(emptyList())
+                        val listing = delegation.cachedListing ?: run {
+                            platformDependencies.log(LogLevel.WARN, identity.handle,
+                                "[SF-TRACE] RETURN_WORKSPACE_FILES: cachedListing is null for delegation " +
+                                        "'${delegation.correlationId}'. Listing may not have been cached properly. " +
+                                        "Sending empty listing.")
+                            JsonArray(emptyList())
+                        }
 
                         store.deferredDispatch(identity.handle, Action(
                             name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
@@ -340,6 +356,11 @@ class SessionFeature(
                         platformDependencies.log(LogLevel.DEBUG, identity.handle,
                             "[SF-TRACE] RETURN_WORKSPACE_FILES sent for session '${delegation.sessionUUID}' " +
                                     "(${listing.size} entries, ${contentsJson.size} file contents).")
+                    } else {
+                        platformDependencies.log(LogLevel.WARN, identity.handle,
+                            "[SF-TRACE] FILESYSTEM_RETURN_FILES_CONTENT: sf-delegation-files correlationId " +
+                                    "'$originalCorrelationId' has no matching pending delegation. " +
+                                    "May have been cleaned up or timed out.")
                     }
                 }
             }
@@ -790,7 +811,21 @@ class SessionFeature(
                     return
                 }
 
-                val uuid = session.identity.uuid ?: return
+                val uuid = session.identity.uuid ?: run {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle,
+                        "REQUEST_WORKSPACE_FILES: Session '${payload.sessionId}' resolved but has null UUID. " +
+                                "Cannot access workspace files.")
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILES,
+                        payload = buildJsonObject {
+                            put("correlationId", payload.correlationId)
+                            put("sessionId", payload.sessionId)
+                            put("error", "Session '${payload.sessionId}' has no UUID.")
+                        },
+                        targetRecipient = action.originator ?: "unknown"
+                    ))
+                    return
+                }
                 val workspacePath = "$uuid/workspace"
 
                 platformDependencies.log(LogLevel.DEBUG, identity.handle,
@@ -829,6 +864,8 @@ class SessionFeature(
                 val localHandle = resolveSessionId(payload.sessionId, sessionState)
                 val session = localHandle?.let { sessionState.sessions[it] }
                 if (session == null) {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "READ_WORKSPACE_FILE: Could not resolve session '${payload.sessionId}'.")
                     store.deferredDispatch(identity.handle, Action(
                         name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE,
                         payload = buildJsonObject {
@@ -842,7 +879,21 @@ class SessionFeature(
                     return
                 }
 
-                val uuid = session.identity.uuid ?: return
+                val uuid = session.identity.uuid ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle,
+                        "READ_WORKSPACE_FILE: Session '${payload.sessionId}' resolved but has null UUID.")
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.SESSION_RETURN_WORKSPACE_FILE,
+                        payload = buildJsonObject {
+                            put("correlationId", payload.correlationId)
+                            put("sessionId", payload.sessionId)
+                            put("path", payload.path)
+                            put("error", "Session '${payload.sessionId}' has no UUID.")
+                        },
+                        targetRecipient = action.originator ?: "unknown"
+                    ))
+                    return
+                }
                 val filePath = "$uuid/workspace/${payload.path}"
 
                 // Stash on-demand context
@@ -1088,6 +1139,13 @@ class SessionFeature(
         // Cross-reference expanded paths against actual listing (§6 recommendation)
         val validExpandedPaths = delegation.expandedFilePaths
             .filter { it.isNotBlank() && it in availableFiles }
+
+        val droppedPaths = delegation.expandedFilePaths.filter { it.isNotBlank() && it !in availableFiles }
+        if (droppedPaths.isNotEmpty()) {
+            platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                "[SF-TRACE] handleDelegationListingResponse: Dropped ${droppedPaths.size} stale/invalid expanded paths " +
+                        "for session '${delegation.sessionUUID}': $droppedPaths")
+        }
 
         if (validExpandedPaths.isEmpty()) {
             // No files to read — send response immediately with listing only

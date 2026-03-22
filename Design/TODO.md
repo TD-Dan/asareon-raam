@@ -61,6 +61,8 @@
 - remove the boot sentinel from Sovereign and replace with Constitution sub-agent: instead of fragile one time check we get constant checks.
 
 
+BUG: gocnitivepipeline 969: should error not default
+
 ## Strategies 
 
 ### Minimal
@@ -97,6 +99,8 @@
 - Need to be able to edit session names and reorder from the tab bar
 - "add agent" isnt visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents"
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
+
+BUG: "add agent" isn't visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents". Probaply its visibility is gated by the AGENTS_UPDATED action broadcast and it stays hidden till it receives it?
 
 ## WorkspacePane
 - session files pane does not support folders and files in folders

@@ -390,7 +390,12 @@ object CognitivePipeline {
                 "handleSessionWorkspaceFilesResponse: Missing correlationId. Ignoring.")
             return
         }
-        if (!correlationId.startsWith("sf:")) return
+        if (!correlationId.startsWith("sf:")) {
+            // Not a session file response — may be a different targeted action sharing this handler.
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+                "handleSessionWorkspaceFilesResponse: CorrelationId '$correlationId' does not start with 'sf:'. Ignoring.")
+            return
+        }
 
         // Correlation format: "sf:{agentUUID}:{sessionUUID}"
         val parts = correlationId.removePrefix("sf:").split(":", limit = 2)
@@ -442,11 +447,23 @@ object CognitivePipeline {
      * single-file reads triggered by CONTEXT_UNCOLLAPSE on sf: keys.
      */
     private fun handleOnDemandSessionFileResponse(payload: JsonObject, store: Store) {
-        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: return
-        if (!correlationId.startsWith("sfod:")) return
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleOnDemandSessionFileResponse: Missing correlationId. Ignoring.")
+            return
+        }
+        if (!correlationId.startsWith("sfod:")) {
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+                "handleOnDemandSessionFileResponse: CorrelationId '$correlationId' does not start with 'sfod:'. Ignoring.")
+            return
+        }
 
         val parts = correlationId.removePrefix("sfod:").split(":", limit = 2)
-        if (parts.size != 2) return
+        if (parts.size != 2) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleOnDemandSessionFileResponse: Malformed correlationId '$correlationId'. Expected 'sfod:{agentUUID}:{sessionUUID}'.")
+            return
+        }
         val agentIdStr = parts[0]
         val sessionIdStr = parts[1]
 
@@ -460,13 +477,18 @@ object CognitivePipeline {
             return
         }
 
-        if (path != null && content != null) {
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_MERGE_SESSION_FILE_CONTENT, buildJsonObject {
-                put("agentId", agentIdStr)
-                put("sessionId", sessionIdStr)
-                put("contents", buildJsonObject { put(path, content) })
-            }))
+        if (path == null || content == null) {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleOnDemandSessionFileResponse: Missing path or content in response for agent '$agentIdStr', " +
+                        "session '$sessionIdStr' (path=${path != null}, content=${content != null}). Dropping.")
+            return
         }
+
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_MERGE_SESSION_FILE_CONTENT, buildJsonObject {
+            put("agentId", agentIdStr)
+            put("sessionId", sessionIdStr)
+            put("contents", buildJsonObject { put(path, content) })
+        }))
     }
 
     /**
@@ -967,8 +989,10 @@ object CognitivePipeline {
         val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
         if (agentIdentity == null) {
             // Agent not yet in registry — default to workspace-only (sandbox-owned)
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG,
+                "Agent not found in registry. Denying all file permissions.")
             return FilePermissions(
-                workspaceCanRead = true, workspaceCanWrite = true,
+                workspaceCanRead = false, workspaceCanWrite = false,
                 sessionFilesCanRead = false, sessionFilesCanWrite = false
             )
         }
