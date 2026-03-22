@@ -42,7 +42,7 @@ import kotlin.test.assertTrue
  * by FakeStore.
  *
  * ## Observable Symptom (Production)
- * Agent types `auf_filesystem.LIST` → CommandBot posts status report
+ * Agent types `raam_filesystem.LIST` → CommandBot posts status report
  * (`OK ✓ filesystem.LIST — Listed 3 items`) but the actual listing data never
  * appears in the session.
  */

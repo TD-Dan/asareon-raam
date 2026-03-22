@@ -19,7 +19,7 @@ import kotlinx.serialization.json.put
 /**
  * ## Mandate
  * A stateful agent that observes all session transcripts for command directives
- * (`auf_` code blocks) and validates them against guardrails. For agent-originated
+ * (`raam_` code blocks) and validates them against guardrails. For agent-originated
  * commands, it publishes [ActionRegistry.Names.COMMANDBOT_ACTION_CREATED] so that
  * the owning feature (e.g., agent) can apply its own sandboxing and dispatch.
  * For human-originated commands, it dispatches directly.

@@ -180,7 +180,7 @@ class CommandBotFeatureT2GuardrailsTest {
         // "some-unknown-sender" is NOT in identityRegistry → CommandBot treats as non-agent
         // → publishes ACTION_CREATED → but CoreFeature won't claim it (parentHandle != "core")
         // and no agent feature claims it either → domain action is never dispatched.
-        postRawMessage(harness, "some-unknown-sender", "```auf_core.SHOW_TOAST\n{ \"message\": \"Hi\" }\n```")
+        postRawMessage(harness, "some-unknown-sender", "```raam_core.SHOW_TOAST\n{ \"message\": \"Hi\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -207,7 +207,7 @@ class CommandBotFeatureT2GuardrailsTest {
         // CommandBot publishes ACTION_CREATED, but no feature claims an agent-originated
         // core.SHOW_TOAST (CoreFeature only claims core-user-originated ACTION_CREATEDs,
         // and AgentRuntimeFeature is not in this test harness).
-        postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```raam_core.SHOW_TOAST\n{ \"message\": \"Blocked\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -230,7 +230,7 @@ class CommandBotFeatureT2GuardrailsTest {
             registry - testAgentHandle
         }
 
-        postRawMessage(harness, testAgentHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Allowed\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```raam_core.SHOW_TOAST\n{ \"message\": \"Allowed\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -283,7 +283,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // agent-one is no longer registered: CommandBot treats as non-agent, publishes ACTION_CREATED,
         // but no feature claims it (not a core user, not a registered agent).
-        postRawMessage(harness, agentOneHandle, "```auf_core.SHOW_TOAST\n{ \"message\": \"From ex-agent\" }\n```")
+        postRawMessage(harness, agentOneHandle, "```raam_core.SHOW_TOAST\n{ \"message\": \"From ex-agent\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -315,7 +315,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent(agentPermissions = emptyMap())
         runCurrent()
 
-        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Blocked\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Blocked\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -346,7 +346,7 @@ class CommandBotFeatureT2GuardrailsTest {
 
         // Human user sends the same command that would be blocked for an unpermissioned agent.
         // CommandBot publishes ACTION_CREATED → CoreFeature claims it → dispatches domain action.
-        postRawMessage(harness, testUser.handle, "```auf_session.CREATE\n{ \"name\": \"Human OK\" }\n```")
+        postRawMessage(harness, testUser.handle, "```raam_session.CREATE\n{ \"name\": \"Human OK\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -370,7 +370,7 @@ class CommandBotFeatureT2GuardrailsTest {
         // by AgentRuntimeFeature's sandbox rewrite (not at the CommandBot level).
         postRawMessage(
             harness, testAgentHandle,
-            "```auf_session.POST\n{ \"session\": \"${testSession.identity.localHandle}\", \"message\": \"Agent message\" }\n```"
+            "```raam_session.POST\n{ \"session\": \"${testSession.identity.localHandle}\", \"message\": \"Agent message\" }\n```"
         )
         runCurrent()
 
@@ -405,7 +405,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildStandardHarness()
 
         // Code block with auf_ prefix but empty body
-        postRawMessage(harness, testUser.handle, "```auf_core.SHOW_TOAST\n```")
+        postRawMessage(harness, testUser.handle, "```raam_core.SHOW_TOAST\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -478,11 +478,11 @@ class CommandBotFeatureT2GuardrailsTest {
 
         val multiBlockMessage = """
             First command:
-            ```auf_core.SHOW_TOAST
+            ```raam_core.SHOW_TOAST
             { "message": "Toast One" }
             ```
             Second command:
-            ```auf_core.SHOW_TOAST
+            ```raam_core.SHOW_TOAST
             { "message": "Toast Two" }
             ```
         """.trimIndent()
@@ -512,7 +512,7 @@ class CommandBotFeatureT2GuardrailsTest {
             { "this is": "not a command" }
             ```
             Now the actual command:
-            ```auf_core.SHOW_TOAST
+            ```raam_core.SHOW_TOAST
             { "message": "Only this one" }
             ```
         """.trimIndent()
@@ -540,7 +540,7 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         // session.CREATE requires approval → stages approval + posts card entry
-        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"New Session\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"New Session\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -582,7 +582,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Test\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -609,7 +609,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postRawMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
+        postRawMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Test\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -671,7 +671,7 @@ class CommandBotFeatureT2GuardrailsTest {
         val harness = buildHarnessWithKnownAgent(platform, agentHandle = researchBotHandle, agentName = "Research Bot")
         runCurrent()
 
-        postRawMessage(harness, researchBotHandle, "```auf_session.CREATE\n{ \"name\": \"Test\" }\n```")
+        postRawMessage(harness, researchBotHandle, "```raam_session.CREATE\n{ \"name\": \"Test\" }\n```")
         runCurrent()
 
         harness.runAndLogOnFailure {

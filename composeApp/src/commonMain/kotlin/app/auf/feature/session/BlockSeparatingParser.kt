@@ -127,7 +127,7 @@ class BlockSeparatingParser {
             language = innerContent.substring(0, firstNewline).trim()
             code = innerContent.substring(firstNewline + 1)
         } else {
-            // Single-line block (e.g. ```auf_toastMessage Hello!```).
+            // Single-line block (e.g. ```raam_toastMessage Hello!```).
             val parts = innerContent.trim().split(Regex("\\s+"), 2)
             language = parts.getOrNull(0) ?: ""
             code = parts.getOrNull(1) ?: ""

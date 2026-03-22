@@ -1039,7 +1039,7 @@ class AgentRuntimeFeature(
                                         put("senderId", "system")
                                         put("message", "SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify holon " +
                                                 "'$targetHolonId' which is not fully expanded in your context. Expand the file first:\n" +
-                                                "```auf_agent.CONTEXT_UNCOLLAPSE\n" +
+                                                "```raam_agent.CONTEXT_UNCOLLAPSE\n" +
                                                 "{ \"partitionKey\": \"hkg:$targetHolonId\", \"scope\": \"single\" }\n" +
                                                 "```\n" +
                                                 "Then retry your write to ensure you are not omitting data.")
@@ -1109,7 +1109,7 @@ class AgentRuntimeFeature(
                                             put("senderId", "system")
                                             put("message", "SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify workspace file " +
                                                     "'$relativePath' which is not expanded in your context. Expand the file first:\n" +
-                                                    "```auf_agent.CONTEXT_UNCOLLAPSE\n" +
+                                                    "```raam_agent.CONTEXT_UNCOLLAPSE\n" +
                                                     "{ \"partitionKey\": \"ws:$relativePath\", \"scope\": \"single\" }\n" +
                                                     "```\n" +
                                                     "Then retry your write to ensure you are not omitting data.")

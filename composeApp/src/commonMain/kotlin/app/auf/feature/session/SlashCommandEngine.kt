@@ -1,6 +1,7 @@
 package app.auf.feature.session
 
 import app.auf.core.Identity
+import app.auf.core.Version
 import app.auf.core.generated.ActionRegistry.ActionDescriptor
 import app.auf.core.generated.ActionRegistry.FeatureDescriptor
 import kotlinx.serialization.json.*
@@ -197,7 +198,7 @@ class SlashCommandEngine(
     // ========================================================================
 
     /**
-     * Generates a fenced auf_ code block from the completed parameter values.
+     * Generates a fenced code block from the completed parameter values.
      * Blank values are omitted. Booleans and numbers are serialized without quotes.
      */
     fun generateCodeBlock(
@@ -207,7 +208,7 @@ class SlashCommandEngine(
         val nonBlank = paramValues.filterValues { it.isNotBlank() }
 
         if (nonBlank.isEmpty()) {
-            return "```auf_${descriptor.fullName}\n```"
+            return "```${Version.APP_TOOL_PREFIX}${descriptor.fullName}\n```"
         }
 
         val payload = buildJsonObject {
@@ -222,7 +223,7 @@ class SlashCommandEngine(
         }
 
         val pretty = Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), payload)
-        return "```auf_${descriptor.fullName}\n$pretty\n```"
+        return "```${Version.APP_TOOL_PREFIX}${descriptor.fullName}\n$pretty\n```"
     }
 
     // ========================================================================

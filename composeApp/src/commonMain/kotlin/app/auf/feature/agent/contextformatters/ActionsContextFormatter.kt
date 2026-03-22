@@ -17,7 +17,7 @@ import app.auf.feature.agent.PromptSection
  * permission-based filtering via [app.auf.core.Store.resolveEffectivePermissions].
  *
  * The context teaches the agent:
- * 1. The `auf_` code block invocation syntax.
+ * 1. The `raam_` code block invocation syntax.
  * 2. The workspace sandboxing model.
  * 3. Each available action's name, purpose, and payload schema.
  */
@@ -120,7 +120,7 @@ object ActionsContextFormatter {
         appendLine("- You may invoke multiple actions in a single response by including multiple code blocks.")
         appendLine()
         appendLine("EXAMPLE — Writing a file:")
-        appendLine("```auf_filesystem.WRITE")
+        appendLine("```raam_filesystem.WRITE")
         appendLine("{")
         appendLine("  \"path\": \"notes/summary.md\",")
         appendLine("  \"content\": \"# Meeting Summary\\nKey points discussed today...\"")
@@ -128,7 +128,7 @@ object ActionsContextFormatter {
         appendLine("```")
         appendLine()
         appendLine("EXAMPLE — Listing your workspace:")
-        appendLine("```auf_filesystem.LIST")
+        appendLine("```raam_filesystem.LIST")
         appendLine("{")
         appendLine("  \"recursive\": true")
         appendLine("}")

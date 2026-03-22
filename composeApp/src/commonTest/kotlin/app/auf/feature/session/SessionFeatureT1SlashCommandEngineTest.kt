@@ -460,7 +460,7 @@ class SlashCommandEngineTest {
             mapOf("session" to "my-chat", "senderId" to "core.alice", "message" to "Hello!")
         )
 
-        assertTrue(result.startsWith("```auf_session.POST\n"), "Should start with auf_ fence: got\n$result")
+        assertTrue(result.startsWith("```raam_session.POST\n"), "Should start with auf_ fence: got\n$result")
         assertTrue(result.trimEnd().endsWith("```"), "Should end with closing fence")
         assertTrue("\"session\"" in result)
         assertTrue("\"my-chat\"" in result)
@@ -513,7 +513,7 @@ class SlashCommandEngineTest {
         val engine = createEngine()
         val result = engine.generateCodeBlock(sessionCreateDescriptor, emptyMap())
 
-        assertEquals("```auf_session.CREATE\n```", result)
+        assertEquals("```raam_session.CREATE\n```", result)
     }
 
     @Test
@@ -524,7 +524,7 @@ class SlashCommandEngineTest {
             mapOf("name" to "", "isHidden" to "")
         )
 
-        assertEquals("```auf_session.CREATE\n```", result)
+        assertEquals("```raam_session.CREATE\n```", result)
     }
 
     // ========================================================================
@@ -741,7 +741,7 @@ class SlashCommandEngineTest {
         val engine = createEngine()
         val result = engine.generateCodeBlock(sessionLoadedDescriptor, emptyMap())
 
-        assertEquals("```auf_session.LOADED\n```", result)
+        assertEquals("```raam_session.LOADED\n```", result)
     }
 
     @Test
@@ -757,7 +757,7 @@ class SlashCommandEngineTest {
 
         // Simulates what the Insert button does — should work without any param fields
         val codeBlock = engine.generateCodeBlock(state.selectedAction!!, state.paramValues)
-        assertEquals("```auf_session.LOADED\n```", codeBlock)
+        assertEquals("```raam_session.LOADED\n```", codeBlock)
     }
 
     // ========================================================================

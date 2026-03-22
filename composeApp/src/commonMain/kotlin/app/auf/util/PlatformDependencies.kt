@@ -38,7 +38,7 @@ data class DroppedFile(
  * layer has no awareness of specific features like "settings" or "logs".
  */
 enum class BasePath {
-    /** The root directory for all internal, application-managed data (e.g., ~/.auf/v2/). */
+    /** The root directory for all internal, application-managed data (e.g., ~/.raam/v2/). */
     APP_ZONE,
     /** The user's home directory, serving as the default root for user-initiated file operations. */
     USER_ZONE

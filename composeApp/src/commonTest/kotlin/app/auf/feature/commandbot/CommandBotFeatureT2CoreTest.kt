@@ -185,7 +185,7 @@ class CommandBotFeatureT2CoreTest {
 
         val commandMessage = """
             Here is a command:
-            ```auf_core.SHOW_TOAST
+            ```raam_core.SHOW_TOAST
             { "message": "Hello from the bot!" }
             ```
         """.trimIndent()
@@ -211,7 +211,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildStandardHarness()
 
         val commandMessage = """
-            ```auf_session.CREATE
+            ```raam_session.CREATE
             { "name": "Created By Bot" }
             ```
         """.trimIndent()
@@ -244,7 +244,7 @@ class CommandBotFeatureT2CoreTest {
     fun `ignores commands originating from itself to prevent loops`() = runTest {
         val harness = buildStandardHarness()
 
-        val selfOriginatedCommand = "```auf_core.SHOW_TOAST\n{ \"message\": \"This should not be sent\" }\n```"
+        val selfOriginatedCommand = "```raam_core.SHOW_TOAST\n{ \"message\": \"This should not be sent\" }\n```"
 
         // ACT: Post with senderId = "commandbot" (the feature's own name)
         harness.store.dispatch("session", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
@@ -269,7 +269,7 @@ class CommandBotFeatureT2CoreTest {
     fun `dispatches a feedback message on JSON parsing failure`() = runTest {
         val harness = buildStandardHarness()
 
-        val malformedCommand = "```auf_core.SHOW_TOAST\n{ this is not valid json }\n```"
+        val malformedCommand = "```raam_core.SHOW_TOAST\n{ this is not valid json }\n```"
 
         // ACT
         postMessage(harness, testUser.handle, malformedCommand)
@@ -303,7 +303,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // session.CREATE requires approval per session_actions.json
-        val commandMessage = "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```"
+        val commandMessage = "```raam_session.CREATE\n{ \"name\": \"Agent Session\" }\n```"
 
         // ACT: Agent posts the command
         postMessage(harness, testAgentHandle, commandMessage)
@@ -340,7 +340,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // Stage an approval
-        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -387,7 +387,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -426,7 +426,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -472,7 +472,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // First command (will be approved → clearable)
-        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Session A\" }\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Session A\" }\n```")
         runCurrent()
 
         val stateAfterFirst = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -486,7 +486,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // Second command (will stay pending → doNotClear=true → survives CLEAR)
-        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Session B\" }\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Session B\" }\n```")
         runCurrent()
 
         val stateAfterSecond = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -519,7 +519,7 @@ class CommandBotFeatureT2CoreTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
-        postMessage(harness, testAgentHandle, "```auf_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.CREATE\n{ \"name\": \"Agent Session\" }\n```")
         runCurrent()
 
         val commandBotState = harness.store.state.value.featureStates["commandbot"] as CommandBotState
@@ -587,7 +587,7 @@ class CommandBotFeatureT2CoreTest {
         runCurrent()
 
         // Agent sends LIST_SESSIONS with no payload
-        postMessage(harness, testAgentHandle, "```auf_session.LIST_SESSIONS\n```")
+        postMessage(harness, testAgentHandle, "```raam_session.LIST_SESSIONS\n```")
         runCurrent()
 
         // ASSERT
@@ -614,7 +614,7 @@ class CommandBotFeatureT2CoreTest {
         // Human user sends LIST_SESSIONS with explicit responseSession
         postMessage(
             harness, testUser.handle,
-            "```auf_session.LIST_SESSIONS\n{ \"responseSession\": \"${testSession.identity.localHandle}\" }\n```"
+            "```raam_session.LIST_SESSIONS\n{ \"responseSession\": \"${testSession.identity.localHandle}\" }\n```"
         )
         runCurrent()
 

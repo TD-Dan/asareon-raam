@@ -102,7 +102,7 @@ class CommandBotFeatureT2TimeoutTest {
         // ACT: Human user posts a valid command
         // (SHOW_TOAST goes through ACTION_CREATED → CoreFeature dispatches it → immediately handled,
         //  so we need to verify the scheduled TTL callback exists even though the result arrives quickly)
-        postMessage(harness, testUser.handle, "```auf_core.SHOW_TOAST\n{ \"message\": \"Hello\" }\n```")
+        postMessage(harness, testUser.handle, "```raam_core.SHOW_TOAST\n{ \"message\": \"Hello\" }\n```")
         runCurrent()
 
         // VERIFY: A REGISTER_PENDING_RESULT was dispatched

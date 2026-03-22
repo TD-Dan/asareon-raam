@@ -100,7 +100,7 @@ object StateMachineStrategy : CognitiveStrategy {
 
     private fun buildPhaseTransitionContent(phase: String): String = buildString {
         appendLine("To change your operational phase, include this command block in your response:")
-        appendLine("```auf_agent.UPDATE_NVRAM")
+        appendLine("```raam_agent.UPDATE_NVRAM")
         appendLine("""{ "updates": { "phase": "NEW_PHASE_NAME", "previousPhase": "$phase" } }""")
         appendLine("```")
         appendLine("Replace NEW_PHASE_NAME with the target phase from the state machine definition.")
