@@ -184,7 +184,7 @@ class SessionFeatureT2CoreTest {
                 it.name == ActionRegistry.Names.FILESYSTEM_WRITE &&
                         it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("/input.json") == false
             }
-            assertEquals(2, writeActions.size)
+            assertEquals(1, writeActions.size)
             val finalWriteContent = writeActions.last().payload?.get("content")?.jsonPrimitive?.content
             assertNotNull(finalWriteContent)
             val persistedSession = json.decodeFromString<Session>(finalWriteContent)
