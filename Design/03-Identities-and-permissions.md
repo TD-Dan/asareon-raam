@@ -211,6 +211,9 @@ Permissions live in two places that must stay in sync:
   "actions": [
     { "action_name": "filesystem.WRITE",
       "required_permissions": ["filesystem:workspace"],
+      ... },
+    { "action_name": "filesystem.NAVIGATE",
+      "required_permissions": [],
       ... }
   ]
 }
@@ -228,7 +231,7 @@ identity.permissions = {
 
 The code generator validates at build time that every key referenced in `required_permissions` is declared in some feature's `permissions` array. A typo in a permission key fails the build.
 
-**Key principle:** Permissions protect data operations and cross-feature effects. Internal (non public) Actions that only mutate transient, feature-internal UI state (`NAVIGATE`, `TOGGLE_ITEM_EXPANDED`, `SET_EDITING_SESSION`, etc.) have empty `required_permissions` and need no grants.
+**Key principle:** Permissions protect data operations and cross-feature effects. Actions that only mutate transient, feature-internal UI state (`NAVIGATE`, `TOGGLE_ITEM_EXPANDED`, `SET_EDITING_SESSION`, etc.) have empty `required_permissions` and need no grants.
 
 
 ## The Store Guard
@@ -250,6 +253,8 @@ The Store's processing pipeline checks permissions as part of its guard sequence
   └─────────────────────────────────────────────┘
 ```
 
+All other guards reject silently (ERROR log only). Step 2b is the exception — it broadcasts `core.PERMISSION_DENIED` with the blocked action name, originator handle, and missing permissions so that features like CommandBot can provide user-facing feedback.
+
 
 ### How the Permission Guard Works
 
@@ -261,10 +266,10 @@ Step 2b runs only when an action's `requiredPermissions` is non-empty. The logic
        │ no ↓
   Look up originator in identityRegistry
        │
-       ├── originator is feature (uuid == null)?
-       │   yes → PASS (feature trust exemption)
+       ├── Found, uuid == null (feature identity)
+       │   → PASS (feature trust exemption)
        │
-       ├── originator is ephemeral identity?
+       ├── Found, uuid != null (ephemeral: user/agent/session)
        │   │
        │   ▼
        │   resolveEffectivePermissions(originator)
@@ -274,10 +279,9 @@ Step 2b runs only when an action's `requiredPermissions` is non-empty. The logic
        │   Any missing? → REJECT + broadcast PERMISSION_DENIED
        │   All satisfied? → PASS
        │
-       └── originator not in registry?
-           Extract feature handle (first dot-segment)
-           Is it a known feature? → PASS (feature trust exemption)
-           Not a known feature? → REJECT
+       └── Not in registry
+           Not resolvable to a known feature? → REJECT
+           Resolvable to a known feature? → PASS (feature trust exemption)
 ```
 
 
@@ -341,7 +345,7 @@ Defaults are compile-time constants, not configuration files. Changing the defau
 
 ## Managing Identities and Permissions in the UI
 
-The **Identity Manager** view provides two tabs: Identities and Permissions. It is opened from the Core feature's menu.
+The **Identity Manager** view provides two tabs: Identities and Permissions. It is the **ONLY** runtime authority that can modify permissions.
 
 
 ### Identities Tab
@@ -351,6 +355,7 @@ Lists all user identities (children of `"core"`) with their display name, handle
 Each identity card supports editing the display name and accent color. The active user identity (used as the `originator` for UI-dispatched actions) is highlighted and can be switched.
 
 ```
+                                        [+ Add]
   ┌──────────────────────────────────────────────┐
   │  ● Alice                          [Active]   │
   │    ID: core.alice                            │
@@ -363,7 +368,6 @@ Each identity card supports editing the display name and accent color. The activ
   │    4 permission(s)                           │
   │                                    [Edit][×] │
   └──────────────────────────────────────────────┘
-                                        [+ Add]
 ```
 
 
@@ -401,7 +405,7 @@ Changes dispatch `core.SET_PERMISSION` (single cell) or `core.SET_PERMISSIONS_BA
 
 Your feature needs no special permission setup if its actions are purely internal (non-public). The Store's authorization guard already ensures only your feature can dispatch non-public actions.
 
-If your feature exposes **public actions that modify data or trigger cross-feature effects**, you need to:
+If your feature exposes **public actions**, you need to:
 
 1. **Declare permissions** in your feature's `*.actions.json`:
    ```json
@@ -432,7 +436,7 @@ The code generator handles the rest — it validates your keys, cross-references
 
 If the action is public and touches data: add the appropriate permission key(s) to its `required_permissions` in the manifest. If the permission key already exists (e.g., `session:write`), just reference it. If you need a new capability, declare a new permission in your feature's `permissions` array and add it to `DefaultPermissions.kt`.
 
-If the action is internal or UI-only: set `"required_permissions": []` (or omit for non-public actions during migration, though explicit empty is preferred).
+If the action is internal omit `"required_permissions"`.
 
 
 ### Dispatching on Behalf of a Sub-Identity
@@ -497,7 +501,7 @@ The key scenarios to cover: deny-by-default (no grants → blocked), YES allows,
 
 ## Persistence
 
-Permissions persist as part of the `Identity` data class via the existing `identities.json` serialization. The `permissions` field is a non-breaking schema extension — older files without it load fine (`ignoreUnknownKeys`), defaulting to an empty map (which means: apply defaults on next registration, or deny-by-default if already registered).
+Permissions persist as part of the `Identity` data class via the existing `identities.json` serialization.
 
 The `core.PERMISSIONS_UPDATED` broadcast fires after any permission change, so features that cache permission-derived state can refresh.
 
@@ -510,34 +514,3 @@ The `core.PERMISSIONS_UPDATED` broadcast fires after any permission change, so f
 | `core.SET_PERMISSIONS_BATCH` | No | Internal | Bulk-set grants. Used by the matrix UI and default-loading. |
 | `core.PERMISSIONS_UPDATED` | No | Broadcast | Fires after any permission change. Features should refresh cached state. |
 | `core.PERMISSION_DENIED` | No | Broadcast | Fired by the Store guard when an action is blocked. Carries `blockedAction`, `originatorHandle`, `missingPermissions`. |
-
-
-## Quick Reference
-
-```
-  Separator conventions
-  ─────────────────────────────────────────
-  Dot  (.)     Hierarchy     core.alice, filesystem.WRITE
-  Colon (:)    Capability    filesystem:workspace
-
-  Dispatch originator rules
-  ─────────────────────────────────────────
-  UI code           → feature handle ("core", "session")
-  Feature itself    → feature handle ("agent") — trusted, exempt
-  On behalf of child → child handle ("agent.gemini-coder-1") — checked
-
-  Permission resolution
-  ─────────────────────────────────────────
-  Feature identity (uuid == null)    → exempt, always passes
-  Ephemeral (uuid != null)           → resolve effective grants via parent chain
-  No grant in chain                  → NO (deny by default)
-  Explicit grant                     → overrides inherited
-  Child > parent                     → allowed (escalation logged at WARN)
-
-  Build-time enforcement (code generator)
-  ─────────────────────────────────────────
-  Permission key without colon       → build fails
-  Undeclared key in required_perms   → build fails
-  Invalid dangerLevel                → build fails
-  Public action without required_permissions (post-migration) → build fails
-```
