@@ -10,6 +10,8 @@
 
 - Actions cleanup for token efficiency: Many of the actions can be consolidated into one action: f.ex. TOGGLE_MESSAGE_LOCKED / LOCK_MESSAGE / UNLOCK_MESSAGE to save tokens
 
+- self contained "USB Stick" distributions in addition to installers
+
 # DOCUMENTATION
 
 - Overall schematics of:
@@ -121,6 +123,7 @@ BUG: "add agent" isn't visible in the session kebab menu, until agent is removed
 
 # COMMANDBOT
 - CommandBot by default posts collapsed messages when OK
+- Implement the ASK process for ASK level permissions
 
 # KNOWLEDGE GRAPH
 - KG Editor needs the export KG button
