@@ -147,12 +147,17 @@ class KnowledgeGraphFeature(
                     }
                     if (prevKgState?.reservations?.containsKey(personaId) == true) {
                         val owner = prevKgState.reservations[personaId]
-                        val errorMsg = "'$originator' failed to reserve HKG '$personaId': already reserved by '$owner'."
-                        platformDependencies.log(LogLevel.WARN, identity.handle, errorMsg)
-                        store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
-                            put("message", "Failed to lock HKG: Already locked.")
-                        }))
-                        publishActionResult(store, correlationId, action.name, false, error = errorMsg)
+                        if (owner == originator) {
+                            platformDependencies.log(LogLevel.DEBUG, identity.handle, "'$originator' re-reserved own HKG '$personaId'. No-op.")
+                            publishActionResult(store, correlationId, action.name, true, summary = "HKG '$personaId' already reserved by '$originator'.")
+                        } else {
+                            val errorMsg = "'$originator' failed to reserve HKG '$personaId': already reserved by '$owner'."
+                            platformDependencies.log(LogLevel.WARN, identity.handle, errorMsg)
+                            store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
+                                put("message", "Failed to lock HKG: Already locked.")
+                            }))
+                            publishActionResult(store, correlationId, action.name, false, error = errorMsg)
+                        }
                     } else {
                         publishActionResult(store, correlationId, action.name, true, summary = "HKG '$personaId' reserved by '$originator'.")
                     }

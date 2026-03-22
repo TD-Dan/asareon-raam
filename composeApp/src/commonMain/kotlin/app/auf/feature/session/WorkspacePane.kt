@@ -108,7 +108,7 @@ private fun WorkspacePaneHeader(store: Store, session: Session) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "Files",
+            text = "Session Files",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.weight(1f)
