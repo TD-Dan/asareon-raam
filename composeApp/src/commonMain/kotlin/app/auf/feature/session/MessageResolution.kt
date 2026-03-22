@@ -58,18 +58,28 @@ object MessageResolution {
             )
         }
 
-        // 2. Exact match
-        val exactMatch = ledger.find { it.senderId == senderId && it.timestamp == targetTimestamp }
+        // 2. Exact match — compare via formatted ISO strings so both sides go through
+        //    the same platform formatting pipeline (avoids domain mismatches between
+        //    the stored millis and the parsed-back millis).
+        val exactMatch = ledger.find {
+            it.senderId == senderId &&
+                    platformDependencies.formatIsoTimestamp(it.timestamp) == timestampStr
+        }
         if (exactMatch != null) return MessageResolutionResult(exactMatch, null)
 
         // 3. No exact match — build "did you mean?" diagnostics
         val suggestions = mutableListOf<String>()
 
         // 3a. Right sender, wrong timestamp? Find closest by time.
+        //     Normalize entry timestamps through format→parse so distance is computed
+        //     in the same domain as targetTimestamp.
         val senderMessages = ledger.filter { it.senderId == senderId }
         if (senderMessages.isNotEmpty()) {
             val closest = senderMessages.minByOrNull {
-                kotlin.math.abs(it.timestamp - targetTimestamp)
+                val entryParsed = platformDependencies.parseIsoTimestamp(
+                    platformDependencies.formatIsoTimestamp(it.timestamp)
+                ) ?: it.timestamp
+                kotlin.math.abs(entryParsed - targetTimestamp)
             }!!
             val closestIso = platformDependencies.formatIsoTimestamp(closest.timestamp)
             suggestions.add(
@@ -79,7 +89,9 @@ object MessageResolution {
         }
 
         // 3b. Right timestamp, wrong sender? Maybe UUID vs display name confusion.
-        val timestampMessages = ledger.filter { it.timestamp == targetTimestamp }
+        val timestampMessages = ledger.filter {
+            platformDependencies.formatIsoTimestamp(it.timestamp) == timestampStr
+        }
         if (timestampMessages.isNotEmpty()) {
             val senderList = timestampMessages.map { it.senderId }.distinct().joinToString(", ")
             suggestions.add("Found message(s) at that timestamp from: $senderList.")
