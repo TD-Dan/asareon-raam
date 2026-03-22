@@ -95,6 +95,7 @@ object SessionFilesContextFormatter {
      * @param expandedFileContents Map of relative path → file content for files
      *   that have been fetched (keyed by relative path, not sf:-prefixed).
      * @param collapseOverrides Agent's sticky collapse overrides.
+     * @param canWrite Whether the agent has session:write-files permission.
      * @param platformDependencies For logging.
      */
     fun buildSessionFilesGroup(
@@ -103,6 +104,7 @@ object SessionFilesContextFormatter {
         entries: List<WorkspaceContextFormatter.WorkspaceEntry>,
         expandedFileContents: Map<String, String>,
         collapseOverrides: Map<String, CollapseState>,
+        canWrite: Boolean = false,
         platformDependencies: PlatformDependencies? = null
     ): PromptSection.Group {
         val groupKey = "SESSION_FILES:$sessionHandle"
@@ -129,8 +131,9 @@ object SessionFilesContextFormatter {
         // Build the navigational index tree and include it in the group header
         // so the agent sees both the tree overview and the file contents in one partition.
         val indexTree = buildIndexTree(sessionHandle, sessionName, entries, collapseOverrides)
+        val permDesc = if (canWrite) "You have read and write access to these files." else "You have read-only access to these files."
         val header = buildString {
-            appendLine("Session workspace files are visible to all participants in session '$sessionName'. You have read access to these files.")
+            appendLine("Session workspace files are visible to all participants in session '$sessionName'. $permDesc")
             appendLine()
             appendLine("$contentDesc | $expandedCount files open")
             appendLine()

@@ -229,6 +229,7 @@ object WorkspaceContextFormatter {
         entries: List<WorkspaceEntry>,
         expandedFileContents: Map<String, String>,
         collapseOverrides: Map<String, CollapseState>,
+        canWrite: Boolean = true,
         platformDependencies: PlatformDependencies? = null
     ): PromptSection.Group {
         val childrenMap = buildChildrenMap(entries)
@@ -254,8 +255,9 @@ object WorkspaceContextFormatter {
 
         // Build the navigational index tree and include it in the group header
         val indexTree = buildIndexTree(entries, collapseOverrides)
+        val permDesc = if (canWrite) "You have full read and write permissions." else "You have read-only access."
         val header = buildString {
-            appendLine("Workspace files are your own files contained in your private agent sandbox. You have full read and write permissions. Other participants cannot access these files.")
+            appendLine("Workspace files are your own files contained in your private agent sandbox. $permDesc Other participants cannot access these files.")
             appendLine()
             appendLine("$contentDesc | $expandedCount files open")
             appendLine()

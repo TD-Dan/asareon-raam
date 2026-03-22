@@ -514,12 +514,16 @@ object CognitivePipeline {
         }))
 
         // 3. Dispatch session workspace file requests (parallel, cross-sandbox delegation)
-        val sessionsForFiles = buildSet {
-            addAll(agent.subscribedSessionIds)
-            agent.outputSessionId?.let { add(it) }
-        }.filter { sessionUUID ->
-            store.state.value.identityRegistry.findByUUID(sessionUUID) != null
-        }
+        // Only dispatched if the agent has session:read-files permission.
+        val filePerms = resolveFilePermissions(agent, store)
+        val sessionsForFiles = if (filePerms.sessionFilesCanRead) {
+            buildSet {
+                addAll(agent.subscribedSessionIds)
+                agent.outputSessionId?.let { add(it) }
+            }.filter { sessionUUID ->
+                store.state.value.identityRegistry.findByUUID(sessionUUID) != null
+            }
+        } else emptyList()
 
         if (sessionsForFiles.isNotEmpty()) {
             // Initialize pending set BEFORE dispatching requests
@@ -940,6 +944,52 @@ object CognitivePipeline {
     )
 
     /**
+     * Resolved file access permissions for the agent. Used to gate context sections
+     * and generate dynamic explanatory text in workspace/session file headers.
+     */
+    private data class FilePermissions(
+        val workspaceCanRead: Boolean,
+        val workspaceCanWrite: Boolean,
+        val sessionFilesCanRead: Boolean,
+        val sessionFilesCanWrite: Boolean
+    )
+
+    /**
+     * Resolves the agent's effective file permissions by walking the identity
+     * registry's permission chain.
+     *
+     * - Workspace: sandbox-owned, defaults to full read+write access unless
+     *   `filesystem:workspace` is explicitly set to NO.
+     * - Session files: permission-gated via `session:read-files` (visibility gate)
+     *   and `session:write-files` (write access text).
+     */
+    private fun resolveFilePermissions(agent: AgentInstance, store: Store): FilePermissions {
+        val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
+        if (agentIdentity == null) {
+            // Agent not yet in registry — default to workspace-only (sandbox-owned)
+            return FilePermissions(
+                workspaceCanRead = true, workspaceCanWrite = true,
+                sessionFilesCanRead = false, sessionFilesCanWrite = false
+            )
+        }
+
+        val effective = store.resolveEffectivePermissions(agentIdentity)
+
+        // Workspace: sandbox-owned. Full access unless explicitly denied.
+        val wsGrant = effective["filesystem:workspace"]?.level
+        val workspaceCanRead = wsGrant != PermissionLevel.NO
+        val workspaceCanWrite = wsGrant != PermissionLevel.NO
+
+        // Session files: permission-gated. NO by default unless granted.
+        val sfReadLevel = effective["session:read-files"]?.level
+        val sfWriteLevel = effective["session:write-files"]?.level
+        val sessionFilesCanRead = sfReadLevel != null && sfReadLevel >= PermissionLevel.YES
+        val sessionFilesCanWrite = sfWriteLevel != null && sfWriteLevel >= PermissionLevel.YES
+
+        return FilePermissions(workspaceCanRead, workspaceCanWrite, sessionFilesCanRead, sessionFilesCanWrite)
+    }
+
+    /**
      * Builds the structured context map — all gathered partitions as [PromptSection]
      * entries WITHOUT h1 wrapping.
      *
@@ -1017,9 +1067,13 @@ object CognitivePipeline {
             contextMap["AVAILABLE_ACTIONS"] = ActionsContextFormatter.buildSections(store, agentIdentity)
         }
 
+        // ── File permissions ──────────────────────────────────────────────
+        val filePerms = resolveFilePermissions(agent, store)
+
         // WORKSPACE_FILES — consolidated partition (index tree in header + file contents as children)
+        // Gated by filesystem:workspace permission (defaults to YES — sandbox-owned).
         val workspaceListing = statusInfo.transientWorkspaceListing
-        if (workspaceListing != null && workspaceListing.isNotEmpty()) {
+        if (filePerms.workspaceCanRead && workspaceListing != null && workspaceListing.isNotEmpty()) {
             val safeAgentIdForWs = agentUuid.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
             val workspacePrefix = "$safeAgentIdForWs/workspace"
             val wsEntries = WorkspaceContextFormatter.parseListingEntries(workspaceListing, workspacePrefix, platformDependencies)
@@ -1031,7 +1085,7 @@ object CognitivePipeline {
                 }
                 val fileContents = statusInfo.transientWorkspaceFileContents
                 contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSections(
-                    wsEntries, fileContents, mergedOverrides, platformDependencies
+                    wsEntries, fileContents, mergedOverrides, filePerms.workspaceCanWrite, platformDependencies
                 )
             }
         }
@@ -1055,9 +1109,10 @@ object CognitivePipeline {
         // SESSION_FILES — per-session workspace file context (cross-sandbox delegation)
         // Each session's files become a single GROUP partition whose header contains
         // the navigational index tree and whose children are the file content sections.
+        // Gated by session:read-files permission.
         val sessionFileListings = statusInfo.transientSessionFileListings
         val sessionFileContents = statusInfo.transientSessionFileContents
-        if (sessionFileListings.isNotEmpty()) {
+        if (filePerms.sessionFilesCanRead && sessionFileListings.isNotEmpty()) {
             sessionFileListings.forEach { (sessionUUID, listing) ->
                 if (listing.isEmpty()) return@forEach
 
@@ -1080,7 +1135,8 @@ object CognitivePipeline {
 
                 val groupKey = "SESSION_FILES:$sessionHandle"
                 contextMap[groupKey] = SessionFilesContextFormatter.buildSessionFilesGroup(
-                    sessionHandle, sessionName, entries, fileContentsForSession, mergedOverrides, platformDependencies
+                    sessionHandle, sessionName, entries, fileContentsForSession, mergedOverrides,
+                    filePerms.sessionFilesCanWrite, platformDependencies
                 )
             }
         }
