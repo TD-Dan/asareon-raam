@@ -4,7 +4,7 @@
   "actions": [
     {
       "action_name": "settings.ADD",
-      "summary": "Registers a new setting definition with the feature. Should be dispatched during startup (e.g., on SYSTEM_STARTING) so that definitions are available before settings are loaded from disk. Idempotent \u2014 duplicate keys are ignored.",
+      "summary": "Registers a new setting definition with the feature. Should be dispatched during startup (e.g., on SYSTEM_RUNNING) so that definitions are available before settings are loaded from disk. Idempotent \u2014 duplicate keys are ignored.",
       "public": true,
       "broadcast": true,
       "targeted": false,

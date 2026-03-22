@@ -238,7 +238,7 @@ class CoreFeature(
                     put("section", "Appearance"); put("defaultValue", "false")
                 }))
             }
-            ActionRegistry.Names.SYSTEM_STARTING -> {
+            ActionRegistry.Names.SYSTEM_RUNNING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject { put("path", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
@@ -890,7 +890,7 @@ class CoreFeature(
 
         when (action.name) {
             ActionRegistry.Names.SYSTEM_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
-            ActionRegistry.Names.SYSTEM_STARTING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
+            ActionRegistry.Names.SYSTEM_RUNNING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
             ActionRegistry.Names.SYSTEM_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
             ActionRegistry.Names.SYSTEM_SHUTDOWN -> return coreState.copy(lifecycle = AppLifecycle.SHUTDOWN)
             ActionRegistry.Names.CORE_SET_ACTIVE_VIEW -> {

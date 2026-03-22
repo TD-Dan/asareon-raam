@@ -122,7 +122,7 @@ class KnowledgeGraphFeature(
                     }))
                 }
             }
-            ActionRegistry.Names.SYSTEM_STARTING -> {
+            ActionRegistry.Names.SYSTEM_RUNNING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_PERSONA_LOADED -> {

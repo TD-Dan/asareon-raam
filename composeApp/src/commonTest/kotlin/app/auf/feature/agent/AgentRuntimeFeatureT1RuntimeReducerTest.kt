@@ -761,7 +761,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             gatewayRequest = GatewayRequest("model", emptyList(), agentId, "test prompt"),
             softBudgetChars = 200_000,
             maxBudgetChars = 500_000,
-            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
+            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap(), emptyMap(), emptyMap())
         )
         CognitivePipeline.pendingManagedContext = fakeResult
 
@@ -788,7 +788,7 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
             gatewayRequest = GatewayRequest("model", emptyList(), agentId, "test prompt"),
             softBudgetChars = 200_000,
             maxBudgetChars = 500_000,
-            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
+            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap(), emptyMap(), emptyMap())
         )
         val state = AgentRuntimeState(
             agentStatuses = mapOf(uid(agentId) to AgentStatusInfo(managedContext = fakeResult)),

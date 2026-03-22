@@ -498,7 +498,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
     @Test
     fun `SESSION_FEATURE_READY fires once when no sessions exist on disk`() = runTest {
         // Harness with SessionFeature only (no FileSystemFeature — we simulate responses).
-        // Lifecycle set to INITIALIZING so SYSTEM_STARTING is permitted by the Store.
+        // Lifecycle set to INITIALIZING so SYSTEM_RUNNING is permitted by the Store.
         val harness = TestEnvironment.create()
             .withFeature(SessionFeature(platform, scope))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
@@ -506,7 +506,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
         harness.runAndLogOnFailure {
             // 1. Trigger startup — SessionFeature sets startupLoadingActive, pendingStartupOps = 1
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             // 2. Simulate filesystem response: empty root listing (no UUID folders, no files)
             harness.store.dispatch("filesystem", Action(
@@ -553,7 +553,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
             val session2Content = json.encodeToString(testSession2)
 
             // 1. Trigger startup
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             // 2. Root listing → two UUID folders (no dots → treated as directories)
             harness.store.dispatch("filesystem", Action(

@@ -823,18 +823,19 @@ class SessionFeatureT2InputHistoryTest {
             ))
             testScheduler.advanceUntilIdle()
 
-            val deleteActions = harness.processedActions.filter {
+            val deleteFileActions = harness.processedActions.filter {
                 it.name == ActionRegistry.Names.FILESYSTEM_DELETE_FILE
             }
-            // There should be exactly one delete: the UUID folder, not a separate input.json delete
-            val inputJsonDeletes = deleteActions.filter {
+            // There should be no per-file deletes: the UUID folder delete covers everything
+            val inputJsonDeletes = deleteFileActions.filter {
                 it.payload?.get("path")?.jsonPrimitive?.content?.endsWith("input.json") == true
             }
             assertTrue(inputJsonDeletes.isEmpty(),
                 "input.json should NOT be individually deleted — the UUID folder delete covers it")
 
-            val folderDelete = deleteActions.find {
-                it.payload?.get("path")?.jsonPrimitive?.content == session.identity.uuid
+            val folderDelete = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY &&
+                        it.payload?.get("path")?.jsonPrimitive?.content == session.identity.uuid
             }
             assertNotNull(folderDelete, "UUID folder should still be deleted to remove all session files")
 

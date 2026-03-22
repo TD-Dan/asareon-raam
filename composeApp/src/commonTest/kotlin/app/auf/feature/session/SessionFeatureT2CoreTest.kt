@@ -320,7 +320,7 @@ class SessionFeatureT2CoreTest {
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
             testScheduler.advanceUntilIdle()
 
             val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_LIST && it.originator == "session" }

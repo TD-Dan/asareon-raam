@@ -44,7 +44,7 @@ open class GatewayFeature(
                 }
             }
 
-            ActionRegistry.Names.SYSTEM_STARTING -> {
+            ActionRegistry.Names.SYSTEM_RUNNING -> {
                 // After settings are loaded, trigger an initial model refresh for all providers.
                 providerMap.keys.forEach { providerId ->
                     refreshProviderModels(providerId, gatewayState, store)

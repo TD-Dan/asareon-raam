@@ -120,7 +120,7 @@ class GatewayFeatureT2CoreTest {
             put("gateway.provider-2.apiKey", "k2")
         }))
 
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
         runCurrent()
 
         harness.runAndLogOnFailure {
@@ -141,7 +141,7 @@ class GatewayFeatureT2CoreTest {
             put("gateway.provider-1.apiKey", "k1")
             put("gateway.provider-2.apiKey", "k2")
         }))
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
         runCurrent()
 
         val valueChangedAction = Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
@@ -318,7 +318,7 @@ class GatewayFeatureT2CoreTest {
         harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
         }))
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
         runCurrent()
 
         // ACT: Request the current model list
@@ -371,7 +371,7 @@ class GatewayFeatureT2CoreTest {
         harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_LOADED, buildJsonObject {
             put("gateway.provider-1.apiKey", "k1")
         }))
-        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
         runCurrent()
 
         val stateAfterLoad = harness.store.state.value.featureStates["gateway"] as GatewayState

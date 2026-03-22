@@ -56,7 +56,7 @@ class SettingsFeatureT5PlatformTest {
 
             store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
             store.dispatch("test.setup", addTestAction)
-            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             val updateAction = Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                 put("key", "test.key"); put("value", "live_value")
@@ -72,7 +72,7 @@ class SettingsFeatureT5PlatformTest {
 
             store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
             store.dispatch("test.setup", addTestAction)
-            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            store.dispatch("system.test", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             val finalState = store.state.value.featureStates["settings"] as? SettingsState
             assertNotNull(finalState, "SettingsState should not be null after reloading.")

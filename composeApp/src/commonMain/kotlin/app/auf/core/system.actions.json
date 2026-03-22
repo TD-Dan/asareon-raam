@@ -12,7 +12,7 @@
       "required_permissions": []
     },
     {
-      "action_name": "system.STARTING",
+      "action_name": "system.RUNNING",
       "summary": "The second action dispatched at startup, after INITIALIZING is complete. This signals that all settings have been registered and loaded, and the application is fully hydrated. Features use this signal to begin their main runtime logic (e.g., navigating to a default view, starting timers).",
       "public": false,
       "broadcast": true,

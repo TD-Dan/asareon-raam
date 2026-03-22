@@ -138,7 +138,7 @@ class TestEnvironmentTest {
     @Test
     fun `withActionRegistry() successfully overrides the default registry`() {
         // ARRANGE: Use a minimal override registry. Only these action names will be valid.
-        val minimalRegistry = setOf("system.STARTING", "fakea.ALLOWED")
+        val minimalRegistry = setOf("system.RUNNING", "fakea.ALLOWED")
         val harness = TestEnvironment.create()
             .withActionRegistry(minimalRegistry)
             .build()

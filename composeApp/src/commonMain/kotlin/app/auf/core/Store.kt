@@ -411,11 +411,11 @@ open class Store(
         val isActionAllowed = when (currentLifecycle) {
             AppLifecycle.BOOTING -> action.name == ActionRegistry.Names.SYSTEM_INITIALIZING
             AppLifecycle.INITIALIZING -> true
-            AppLifecycle.RUNNING -> action.name != ActionRegistry.Names.SYSTEM_INITIALIZING && action.name != ActionRegistry.Names.SYSTEM_STARTING
+            AppLifecycle.RUNNING -> action.name != ActionRegistry.Names.SYSTEM_INITIALIZING && action.name != ActionRegistry.Names.SYSTEM_RUNNING
             // CLOSING mirrors RUNNING but also blocks re-entry of CLOSING itself.
             // Features use this phase to flush unsaved state via deferredDispatch (e.g., FILESYSTEM_WRITE).
             AppLifecycle.CLOSING -> action.name != ActionRegistry.Names.SYSTEM_INITIALIZING
-                    && action.name != ActionRegistry.Names.SYSTEM_STARTING
+                    && action.name != ActionRegistry.Names.SYSTEM_RUNNING
                     && action.name != ActionRegistry.Names.SYSTEM_CLOSING
             // SHUTDOWN is a hard lockdown — only SHUTDOWN itself is allowed (for the transition action).
             AppLifecycle.SHUTDOWN -> action.name == ActionRegistry.Names.SYSTEM_SHUTDOWN

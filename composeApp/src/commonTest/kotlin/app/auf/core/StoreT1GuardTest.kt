@@ -160,15 +160,15 @@ class StoreT1GuardTest {
     }
 
     @Test
-    fun `store guard blocks SYSTEM_STARTING when CLOSING`() {
+    fun `store guard blocks SYSTEM_RUNNING when CLOSING`() {
         platform.capturedLogs.clear()
         val store = createStore(CoreState(lifecycle = AppLifecycle.CLOSING))
-        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
         val lifecycleError = platform.capturedLogs.find {
             it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
         }
-        assertNotNull(lifecycleError, "system.STARTING should be blocked during CLOSING lifecycle.")
+        assertNotNull(lifecycleError, "system.RUNNING should be blocked during CLOSING lifecycle.")
     }
 
     @Test
@@ -206,15 +206,15 @@ class StoreT1GuardTest {
     }
 
     @Test
-    fun `store guard blocks SYSTEM_STARTING when RUNNING`() {
+    fun `store guard blocks SYSTEM_RUNNING when RUNNING`() {
         platform.capturedLogs.clear()
         val store = createStore(CoreState(lifecycle = AppLifecycle.RUNNING))
-        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_STARTING))
+        store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
         val lifecycleError = platform.capturedLogs.find {
             it.level == LogLevel.ERROR && it.message.contains("invalid lifecycle state")
         }
-        assertNotNull(lifecycleError, "system.STARTING should be blocked during RUNNING lifecycle.")
+        assertNotNull(lifecycleError, "system.RUNNING should be blocked during RUNNING lifecycle.")
     }
 
     @Test

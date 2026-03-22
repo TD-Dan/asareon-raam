@@ -22,7 +22,7 @@ import kotlin.test.*
  *   agent.INITIATE_TURN   open=true,  broadcast=true,  targeted=false   (command)
  *   agent.SET_STATUS      open=false, broadcast=false, targeted=false   (internal)
  *   system.INITIALIZING   open=false, broadcast=true,  targeted=false   (event)
- *   system.STARTING       open=false, broadcast=true,  targeted=false   (event)
+ *   system.RUNNING       open=false, broadcast=true,  targeted=false   (event)
  *   settings.UPDATE       open=true,  broadcast=true,  targeted=false   (command)
  *   commandbot.APPROVE    open=true,  broadcast=true,  targeted=false   (command)
  */
@@ -122,7 +122,7 @@ class SlashCommandEngineTest {
     )
 
     private val systemStartingDescriptor = ActionDescriptor(
-        fullName = "system.STARTING",
+        fullName = "system.RUNNING",
         featureName = "system",
         suffix = "STARTING",
         summary = "Second startup action.",

@@ -364,7 +364,7 @@ class SessionFeature(
                     }
                 }
             }
-            ActionRegistry.Names.SYSTEM_STARTING -> {
+            ActionRegistry.Names.SYSTEM_RUNNING -> {
                 startupLoadingActive = true
                 pendingStartupOps = 1 // the root listing dispatched below
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_LIST))

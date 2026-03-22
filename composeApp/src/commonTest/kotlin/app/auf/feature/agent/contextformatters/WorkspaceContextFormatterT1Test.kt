@@ -456,7 +456,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections returns Group with key WORKSPACE_FILES`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         assertEquals("WORKSPACE_FILES", group.key)
@@ -466,7 +466,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections header contains file and directory counts`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         assertTrue(group.header.contains("6 file"), "Header should mention file count")
@@ -477,7 +477,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections builds nested Group structure for directories`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         val allKeys = collectKeys(group)
@@ -499,7 +499,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections directories are Group nodes and files are Section nodes`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         // src/ should be a Group
@@ -515,7 +515,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections all entries default to collapsed`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         // Files should have defaultCollapsed = true
@@ -535,7 +535,7 @@ class WorkspaceContextFormatterT1Test {
         )
 
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, fileContents, emptyMap(), platform
+            testEntries, fileContents, emptyMap(), platformDependencies = platform
         )
 
         val configSection = findSection(group, "ws:config.yaml")
@@ -548,7 +548,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections shows placeholder for files without content`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         val configSection = findSection(group, "ws:config.yaml")
@@ -561,7 +561,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections collapsedSummary contains entry name`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         // File collapsed summary
@@ -578,7 +578,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections directory collapsedSummary includes item count`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         val srcGroup = findGroup(group, "ws:src/")
@@ -594,7 +594,7 @@ class WorkspaceContextFormatterT1Test {
         )
 
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), overrides, platform
+            testEntries, emptyMap(), overrides, platformDependencies = platform
         )
 
         assertTrue(group.header.contains("2 files open"),
@@ -604,7 +604,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections top-level Group collapsedSummary mentions CONTEXT_UNCOLLAPSE`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            testEntries, emptyMap(), emptyMap(), platform
+            testEntries, emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         assertTrue(group.collapsedSummary!!.contains("CONTEXT_UNCOLLAPSE"),
@@ -614,7 +614,7 @@ class WorkspaceContextFormatterT1Test {
     @Test
     fun `buildFilesSections with empty entries returns Group with no children`() {
         val group = WorkspaceContextFormatter.buildFilesSections(
-            emptyList(), emptyMap(), emptyMap(), platform
+            emptyList(), emptyMap(), emptyMap(), platformDependencies = platform
         )
 
         assertEquals("WORKSPACE_FILES", group.key)

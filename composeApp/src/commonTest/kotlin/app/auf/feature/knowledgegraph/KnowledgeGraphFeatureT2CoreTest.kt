@@ -385,18 +385,18 @@ class KnowledgeGraphFeatureT2CoreTest {
     // ========================================================================================
 
     @Test
-    fun `SYSTEM_STARTING should dispatch initial FILESYSTEM_LIST`() {
-        // SYSTEM_STARTING is only allowed during INITIALIZING lifecycle
+    fun `SYSTEM_RUNNING should dispatch initial FILESYSTEM_LIST`() {
+        // SYSTEM_RUNNING is only allowed during INITIALIZING lifecycle
         val harness = TestEnvironment.create()
             .withFeature(feature)
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
             .build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             val listAction = harness.processedActions.find { it.name == ActionRegistry.Names.FILESYSTEM_LIST }
-            assertNotNull(listAction, "SYSTEM_STARTING should trigger an initial FILESYSTEM_LIST to discover personas.")
+            assertNotNull(listAction, "SYSTEM_RUNNING should trigger an initial FILESYSTEM_LIST to discover personas.")
         }
     }
 

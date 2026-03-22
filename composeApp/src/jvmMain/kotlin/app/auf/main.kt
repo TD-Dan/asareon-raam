@@ -111,7 +111,7 @@ fun main() {
 
                 // Phase 2: STARTING. Signals that all setup is complete. Features can now execute
                 // their main runtime logic (e.g., navigating, starting timers).
-                container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_STARTING))
+                container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
             }
 
             // Synchronizes THE WINDOW TO THE STATE.

@@ -38,9 +38,9 @@ class CoreFeatureT1ReducerTest {
     }
 
     @Test
-    fun `reducer transitions from INITIALIZING to RUNNING on SYSTEM_STARTING`() {
+    fun `reducer transitions from INITIALIZING to RUNNING on SYSTEM_RUNNING`() {
         val initialState = CoreState(lifecycle = AppLifecycle.INITIALIZING)
-        val action = Action(ActionRegistry.Names.SYSTEM_STARTING)
+        val action = Action(ActionRegistry.Names.SYSTEM_RUNNING)
         val newState = feature.reducer(initialState, action) as? CoreState
         assertEquals(AppLifecycle.RUNNING, newState?.lifecycle)
     }

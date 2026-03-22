@@ -61,7 +61,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
             ),
             softBudgetChars = 200_000,
             maxBudgetChars = 500_000,
-            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap())
+            transientDataSnapshot = TransientDataSnapshot(emptyMap(), null, null, emptyMap(), emptyMap(), emptyMap())
         )
 
         val managedPartitions = PartitionAssemblyResult(

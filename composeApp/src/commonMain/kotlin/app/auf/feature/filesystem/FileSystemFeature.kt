@@ -203,7 +203,7 @@ class FileSystemFeature(
                     put("section", "FileSystem"); put("defaultValue", "")
                 }))
             }
-            ActionRegistry.Names.SYSTEM_STARTING -> {
+            ActionRegistry.Names.SYSTEM_RUNNING -> {
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", platformDependencies.getUserHomePath()) }))
             }
             ActionRegistry.Names.FILESYSTEM_NAVIGATE -> {
@@ -442,6 +442,7 @@ class FileSystemFeature(
                 payload.paths.forEach { path ->
                     if (!filenameGuard(path, originator, "bulk read")) return@forEach
                     val fullPath = "$sandboxPath${platformDependencies.pathSeparator}$path"
+                    if (!platformDependencies.fileExists(fullPath)) return@forEach
                     try {
                         contentMap[path] = platformDependencies.readFileContent(fullPath)
                     } catch (e: Exception) {
@@ -475,6 +476,26 @@ class FileSystemFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "read")) return
                 val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
+
+                // Fast path: file does not exist. This is a normal, expected condition
+                // (e.g., context.json not yet created for an agent). Return content:null
+                // without throwing an exception or logging a stacktrace.
+                if (!platformDependencies.fileExists(fullPath)) {
+                    val responsePayload = buildJsonObject {
+                        put("path", payload.path)
+                        put("content", JsonNull)
+                        payload.correlationId?.let { put("correlationId", it) }
+                    }
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.FILESYSTEM_RETURN_READ,
+                        payload = responsePayload,
+                        targetRecipient = originator
+                    ))
+                    publishActionResult(store, payload.correlationId, action.name, success = false,
+                        error = "Read failed: ${sanitizeErrorForBroadcast("File not found: $fullPath")}")
+                    return
+                }
+
                 try {
                     val content = cryptoManager.decrypt(platformDependencies.readFileContent(fullPath),true)
                     val responsePayload = buildJsonObject {

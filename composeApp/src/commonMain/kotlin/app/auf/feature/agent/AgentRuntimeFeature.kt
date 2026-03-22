@@ -187,7 +187,7 @@ class AgentRuntimeFeature(
                 handleTargetedResponse(action, store, agentState)
             }
             // --- Startup ---
-            ActionRegistry.Names.SYSTEM_STARTING -> {
+            ActionRegistry.Names.SYSTEM_RUNNING -> {
                 // Inject built-in resources from all registered strategies.
                 CognitiveStrategyRegistry.getAllBuiltInResources().forEach { resource ->
                     store.deferredDispatch(identity.handle, Action(
@@ -1553,24 +1553,36 @@ class AgentRuntimeFeature(
                     platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemListResponse: Empty or null listing payload for root listing.")
                     return
                 }
-                agentLoadCount = fileList.count { it.isDirectory && it.path != "resources" }
+                // Filter to UUID-named directories only. Non-UUID entries (e.g., "resources",
+                // stray "session" folders, or other debris) are not agent directories.
+                val agentDirs = fileList.filter { entry ->
+                    if (!entry.isDirectory) return@filter false
+                    val dirName = platformDependencies.getFileName(entry.path)
+                    if (!stringIsUUID(dirName)) {
+                        if (dirName != "resources") {
+                            platformDependencies.log(LogLevel.WARN, identity.handle,
+                                "Skipping non-UUID directory in agent sandbox: '$dirName'")
+                        }
+                        return@filter false
+                    }
+                    true
+                }
+                agentLoadCount = agentDirs.size
 
                 if (agentLoadCount == 0) {
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENTS_LOADED))
                 } else {
-                    fileList.forEach { entry ->
-                        if (entry.isDirectory && entry.path != "resources") {
-                            val agentDir = platformDependencies.getFileName(entry.path)
-                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
-                                put("path", "$agentDir/$agentConfigFILENAME")
-                            }))
-                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
-                                put("path", "$agentDir/$nvramFILENAME")
-                            }))
-                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
-                                put("path", "$agentDir/$contextFILENAME")
-                            }))
-                        }
+                    agentDirs.forEach { entry ->
+                        val agentDir = platformDependencies.getFileName(entry.path)
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
+                            put("path", "$agentDir/$agentConfigFILENAME")
+                        }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
+                            put("path", "$agentDir/$nvramFILENAME")
+                        }))
+                        store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject {
+                            put("path", "$agentDir/$contextFILENAME")
+                        }))
                     }
                 }
             }
@@ -1716,8 +1728,23 @@ class AgentRuntimeFeature(
 
     private fun handleFileSystemReadResponse(payload: JsonObject, store: Store) {
         val path = (payload["path"]?.jsonPrimitive?.contentOrNull ?: "").replace("\\", "/")
-        val content = payload["content"]?.jsonPrimitive?.contentOrNull ?: run {
-            platformDependencies.log(LogLevel.DEBUG, identity.handle, "handleFileSystemReadResponse: Missing content in read response for path='$path'.")
+        val content = payload["content"]?.jsonPrimitive?.contentOrNull
+
+        if (content == null) {
+            // Even without content, we must decrement agentLoadCount for missing agent.json
+            // files so the load-completion gate (AGENT_AGENTS_LOADED) still fires.
+            if (path.endsWith("/$agentConfigFILENAME")) {
+                val dirName = path.substringBeforeLast("/")
+                platformDependencies.log(LogLevel.WARN, identity.handle,
+                    "Agent directory '$dirName' has no $agentConfigFILENAME — skipping (orphaned directory?).")
+                agentLoadCount--
+                if (agentLoadCount <= 0) {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.AGENT_AGENTS_LOADED))
+                }
+            } else {
+                platformDependencies.log(LogLevel.DEBUG, identity.handle,
+                    "handleFileSystemReadResponse: Missing content in read response for path='$path'.")
+            }
             return
         }
 

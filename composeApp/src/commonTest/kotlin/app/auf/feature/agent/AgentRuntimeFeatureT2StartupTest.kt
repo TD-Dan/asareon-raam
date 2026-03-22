@@ -43,7 +43,7 @@ class AgentRuntimeFeatureT2StartupTest {
 
         // 2. Action: Trigger the Startup Sequence
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             // Simulating FileSystem Response for "resources" listing.
             // Targeted action — must include targetRecipient.
@@ -120,7 +120,7 @@ class AgentRuntimeFeatureT2StartupTest {
         harness.platform.writtenFiles["$agentId/agent.json"] = agentConfigJson
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             // Simulate root listing: one agent directory
             val listPayload = kotlinx.serialization.json.buildJsonObject {
@@ -189,7 +189,7 @@ class AgentRuntimeFeatureT2StartupTest {
         val harness = environment.build()
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_STARTING))
+            harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
             // Root listing: one agent directory
             val listPayload = kotlinx.serialization.json.buildJsonObject {
