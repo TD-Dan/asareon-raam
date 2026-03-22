@@ -243,8 +243,6 @@ tasks.register("generateActionRegistry") {
                             "hidden" to hiddenFlag,
                             "payloadFields" to payloadFields,
                             "requiredFields" to requiredFields,
-                            "autoFillRules" to autoFillRules,
-                            "sandboxRule" to sandboxRule,
                             "requiredPermissions" to reqPerms
                         ))
                     }
