@@ -1017,7 +1017,7 @@ object CognitivePipeline {
             contextMap["AVAILABLE_ACTIONS"] = ActionsContextFormatter.buildSections(store, agentIdentity)
         }
 
-        // Workspace two-partition view (INDEX + FILES)
+        // WORKSPACE_FILES — consolidated partition (index tree in header + file contents as children)
         val workspaceListing = statusInfo.transientWorkspaceListing
         if (workspaceListing != null && workspaceListing.isNotEmpty()) {
             val safeAgentIdForWs = agentUuid.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
@@ -1029,13 +1029,6 @@ object CognitivePipeline {
                     val key = "ws:${rootDir.relativePath}"
                     if (key !in mergedOverrides) mergedOverrides[key] = CollapseState.EXPANDED
                 }
-                contextMap["WORKSPACE_INDEX"] = stringToSection(
-                    "WORKSPACE_INDEX",
-                    WorkspaceContextFormatter.buildIndexTree(wsEntries, mergedOverrides)
-                )
-                // Always create WORKSPACE_FILES Group when entries exist in listing.
-                // Directories become Groups, files become Sections. All default collapsed.
-                // Expanded files get real content; others get a placeholder.
                 val fileContents = statusInfo.transientWorkspaceFileContents
                 contextMap["WORKSPACE_FILES"] = WorkspaceContextFormatter.buildFilesSections(
                     wsEntries, fileContents, mergedOverrides, platformDependencies
@@ -1188,7 +1181,7 @@ object CognitivePipeline {
      * derived from [ContextCollapseLogic.resolvePartitionDefaults].
      *
      * Used by [buildContextMap] for flat partitions (METADATA, AVAILABLE_ACTIONS,
-     * WORKSPACE_INDEX, etc.) that don't have internal sub-partition structure.
+     * METADATA, etc.) that don't have internal sub-partition structure.
      */
     private fun stringToSection(key: String, content: String): PromptSection.Section {
         val defaults = ContextCollapseLogic.resolvePartitionDefaults(key, content)

@@ -11,19 +11,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Pipeline-level utility for transforming raw workspace file listings into the
- * two-partition view for agent context injection.
+ * Pipeline-level utility for transforming raw workspace file listings into a
+ * consolidated context partition for agent context injection.
  *
- * Mirrors [HkgContextFormatter]'s INDEX/FILES architecture but adapted for the
- * workspace's directory/file hierarchy:
+ * **WORKSPACE_FILES** — a single Group partition whose header contains:
+ * 1. Explanatory text about workspace file ownership and permissions
+ * 2. A navigational index tree with collapse state badges
  *
- * **WORKSPACE_INDEX** — navigational tree of the workspace directory structure.
- * Uses 2-space indentation per depth level. Shows collapse state badges for both
- * directories (controls tree visibility) and files (controls content loading).
- * Collapsed directories show `<contains N items>` badge and hide children.
- *
- * **WORKSPACE_FILES** — complete file contents for all EXPANDED files. Participates
- * in the context budget algorithm. Default: all files closed.
+ * The Group's children are the actual file contents (for EXPANDED files)
+ * and directory sub-Groups, participating in the context budget algorithm.
+ * Default: all files closed.
  *
  * ## Two-Axis Collapse Model
  *
@@ -155,13 +152,17 @@ object WorkspaceContextFormatter {
     }
 
     /**
-     * Build the WORKSPACE_INDEX tree string.
+     * Build the workspace directory index tree string.
+     *
+     * Produces a navigational tree showing the workspace directory structure with
+     * collapse state badges. Embedded in the WORKSPACE_FILES group header by
+     * [buildFilesSections] — no longer a standalone partition.
      *
      * Rules:
      * - COLLAPSED directory: shows name + `<contains N items>` badge. Children hidden.
      * - EXPANDED directory: shows its immediate children (each with their own state).
-     * - `[EXPANDED]` on a file means its content is in WORKSPACE_FILES.
-     * - `[COLLAPSED]` on a file means it appears in INDEX only (no content loaded).
+     * - `[EXPANDED]` on a file means its content is loaded.
+     * - `[COLLAPSED]` on a file means it appears in the tree only (no content loaded).
      *
      * @param entries Parsed workspace entries from [parseListingEntries].
      * @param collapseOverrides Agent's sticky collapse overrides. Key = "ws:<relativePath>".
@@ -171,18 +172,10 @@ object WorkspaceContextFormatter {
         collapseOverrides: Map<String, CollapseState>
     ): String {
         if (entries.isEmpty()) {
-            return "--- WORKSPACE_INDEX ---\nWorkspace is empty.\n--- END OF WORKSPACE_INDEX ---"
+            return "Workspace is empty."
         }
 
-        val totalFiles = entries.count { !it.isDirectory }
-        val totalDirs = entries.count { it.isDirectory }
-        val expandedFileCount = entries.count { !it.isDirectory && resolveCollapseState(it.relativePath, collapseOverrides) == CollapseState.EXPANDED }
-
         return buildString {
-            appendLine("--- WORKSPACE_INDEX ---")
-            appendLine("Workspace: $totalFiles files, $totalDirs directories | $expandedFileCount files open in WORKSPACE_FILES")
-            appendLine()
-
             // Build a parent→children map for efficient tree traversal
             val childrenMap = buildChildrenMap(entries)
 
@@ -193,15 +186,17 @@ object WorkspaceContextFormatter {
             for (entry in rootEntries) {
                 appendEntryToIndex(entry, entries, childrenMap, collapseOverrides, this)
             }
-
-            appendLine("--- END OF WORKSPACE_INDEX ---")
         }.trimEnd()
     }
 
     /**
-     * Build the WORKSPACE_FILES section as a [app.auf.feature.agent.PromptSection.Group] whose internal
-     * structure mirrors the actual directory tree. Directories become nested
+     * Build the WORKSPACE_FILES section as a [app.auf.feature.agent.PromptSection.Group] whose
+     * header contains the navigational index tree and explanatory text, and whose
+     * internal structure mirrors the actual directory tree. Directories become nested
      * [app.auf.feature.agent.PromptSection.Group]s; files become [app.auf.feature.agent.PromptSection.Section]s.
+     *
+     * This is the single consolidated partition for the agent's workspace — the index
+     * tree and file contents live together. No separate WORKSPACE_INDEX partition.
      *
      * The child key convention is `ws:<relativePath>`, matching the existing
      * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
@@ -257,9 +252,19 @@ object WorkspaceContextFormatter {
             }
         }.ifEmpty { "empty" }
 
+        // Build the navigational index tree and include it in the group header
+        val indexTree = buildIndexTree(entries, collapseOverrides)
+        val header = buildString {
+            appendLine("Workspace files are your own files contained in your private agent sandbox. You have full read and write permissions. Other participants cannot access these files.")
+            appendLine()
+            appendLine("$contentDesc | $expandedCount files open")
+            appendLine()
+            appendLine(indexTree)
+        }.trimEnd()
+
         return PromptSection.Group(
             key = "WORKSPACE_FILES",
-            header = "Workspace: $contentDesc | $expandedCount files open",
+            header = header,
             children = rootEntries.map { entry ->
                 buildEntrySection(entry, entries, childrenMap, expandedFileContents, platformDependencies)
             },

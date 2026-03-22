@@ -224,7 +224,7 @@ data class AgentStatusInfo(
     // Workspace Context (Two-Partition Model)
     //
     // Raw listing from filesystem.RETURN_LIST — used by WorkspaceContextFormatter
-    // to build the WORKSPACE_INDEX tree with collapse badges.
+    // to build the workspace index tree embedded in the WORKSPACE_FILES header.
     // ========================================================================
 
     /** Raw workspace listing entries from filesystem.RETURN_LIST. Null = not yet received. */

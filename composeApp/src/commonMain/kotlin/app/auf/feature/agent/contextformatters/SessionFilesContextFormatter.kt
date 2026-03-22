@@ -13,8 +13,13 @@ import kotlinx.serialization.json.jsonPrimitive
  * Pipeline-level utility for transforming session workspace file listings
  * into context partitions for injection into the agent's system prompt.
  *
- * Mirrors [WorkspaceContextFormatter]'s architecture but adapted for
- * cross-sandbox session workspace files accessed via delegation.
+ * Each session produces a single `SESSION_FILES:<sessionHandle>` Group partition
+ * whose header contains:
+ * 1. Explanatory text about session file visibility and permissions
+ * 2. A navigational index tree with collapse state badges
+ *
+ * The Group's children are the actual file contents (for EXPANDED files)
+ * and directory sub-Groups, participating in the context budget algorithm.
  *
  * ## Key Prefix Convention
  *
@@ -125,7 +130,9 @@ object SessionFilesContextFormatter {
         // so the agent sees both the tree overview and the file contents in one partition.
         val indexTree = buildIndexTree(sessionHandle, sessionName, entries, collapseOverrides)
         val header = buildString {
-            appendLine("Session workspace '$sessionName': $contentDesc | $expandedCount files open")
+            appendLine("Session workspace files are visible to all participants in session '$sessionName'. You have read access to these files.")
+            appendLine()
+            appendLine("$contentDesc | $expandedCount files open")
             appendLine()
             appendLine(indexTree)
         }.trimEnd()
@@ -145,8 +152,9 @@ object SessionFilesContextFormatter {
     }
 
     /**
-     * Builds the SESSION_FILES index tree string for a single session.
-     * Used by the pipeline for the navigational index partition.
+     * Builds the directory index tree string for a single session's workspace.
+     * Embedded in the SESSION_FILES group header by [buildSessionFilesGroup]
+     * — no longer a standalone partition.
      *
      * @param sessionHandle The session's handle.
      * @param sessionName The session's display name.
@@ -160,19 +168,10 @@ object SessionFilesContextFormatter {
         collapseOverrides: Map<String, CollapseState>
     ): String {
         if (entries.isEmpty()) {
-            return "Session '$sessionName' workspace is empty."
-        }
-
-        val totalFiles = entries.count { !it.isDirectory }
-        val totalDirs = entries.count { it.isDirectory }
-        val expandedFileCount = entries.count { !it.isDirectory &&
-                resolveCollapseState(sessionHandle, it.relativePath, collapseOverrides) == CollapseState.EXPANDED
+            return "Workspace is empty."
         }
 
         return buildString {
-            appendLine("Session '$sessionName' workspace: $totalFiles files, $totalDirs directories | $expandedFileCount files open")
-            appendLine()
-
             val childrenMap = buildChildrenMap(entries)
             val rootEntries = entries.filter { it.parentPath == null }
                 .sortedWith(compareBy({ !it.isDirectory }, { it.name }))

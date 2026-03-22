@@ -156,9 +156,9 @@ class PromptBuilder(private val context: AgentTurnContext) {
     }
 
     fun workspaceNavigation() {
-        if ("WORKSPACE_INDEX" !in context.gatheredContextKeys) return
+        if ("WORKSPACE_FILES" !in context.gatheredContextKeys) return
         val content = buildString {
-            appendLine("Your workspace is presented as a WORKSPACE_INDEX (tree overview) and WORKSPACE_FILES (open file contents).")
+            appendLine("Your workspace files are shown in WORKSPACE_FILES with a directory tree index and open file contents.")
             appendLine("By default, all files are closed. Use these commands to navigate:")
             appendLine()
             appendLine("Open a single workspace file:")
