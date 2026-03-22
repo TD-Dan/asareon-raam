@@ -1,5 +1,6 @@
 package app.auf.feature.session
 
+import app.auf.core.Version
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -16,12 +17,12 @@ class SessionFeatureT1BlockSeparatingParserTest {
 
     @Test
     fun `should correctly parse single-line tool call`() {
-        val rawResponse = "```auf_toastMessage Hello!```"
+        val rawResponse = "```${Version.APP_TOOL_PREFIX}toastMessage Hello!```"
         val result = parser.parse(rawResponse)
         assertEquals(1, result.size)
         assertIs<ContentBlock.CodeBlock>(result[0])
         val codeBlock = result[0] as ContentBlock.CodeBlock
-        assertEquals("auf_toastMessage", codeBlock.language)
+        assertEquals("${Version.APP_TOOL_PREFIX}toastMessage", codeBlock.language)
         assertEquals("Hello!", codeBlock.code)
     }
 

@@ -267,7 +267,7 @@ fun prepareDragSourceFile(absolutePath: String, fileName: String): File? {
         val source = File(absolutePath)
         if (!source.exists() || !source.isFile) return null
 
-        val tempDir = File(System.getProperty("java.io.tmpdir"), "auf-drag")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "raam-drag")
         tempDir.mkdirs()
         val tempFile = File(tempDir, fileName)
         source.copyTo(tempFile, overwrite = true)

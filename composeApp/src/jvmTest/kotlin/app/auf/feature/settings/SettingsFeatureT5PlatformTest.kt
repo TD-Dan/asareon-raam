@@ -27,7 +27,7 @@ class SettingsFeatureT5PlatformTest {
 
     // A custom PlatformDependencies that uses a temporary directory on the real file system.
     private class JvmTestPlatformDependencies(appVersion: String) : PlatformDependencies(appVersion) {
-        val tempDir: File = createTempDirectory("auf-integration-test-").toFile()
+        val tempDir: File = createTempDirectory("app-integration-test-").toFile()
         override val pathSeparator: Char = File.separatorChar
 
         init { tempDir.deleteOnExit() }

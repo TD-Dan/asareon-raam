@@ -74,8 +74,8 @@ fun LedgerEntryCard(
                 val truncated = firstLine.length > 80 || hasMoreLines || hasMultipleBlocks
                 firstLine.take(80) + if (truncated) "…" else ""
             }
-            is ContentBlock.CodeBlock -> if (firstBlock.language.startsWith("auf_")) {
-                "Action '${firstBlock.language.removePrefix("auf_")}'"
+            is ContentBlock.CodeBlock -> if (firstBlock.language.startsWith(Version.APP_TOOL_PREFIX)) {
+                "Action '${firstBlock.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
             } else {
                 val firstLine = firstBlock.code.lineSequence().firstOrNull() ?: ""
                 val hasMoreLines = firstBlock.code.contains('\n')
@@ -427,9 +427,9 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                         style = MaterialTheme.typography.bodyLarge
                     )
                     is ContentBlock.CodeBlock -> {
-                        val isAufAction = block.language.startsWith("auf_")
+                        val isAufAction = block.language.startsWith(Version.APP_TOOL_PREFIX)
                         val headerLabel = if (isAufAction) {
-                            "Action '${block.language.removePrefix("auf_")}'"
+                            "Action '${block.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
                         } else {
                             block.language
                         }

@@ -376,7 +376,7 @@ class PrivateSessionStrategyT1LogicTest {
 
         val prompt = PrivateSessionStrategy.buildPrompt(context, JsonNull).renderForTest()
 
-        assertTrue(prompt.contains("auf_session.POST"),
+        assertTrue(prompt.contains("${Version.APP_TOOL_PREFIX}session.POST"),
             "Should include a fenced code block example for session.POST")
         assertTrue(prompt.contains("\"message\""),
             "session.POST example should include a message field")

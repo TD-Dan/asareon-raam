@@ -67,7 +67,7 @@ fun AboutView(store: Store) {
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
                 SelectionContainer {
-                    Text("AUF App Version: ${Version.APP_VERSION}")
+                    Text("${Version.APP_NAME}, version ${Version.APP_VERSION}")
                 }
             }
 
@@ -129,17 +129,12 @@ fun AboutView(store: Store) {
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
                 SelectionContainer {
-                    Text("AUF (Ai User Framework) and AUF App copyright 2025 Daniel Herkert")
+                    Text("${Version.APP_NAME} copyright 2025 Daniel Herkert")
                 }
-                Spacer(Modifier.height(12.dp))
-                ClickableLink(
-                    text = "Framework Repository",
-                    url = "https://github.com/TD-Dan/Ai-User-Framework"
-                )
                 Spacer(Modifier.height(8.dp))
                 ClickableLink(
                     text = "Application Repository",
-                    url = "https://github.com/TD-Dan/AUF-App"
+                    url = "https://github.com/TD-Dan/AsareonRaam"
                 )
             }
 

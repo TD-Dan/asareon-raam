@@ -371,7 +371,7 @@ class CommandBotFeature(
                     if (!type.contains("CodeBlock")) return@forEach
 
                     val language = block["language"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                    if (!language.startsWith("auf_")) return@forEach
+                    if (!language.startsWith(Version.APP_TOOL_PREFIX)) return@forEach
 
                     val code = block["code"]?.jsonPrimitive?.contentOrNull ?: ""
 
@@ -615,7 +615,7 @@ class CommandBotFeature(
         originalSenderId: String,
         store: Store
     ) {
-        val actionName = language.removePrefix("auf_")
+        val actionName = language.removePrefix(Version.APP_TOOL_PREFIX)
         val isAgent = isAgent(originalSenderId, store)
 
         // --- Descriptor lookup & hidden guard ---

@@ -91,7 +91,7 @@ fun main() {
                 Thread.sleep(250)
                 exitApplication()
             },
-            title = "AUF v${Version.APP_VERSION}",
+            title = Version.APP_NAME,
             state = windowState
         ) {
             /**

@@ -7,8 +7,11 @@ import kotlinx.serialization.json.JsonObject
 
 // --- VERSION ---
 object Version {
-    const val APP_VERSION = "2.0.0-alpha"
-    const val APP_VERSION_MAJOR = "v2"
+    const val APP_NAME = "Asareon Raam"
+    const val APP_VERSION = "1.0.0-alpha"
+    const val APP_VERSION_MAJOR = "v1"
+    const val APP_VERSION_MAJOR_MINOR = "v1.0"
+    const val APP_TOOL_PREFIX = "raam_"
 }
 
 // --- CORE STATE ---
