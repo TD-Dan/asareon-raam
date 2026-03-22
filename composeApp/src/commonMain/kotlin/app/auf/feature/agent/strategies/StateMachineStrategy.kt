@@ -72,6 +72,7 @@ object StateMachineStrategy : CognitiveStrategy {
             section("STATE MACHINE", buildStateMachineContent(context, stateObj, phase))
             section("PHASE TRANSITION", buildPhaseTransitionContent(phase))
             sessions()
+            sessionFiles()
             everythingElse()
         }
     }

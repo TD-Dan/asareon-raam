@@ -1060,11 +1060,11 @@ object CognitivePipeline {
         )
 
         // SESSION_FILES — per-session workspace file context (cross-sandbox delegation)
+        // Each session's files become a single GROUP partition whose header contains
+        // the navigational index tree and whose children are the file content sections.
         val sessionFileListings = statusInfo.transientSessionFileListings
         val sessionFileContents = statusInfo.transientSessionFileContents
         if (sessionFileListings.isNotEmpty()) {
-            val allSessionFileIndices = mutableListOf<String>()
-
             sessionFileListings.forEach { (sessionUUID, listing) ->
                 if (listing.isEmpty()) return@forEach
 
@@ -1085,22 +1085,9 @@ object CognitivePipeline {
 
                 val fileContentsForSession = sessionFileContents[sessionUUID] ?: emptyMap()
 
-                allSessionFileIndices.add(
-                    SessionFilesContextFormatter.buildIndexTree(
-                        sessionHandle, sessionName, entries, mergedOverrides
-                    )
-                )
-
                 val groupKey = "SESSION_FILES:$sessionHandle"
                 contextMap[groupKey] = SessionFilesContextFormatter.buildSessionFilesGroup(
                     sessionHandle, sessionName, entries, fileContentsForSession, mergedOverrides, platformDependencies
-                )
-            }
-
-            if (allSessionFileIndices.isNotEmpty()) {
-                contextMap["SESSION_FILES_INDEX"] = stringToSection(
-                    "SESSION_FILES_INDEX",
-                    allSessionFileIndices.joinToString("\n\n")
                 )
             }
         }

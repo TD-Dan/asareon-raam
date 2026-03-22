@@ -101,7 +101,6 @@ object SessionFilesContextFormatter {
         platformDependencies: PlatformDependencies? = null
     ): PromptSection.Group {
         val groupKey = "SESSION_FILES:$sessionHandle"
-        val keyPrefix = "sf:$sessionHandle:"
 
         val childrenMap = buildChildrenMap(entries)
         val rootEntries = (childrenMap[null] ?: emptyList())
@@ -122,9 +121,18 @@ object SessionFilesContextFormatter {
             }
         }.ifEmpty { "empty" }
 
+        // Build the navigational index tree and include it in the group header
+        // so the agent sees both the tree overview and the file contents in one partition.
+        val indexTree = buildIndexTree(sessionHandle, sessionName, entries, collapseOverrides)
+        val header = buildString {
+            appendLine("Session workspace '$sessionName': $contentDesc | $expandedCount files open")
+            appendLine()
+            appendLine(indexTree)
+        }.trimEnd()
+
         return PromptSection.Group(
             key = groupKey,
-            header = "Session workspace '$sessionName': $contentDesc | $expandedCount files open",
+            header = header,
             children = rootEntries.map { entry ->
                 buildEntrySection(entry, entries, childrenMap, expandedFileContents, sessionHandle, platformDependencies)
             },

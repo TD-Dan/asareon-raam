@@ -124,12 +124,15 @@ class PromptBuilder(private val context: AgentTurnContext) {
 
     /**
      * Places all gathered SESSION_FILES partitions at this position.
-     * This includes the SESSION_FILES_INDEX and all per-session file Groups.
-     * Individual session Groups (SESSION_FILES:<handle>) that aren't explicitly
-     * placed will be picked up by [everythingElse].
+     * Each subscribed session with workspace files produces a
+     * `SESSION_FILES:<sessionHandle>` group whose header contains the
+     * navigational index tree and whose children are the file content sections.
      */
     fun sessionFiles() {
-        place("SESSION_FILES_INDEX")
+        context.gatheredContextKeys
+            .filter { it.startsWith("SESSION_FILES:") }
+            .sorted()
+            .forEach { place(it) }
     }
 
     fun privateSessionRouting() {

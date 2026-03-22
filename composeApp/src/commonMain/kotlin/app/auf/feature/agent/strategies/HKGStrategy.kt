@@ -68,6 +68,7 @@ object HKGStrategy : CognitiveStrategy {
             instructions()
             place("HOLON_KNOWLEDGE_GRAPH")
             sessions()
+            sessionFiles()
             everythingElse()
         }
 

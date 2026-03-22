@@ -66,6 +66,7 @@ object PrivateSessionStrategy : CognitiveStrategy {
             instructions()
             privateSessionRouting()
             sessions()
+            sessionFiles()
             everythingElse()
         }
 

@@ -38,7 +38,7 @@ object MinimalStrategy : CognitiveStrategy {
         PromptBuilder(context).apply {
             identity()
             instructions()
-            everythingElse()
+            sessions()
         }
 
     override fun postProcessResponse(response: String, currentState: JsonElement): PostProcessResult {
