@@ -228,39 +228,6 @@ tasks.register("generateActionRegistry") {
                             }
                         }
 
-                        // Parse agent_exposure → extract sandbox_rule and auto_fill_rules
-                        // as top-level fields.
-                        val agentExposureObj = obj["agent_exposure"] as? JsonObject
-
-                        val autoFillRules: Map<String, String> = if (agentExposureObj != null) {
-                            val autoFillObj = agentExposureObj["auto_fill_rules"] as? JsonObject
-                            if (autoFillObj != null) {
-                                val fills = mutableMapOf<String, String>()
-                                for (key in autoFillObj.keys) {
-                                    fills[key] = autoFillObj[key]!!.jsonPrimitive.content
-                                }
-                                fills
-                            } else emptyMap()
-                        } else emptyMap()
-
-                        val sandboxRule: Map<String, Any>? = if (agentExposureObj != null) {
-                            val sandboxObj = agentExposureObj["sandbox_rule"] as? JsonObject
-                            if (sandboxObj != null) {
-                                val srMap = mutableMapOf<String, Any>()
-                                srMap["strategy"] = sandboxObj["strategy"]?.jsonPrimitive?.content ?: ""
-                                srMap["pathPrefixTemplate"] = sandboxObj["path_prefix_template"]?.jsonPrimitive?.content ?: ""
-                                val rewriteObj = sandboxObj["payload_rewrites"] as? JsonObject
-                                val rewrites = mutableMapOf<String, String>()
-                                if (rewriteObj != null) {
-                                    for (key in rewriteObj.keys) {
-                                        rewrites[key] = rewriteObj[key]!!.jsonPrimitive.content
-                                    }
-                                }
-                                srMap["payloadRewrites"] = rewrites
-                                srMap
-                            } else null
-                        } else null
-
                         // Parse required_permissions
                         val reqPerms = (obj["required_permissions"] as? JsonArray)
                             ?.map { it.jsonPrimitive.content }

@@ -103,9 +103,6 @@
           "session"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
         "session:manage"
       ]
@@ -478,9 +475,6 @@
           "session"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
         "session:manage"
       ]
@@ -498,12 +492,6 @@
             "type": "string",
             "description": "The session ID where the listing should be posted."
           }
-        }
-      },
-      "agent_exposure": {
-        "requires_approval": false,
-        "auto_fill_rules": {
-          "responseSession": "{sessionId}"
         }
       },
       "required_permissions": [
@@ -538,9 +526,6 @@
           "timestamp"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": true
-      },
       "required_permissions": [
         "session:write"
       ]
@@ -572,9 +557,6 @@
           "senderId",
           "timestamp"
         ]
-      },
-      "agent_exposure": {
-        "requires_approval": true
       },
       "required_permissions": [
         "session:write"

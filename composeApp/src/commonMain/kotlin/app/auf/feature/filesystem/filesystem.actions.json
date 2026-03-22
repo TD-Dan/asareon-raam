@@ -151,13 +151,6 @@
           "path"
         ]
       },
-      "agent_exposure": {
-        "requires_approval": false,
-        "sandbox_rule": {
-          "strategy": "AGENT_WORKSPACE",
-          "path_prefix_template": "{agentId}/workspace"
-        }
-      },
       "required_permissions": [
         "filesystem:workspace"
       ]
