@@ -141,7 +141,7 @@ class BackupFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch(featureHandle, Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
+            harness.store.dispatch("core", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
 
             // Should register settings
             val settingsActions = harness.processedActions.filter {
@@ -380,6 +380,9 @@ class BackupFeatureT2CoreTest {
         val backupsDir = platform.getBasePathFor(BasePath.APP_ZONE) + "/_backups"
         platform.createDirectories(backupsDir)
 
+        // Write skip marker so preInit doesn't add an extra backup
+        platform.writeFileContent("$backupsDir/.skip-next-backup", "skip")
+
         // Create 5 backups with increasing timestamps
         for (i in 1..5) {
             platform.currentTime = 1_000_000_000_000L + (i * 1000L)
@@ -441,7 +444,7 @@ class BackupFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch(featureHandle, Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
+            harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
                 put("key", "backup.maxBackups")
                 put("value", "5")
             }))
@@ -461,7 +464,7 @@ class BackupFeatureT2CoreTest {
         val harness = TestEnvironment.create().withFeature(feature).build(platform = platform)
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch(featureHandle, Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
+            harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
                 put("key", "backup.autoBackupEnabled")
                 put("value", "false")
             }))
@@ -485,7 +488,7 @@ class BackupFeatureT2CoreTest {
         platform.writtenFiles.clear() // Clear any setup writes
 
         harness.runAndLogOnFailure {
-            harness.store.dispatch(featureHandle, Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
+            harness.store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_VALUE_CHANGED, buildJsonObject {
                 put("key", "session.unrelated_key")
                 put("value", "whatever")
             }))

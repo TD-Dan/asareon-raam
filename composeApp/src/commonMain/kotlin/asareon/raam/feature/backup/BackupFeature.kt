@@ -208,6 +208,8 @@ class BackupFeature(
                         put("confirmActionPayload", buildJsonObject { put("filename", filename) })
                     }
                 ))
+                publishActionResult(store, action.name, success = true,
+                    summary = "Restore confirmation requested for $filename")
             }
 
             ActionRegistry.Names.BACKUP_EXECUTE_RESTORE -> {

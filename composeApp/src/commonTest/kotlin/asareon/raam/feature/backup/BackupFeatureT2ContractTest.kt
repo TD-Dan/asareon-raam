@@ -106,6 +106,16 @@ class BackupFeatureT2ContractTest {
                 val backupsDir = platform.getBasePathFor(BasePath.APP_ZONE) + "/_backups"
                 platform.createDirectories(backupsDir)
             }
+        ),
+        HappyCase(
+            label = "RESTORE",
+            actionName = ActionRegistry.Names.BACKUP_RESTORE,
+            originator = "backup",
+            payload = buildJsonObject { put("filename", "raam-backup-restore-test.zip") },
+            setup = { platform ->
+                val backupsDir = platform.getBasePathFor(BasePath.APP_ZONE) + "/_backups"
+                platform.createDirectories(backupsDir)
+            }
         )
     )
 
@@ -134,12 +144,19 @@ class BackupFeatureT2ContractTest {
             label = "DELETE",
             actionName = ActionRegistry.Names.BACKUP_DELETE,
             originator = "backup",
-            payload = buildJsonObject { put("filename", "missing-backup.zip") },
+            payload = buildJsonObject { put("filename", "target-backup.zip") },
             buildPlatform = {
-                FakePlatformDependencies("test").also { p ->
+                object : FakePlatformDependencies("test") {
+                    override fun deleteFile(path: String) {
+                        if (path.endsWith("target-backup.zip")) {
+                            throw Exception("Simulated deleteFile failure")
+                        }
+                        super.deleteFile(path)
+                    }
+                }.also { p ->
                     val backupsDir = p.getBasePathFor(BasePath.APP_ZONE) + "/_backups"
                     p.createDirectories(backupsDir)
-                    // Don't create the file → "File not found" path
+                    p.writeFileContent("$backupsDir/target-backup.zip", "ZIP_CONTENT")
                 }
             }
         ),
@@ -153,15 +170,27 @@ class BackupFeatureT2ContractTest {
             }
         ),
         FailureCase(
-            label = "EXECUTE_RESTORE (missing file)",
+            label = "EXECUTE_RESTORE",
             actionName = ActionRegistry.Names.BACKUP_EXECUTE_RESTORE,
             originator = "backup",
-            payload = buildJsonObject { put("filename", "nonexistent.zip") },
+            payload = buildJsonObject { put("filename", "target-restore.zip") },
             buildPlatform = {
-                FakePlatformDependencies("test").also { p ->
+                object : FakePlatformDependencies("test") {
+                    override fun createZipArchive(
+                        sourceDirectoryPath: String,
+                        destinationZipPath: String,
+                        excludeDirectoryName: String
+                    ) {
+                        // Let the preInit backup succeed but fail the safety backup during restore
+                        if (destinationZipPath.contains("pre-restore")) {
+                            throw Exception("Simulated safety backup failure during restore")
+                        }
+                        super.createZipArchive(sourceDirectoryPath, destinationZipPath, excludeDirectoryName)
+                    }
+                }.also { p ->
                     val backupsDir = p.getBasePathFor(BasePath.APP_ZONE) + "/_backups"
                     p.createDirectories(backupsDir)
-                    // Don't create the backup file → "not found" path
+                    p.writeFileContent("$backupsDir/target-restore.zip", "ZIP_CONTENT")
                 }
             }
         )
