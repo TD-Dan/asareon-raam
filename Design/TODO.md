@@ -26,11 +26,7 @@
 - filesystem.SEARCH_IN_MULTIPLE_FILES: Find a string in multiple file. Returns the filename, line number and whole line contents of all occurences of the string.
 - filesystem.REPLACE_IN_FILE: Replaces a string in a file. Return the line number and whole line contents of all replaced occurences of the string. By default backups the old file to "filename.ext-isotimestamp.old".
 - filesystem.REPLACE_IN_MULTIPLE_FILES: Replaces a string in multiple file. Returns the filename, line number and whole line contents of all replaced occurences of the string. By default backups the old files to "filename.ext-isotimestamp.old".
-
-- ECHO_FILE_TO_SESSION
-
-- FileSystem is writing to core_daniel instead of the right directory "core". Lets evaluate this behaviour. Interfeature access and permissions are the responsibility of the feature? Or do we want to enforce filesystem access by the identity always even inside the features?
-
+- filesystem.COPY: copy files or folders and allows giving new namews to them
 
 # CORE
 - identity visibilities to control who can see what parts of the identityscape? identity groups and permissions? If you belong to a group you see group assests (identities)? Needs planning.
@@ -71,7 +67,6 @@
 - thinking reporting: update agent current status. Upgrade status as two part status:current_task.
 - remove the boot sentinel from Sovereign and replace with Constitution sub-agent: instead of fragile one time check we get constant checks.
 
-
 BUG: gocnitivepipeline 969: should error not default
 
 ## Strategies 
@@ -111,7 +106,6 @@ BUG: gocnitivepipeline 969: should error not default
 - Delete session from tab right click menu
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
 
-BUG: "add agent" isn't visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents". Probaply its visibility is gated by the AGENTS_UPDATED action broadcast and it stays hidden till it receives it?
 
 ## WorkspacePane
 - session files pane does not support folders and files in folders

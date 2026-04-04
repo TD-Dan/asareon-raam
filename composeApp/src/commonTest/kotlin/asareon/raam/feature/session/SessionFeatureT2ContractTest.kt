@@ -194,12 +194,21 @@ class SessionFeatureT2ContractTest {
             initialState = baseState
         ),
         HappyCase(
-            label = "TOGGLE_MESSAGE_COLLAPSED",
+            label = "TOGGLE_MESSAGE_COLLAPSED (single)",
             actionName = ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED,
             originator = "session",
             payload = buildJsonObject {
                 put("sessionId", "sid-1")
                 put("messageId", "msg-1")
+            },
+            initialState = baseState
+        ),
+        HappyCase(
+            label = "TOGGLE_MESSAGE_COLLAPSED (bulk)",
+            actionName = ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED,
+            originator = "session",
+            payload = buildJsonObject {
+                put("sessionId", "sid-1")
             },
             initialState = baseState
         ),

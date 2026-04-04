@@ -34,7 +34,7 @@ class SessionFeature(
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
-    @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String)
+    @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String? = null)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
     @Serializable private data class RequestLedgerPayload(val sessionId: String, val correlationId: String)
     @Serializable private data class GatewayMessage(val role: String, val content: String, val senderId: String, val senderName: String)
@@ -1756,15 +1756,35 @@ class SessionFeature(
             ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<ToggleMessageUiPayload>(it) } ?: return currentFeatureState
                 val session = currentFeatureState.sessions[decoded.sessionId] ?: return currentFeatureState
-                val current = session.messageUiState[decoded.messageId] ?: MessageUiState()
-                val updated = session.copy(messageUiState = session.messageUiState + (decoded.messageId to current.copy(isCollapsed = !current.isCollapsed)))
-                currentFeatureState.copy(sessions = currentFeatureState.sessions + (decoded.sessionId to updated))
+                val messageId = decoded.messageId
+
+                val updatedSession = if (messageId != null) {
+                    // Single message toggle (existing behaviour)
+                    val current = session.messageUiState[messageId] ?: MessageUiState()
+                    session.copy(messageUiState = session.messageUiState + (messageId to current.copy(isCollapsed = !current.isCollapsed)))
+                } else {
+                    // Bulk toggle: if any message is expanded → collapse all, else expand all.
+                    // Respects default_collapsed metadata when no explicit messageUiState exists.
+                    val anyExpanded = session.ledger.any { entry ->
+                        val explicit = session.messageUiState[entry.id]
+                        val effectiveCollapsed = explicit?.isCollapsed
+                            ?: (entry.metadata?.get("default_collapsed")?.jsonPrimitive?.booleanOrNull ?: false)
+                        !effectiveCollapsed
+                    }
+                    val bulkUiState = session.ledger.associate { entry ->
+                        val existing = session.messageUiState[entry.id] ?: MessageUiState()
+                        entry.id to existing.copy(isCollapsed = anyExpanded)
+                    }
+                    session.copy(messageUiState = session.messageUiState + bulkUiState)
+                }
+                currentFeatureState.copy(sessions = currentFeatureState.sessions + (decoded.sessionId to updatedSession))
             }
             ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_RAW_VIEW -> {
                 val decoded = payload?.let { json.decodeFromJsonElement<ToggleMessageUiPayload>(it) } ?: return currentFeatureState
+                val messageId = decoded.messageId ?: return currentFeatureState
                 val session = currentFeatureState.sessions[decoded.sessionId] ?: return currentFeatureState
-                val current = session.messageUiState[decoded.messageId] ?: MessageUiState()
-                val updated = session.copy(messageUiState = session.messageUiState + (decoded.messageId to current.copy(isRawView = !current.isRawView)))
+                val current = session.messageUiState[messageId] ?: MessageUiState()
+                val updated = session.copy(messageUiState = session.messageUiState + (messageId to current.copy(isRawView = !current.isRawView)))
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (decoded.sessionId to updated))
             }
             ActionRegistry.Names.SESSION_LOADED -> {

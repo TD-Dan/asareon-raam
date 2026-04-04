@@ -319,7 +319,7 @@
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
-      "summary": "Toggles the collapsed/expanded state for a single message.",
+      "summary": "Toggles the collapsed/expanded state for a single message, or all messages in the session when messageId is omitted. Bulk toggle collapses all if any message is expanded, otherwise expands all.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -330,12 +330,15 @@
             "type": "string"
           },
           "messageId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The ID of the message to toggle. If omitted or null, toggles all messages in the session."
           }
         },
         "required": [
-          "sessionId",
-          "messageId"
+          "sessionId"
         ]
       },
       "required_permissions": [
