@@ -1,15 +1,15 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.Identity
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.feature.session.SessionState
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -71,7 +71,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
      * Works because AgentRuntimeFeature registers "agent" as a root identity.
      */
     private fun registerAgentIdentity(
-        harness: app.auf.test.TestHarness,
+        harness: asareon.raam.test.TestHarness,
         uuid: String,
         name: String
     ) {
@@ -89,7 +89,7 @@ class AgentRuntimeFeatureT2IdentityRegistryTest {
      * and parentHandle. Returns the registered Identity for further assertions.
      */
     private fun assertRegistered(
-        harness: app.auf.test.TestHarness,
+        harness: asareon.raam.test.TestHarness,
         uuid: String,
         parentHandle: String
     ): Identity {

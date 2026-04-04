@@ -1,9 +1,9 @@
-package app.auf.fakes
+package asareon.raam.fakes
 
-import app.auf.util.BasePath
-import app.auf.util.FileEntry
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.util.BasePath
+import asareon.raam.util.FileEntry
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 
 private data class FakeFile(val content: String, val lastModified: Long)
 

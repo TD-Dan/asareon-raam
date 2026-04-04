@@ -1,9 +1,9 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
-import app.auf.core.FeatureState
-import app.auf.core.Identity
-import app.auf.core.IdentityHandle
-import app.auf.util.FileEntry
+import asareon.raam.core.FeatureState
+import asareon.raam.core.Identity
+import asareon.raam.core.IdentityHandle
+import asareon.raam.util.FileEntry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject

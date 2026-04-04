@@ -1,16 +1,16 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.feature.session.Session
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.session.Session
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.feature.session.SessionState
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -43,7 +43,7 @@ class AgentRuntimeFeatureT3WatcherTest {
         val sessions = agents.flatMap { it.subscribedSessionIds }.distinct()
             .associateWith { testSession(it.uuid, "Session ${it.uuid}") }
         // Convert String-keyed session map: IdentityUUID.uuid → Session
-        val sessionMap: Map<String, app.auf.feature.session.Session> = sessions.mapKeys { it.key.uuid }
+        val sessionMap: Map<String, asareon.raam.feature.session.Session> = sessions.mapKeys { it.key.uuid }
 
         harness = TestEnvironment.create()
             .withFeature(agentFeature)

@@ -1,4 +1,4 @@
-package app.auf.core
+package asareon.raam.core
 
 /**
  * Compile-time default permission grants applied to feature identities at boot.

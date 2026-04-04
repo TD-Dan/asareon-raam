@@ -1,4 +1,4 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -19,10 +19,10 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull

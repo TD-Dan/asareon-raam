@@ -1,4 +1,4 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
 /**
  * Test helper: renders a [PromptBuilder]'s sections to a flat string for content assertions.

@@ -1,4 +1,4 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -9,9 +9,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -188,7 +188,7 @@ class CoreFeature(
             PermissionLevel.valueOf(levelStr)
         } catch (e: IllegalArgumentException) {
             platformDependencies.log(
-                app.auf.util.LogLevel.ERROR, identity.handle,
+                asareon.raam.util.LogLevel.ERROR, identity.handle,
                 "SET_PERMISSION: invalid level '$levelStr' — must be one of ${PermissionLevel.entries.map { it.name }}"
             )
             return false
@@ -198,7 +198,7 @@ class CoreFeature(
         val targetIdentity = registry[identityHandle]
         if (targetIdentity == null) {
             platformDependencies.log(
-                app.auf.util.LogLevel.ERROR, identity.handle,
+                asareon.raam.util.LogLevel.ERROR, identity.handle,
                 "SET_PERMISSION: identity '$identityHandle' not found in registry"
             )
             return false
@@ -210,7 +210,7 @@ class CoreFeature(
         store.updateIdentityRegistry { it + (identityHandle to updatedIdentity) }
 
         platformDependencies.log(
-            app.auf.util.LogLevel.INFO, identity.handle,
+            asareon.raam.util.LogLevel.INFO, identity.handle,
             "SET_PERMISSION: '$identityHandle' → '$permissionKey' = $level"
         )
         return true
@@ -311,7 +311,7 @@ class CoreFeature(
                             val loaded = json.decodeFromString<IdentitiesLoadedPayload>(content)
                             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, Json.encodeToJsonElement(loaded) as JsonObject))
                         } catch (e: Exception) {
-                            platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
+                            platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle, "Failed to parse identities.json: ${e.message}")
                         }
                     } else {
                         store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_IDENTITIES_LOADED, buildJsonObject {
@@ -480,7 +480,7 @@ class CoreFeature(
                     json.decodeFromJsonElement<RegisterIdentityPayload>(it)
                 }
                 if (payload == null || payload.name.isBlank()) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                         "REGISTER_IDENTITY: missing or invalid payload (name is required)")
                     sendRegistrationFailure(store, originator, "", "Missing or invalid payload")
                     return
@@ -491,7 +491,7 @@ class CoreFeature(
                 if (payload.localHandle != null) {
                     // Explicit localHandle provided — validate format
                     if (!isValidLocalHandle(payload.localHandle)) {
-                        platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                             "REGISTER_IDENTITY: invalid localHandle '${payload.localHandle}' — " +
                                     "must match [a-z][a-z0-9-]* (start with letter, then letters/digits/hyphens)")
                         sendRegistrationFailure(store, originator, payload.localHandle, "Invalid localHandle format", payload.uuid)
@@ -509,7 +509,7 @@ class CoreFeature(
                         require(Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
                             .matches(payload.uuid))
                     } catch (_: Exception) {
-                        platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                        platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                             "REGISTER_IDENTITY: invalid UUID '${payload.uuid}'")
                         sendRegistrationFailure(store, originator, requestedLocalHandle, "Invalid UUID format", payload.uuid)
                         return
@@ -522,7 +522,7 @@ class CoreFeature(
 
                 // Validate that the parent actually exists in the registry
                 if (parentHandle != null && parentHandle !in registry) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                         "REGISTER_IDENTITY: originator '${parentHandle}' not found in identity registry")
                     sendRegistrationFailure(store, originator, requestedLocalHandle, "Parent not found in registry", payload.uuid)
                     return
@@ -555,7 +555,7 @@ class CoreFeature(
                         }
 
                         platformDependencies.log(
-                            app.auf.util.LogLevel.INFO, identity.handle,
+                            asareon.raam.util.LogLevel.INFO, identity.handle,
                             "REGISTER_IDENTITY: Reclaimed existing identity '${reclaimed.handle}' (UUID=${payload.uuid})"
                         )
 
@@ -625,7 +625,7 @@ class CoreFeature(
                     json.decodeFromJsonElement<UnregisterIdentityPayload>(it)
                 }
                 if (payload == null) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                         "UNREGISTER_IDENTITY: missing or invalid payload")
                     return
                 }
@@ -633,7 +633,7 @@ class CoreFeature(
                 val registry = store.state.value.identityRegistry
 
                 if (payload.handle !in registry) {
-                    platformDependencies.log(app.auf.util.LogLevel.WARN, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.WARN, identity.handle,
                         "UNREGISTER_IDENTITY: handle '${payload.handle}' not in registry")
                     return
                 }
@@ -644,7 +644,7 @@ class CoreFeature(
                 val isOwnNamespace = payload.handle == originator ||
                         payload.handle.startsWith("$originator.")
                 if (!isOwnNamespace) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                         "UNREGISTER_IDENTITY: originator '$originator' cannot unregister " +
                                 "'${payload.handle}' — outside its namespace")
                     return
@@ -669,7 +669,7 @@ class CoreFeature(
                     json.decodeFromJsonElement<UpdateIdentityPayload>(it)
                 }
                 if (payload == null || payload.handle.isBlank() || payload.newName.isBlank()) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                         "UPDATE_IDENTITY: missing or invalid payload")
                     sendUpdateFailure(store, originator, payload?.handle ?: "", "Missing or invalid payload")
                     return
@@ -679,7 +679,7 @@ class CoreFeature(
                 val existingIdentity = registry[payload.handle]
 
                 if (existingIdentity == null) {
-                    platformDependencies.log(app.auf.util.LogLevel.WARN, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.WARN, identity.handle,
                         "UPDATE_IDENTITY: handle '${payload.handle}' not in registry")
                     sendUpdateFailure(store, originator, payload.handle, "Handle not found in registry")
                     return
@@ -689,7 +689,7 @@ class CoreFeature(
                 val isOwnNamespace = payload.handle == originator ||
                         payload.handle.startsWith("$originator.")
                 if (!isOwnNamespace) {
-                    platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle,
+                    platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle,
                         "UPDATE_IDENTITY: originator '$originator' cannot update " +
                                 "'${payload.handle}' — outside its namespace")
                     sendUpdateFailure(store, originator, payload.handle, "Outside originator namespace")
@@ -842,7 +842,7 @@ class CoreFeature(
                 }
 
                 platformDependencies.log(
-                    app.auf.util.LogLevel.INFO, identity.handle,
+                    asareon.raam.util.LogLevel.INFO, identity.handle,
                     "Dispatched '$actionName' on behalf of user '$originatorId' (session=$sessionId, correlationId=$correlationId)."
                 )
             }
@@ -912,7 +912,7 @@ class CoreFeature(
                     try {
                         json.decodeFromJsonElement<ConfirmationDialogRequest>(it)
                     } catch (e: Exception) {
-                        platformDependencies.log(app.auf.util.LogLevel.ERROR, identity.handle, "Failed to decode ConfirmationDialogRequest: ${e.message}")
+                        platformDependencies.log(asareon.raam.util.LogLevel.ERROR, identity.handle, "Failed to decode ConfirmationDialogRequest: ${e.message}")
                         null
                     }
                 }

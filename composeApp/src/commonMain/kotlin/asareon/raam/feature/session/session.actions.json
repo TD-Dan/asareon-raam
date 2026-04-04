@@ -1306,7 +1306,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "const": "app.auf.feature.session.ContentBlock.Text",
+          "const": "asareon.raam.feature.session.ContentBlock.Text",
           "description": "Discriminator value for kotlinx.serialization sealed interface."
         },
         "text": {
@@ -1325,7 +1325,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "const": "app.auf.feature.session.ContentBlock.CodeBlock",
+          "const": "asareon.raam.feature.session.ContentBlock.CodeBlock",
           "description": "Discriminator value for kotlinx.serialization sealed interface."
         },
         "language": {

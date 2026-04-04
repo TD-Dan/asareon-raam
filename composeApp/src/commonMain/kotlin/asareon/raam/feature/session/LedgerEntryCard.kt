@@ -1,4 +1,4 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -25,9 +25,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

@@ -1,13 +1,13 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.agent.strategies.SovereignDefaults
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.agent.strategies.SovereignDefaults
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.feature.session.SessionState
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -70,7 +70,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
      * Registers the agent identity in the registry via CORE_REGISTER_IDENTITY.
      * Must be called after harness.build() and before INITIATE_TURN.
      */
-    private fun registerAgentIdentity(harness: app.auf.test.TestHarness) {
+    private fun registerAgentIdentity(harness: asareon.raam.test.TestHarness) {
         harness.store.dispatch("agent", Action(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY,
             buildJsonObject {
@@ -80,7 +80,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
         ))
     }
 
-    private fun registerSessionIdentity(harness: app.auf.test.TestHarness) {
+    private fun registerSessionIdentity(harness: asareon.raam.test.TestHarness) {
         harness.store.dispatch("session", Action(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY,
             buildJsonObject {

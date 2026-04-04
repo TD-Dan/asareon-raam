@@ -1,11 +1,11 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.util.BasePath
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.util.BasePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json

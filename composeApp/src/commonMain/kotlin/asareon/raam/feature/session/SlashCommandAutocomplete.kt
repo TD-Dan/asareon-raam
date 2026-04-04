@@ -1,4 +1,4 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.auf.core.generated.ActionRegistry
+import asareon.raam.core.generated.ActionRegistry
 
 /**
  * Renders the slash-command autocomplete panel above the message input.

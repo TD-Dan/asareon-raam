@@ -1,13 +1,13 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.core.Action
-import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
-import app.auf.util.LogLevel
+import asareon.raam.core.Action
+import asareon.raam.core.Identity
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
+import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.boolean
@@ -143,7 +143,7 @@ class KnowledgeGraphFeatureT2ContractTest {
             .withFeature(kgFeature)
             .withFeature(filesystemFeature)
             .withInitialState(featureHandle, kgState)
-            .withInitialState("core", app.auf.feature.core.CoreState(lifecycle = app.auf.feature.core.AppLifecycle.RUNNING))
+            .withInitialState("core", asareon.raam.feature.core.CoreState(lifecycle = asareon.raam.feature.core.AppLifecycle.RUNNING))
 
         extraIdentities.forEach { builder.withIdentity(it) }
 

@@ -1,16 +1,16 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.feature.session.SessionState
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -60,7 +60,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
         agents: Map<IdentityUUID, AgentInstance> = mapOf(agentUUID to agent),
         agentStatuses: Map<IdentityUUID, AgentStatusInfo> = emptyMap(),
         agentAvatarCardIds: Map<IdentityUUID, Map<IdentityUUID, String>> = emptyMap(),
-        sessions: Map<String, app.auf.feature.session.Session> = mapOf(
+        sessions: Map<String, asareon.raam.feature.session.Session> = mapOf(
             sessionUUID1 to testSession1,
             sessionUUID2 to testSession2
         )
@@ -97,7 +97,7 @@ class AgentRuntimeFeatureT3LifecycleTest {
      * resolveSessionHandle (used by avatar cleanup in DELETE) can resolve
      * session UUIDs to handles.
      */
-    private fun registerSessionIdentity(harness: TestHarness, session: app.auf.feature.session.Session) {
+    private fun registerSessionIdentity(harness: TestHarness, session: asareon.raam.feature.session.Session) {
         harness.store.dispatch("session", Action(
             ActionRegistry.Names.CORE_REGISTER_IDENTITY,
             buildJsonObject {

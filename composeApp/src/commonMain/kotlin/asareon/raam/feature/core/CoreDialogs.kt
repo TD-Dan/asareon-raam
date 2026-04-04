@@ -1,4 +1,4 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box

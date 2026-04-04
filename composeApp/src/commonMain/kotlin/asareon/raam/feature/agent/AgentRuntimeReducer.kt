@@ -1,11 +1,11 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.core.stringIsUUID
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.core.stringIsUUID
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
 
 /**

@@ -1,6 +1,6 @@
-package app.auf.core
+package asareon.raam.core
 
-import app.auf.core.generated.ActionRegistry
+import asareon.raam.core.generated.ActionRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

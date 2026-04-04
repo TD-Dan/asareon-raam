@@ -1,12 +1,12 @@
-package app.auf.feature.gateway
+package asareon.raam.feature.gateway
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.feature.settings.SettingsFeature
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.settings.SettingsFeature
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.TestScope
@@ -82,7 +82,7 @@ class GatewayFeatureT2CoreTest {
     private fun createHarness(
         testScope: TestScope,
         initialLifecycle: AppLifecycle = AppLifecycle.RUNNING
-    ): app.auf.test.TestHarness {
+    ): asareon.raam.test.TestHarness {
         // FIX: Create a single shared platform instance
         val platform = FakePlatformDependencies("test")
 
@@ -299,7 +299,7 @@ class GatewayFeatureT2CoreTest {
             assertEquals(0, fakeProvider1.generateContentCallCount, "No provider should be called.")
             assertEquals(0, fakeProvider2.generateContentCallCount, "No provider should be called.")
             val errorLog = harness.platform.capturedLogs.find {
-                it.level == app.auf.util.LogLevel.ERROR && it.message.contains("nonexistent-provider")
+                it.level == asareon.raam.util.LogLevel.ERROR && it.message.contains("nonexistent-provider")
             }
             assertNotNull(errorLog, "An error should be logged for an unknown provider ID.")
 
@@ -412,7 +412,7 @@ class GatewayFeatureT2CoreTest {
         // ASSERT
         harness.runAndLogOnFailure {
             val warnLog = harness.platform.capturedLogs.find {
-                it.level == app.auf.util.LogLevel.WARN && it.message.contains("nonexistent-correlation-id")
+                it.level == asareon.raam.util.LogLevel.WARN && it.message.contains("nonexistent-correlation-id")
             }
             assertNotNull(warnLog, "A warning should be logged when cancelling an unknown correlationId.")
         }

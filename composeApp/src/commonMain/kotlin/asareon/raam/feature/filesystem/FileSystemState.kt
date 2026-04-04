@@ -1,6 +1,6 @@
-package app.auf.feature.filesystem
+package asareon.raam.feature.filesystem
 
-import app.auf.core.FeatureState
+import asareon.raam.core.FeatureState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 

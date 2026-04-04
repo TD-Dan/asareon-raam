@@ -1,9 +1,9 @@
-package app.auf.test
+package asareon.raam.test
 
-import app.auf.core.Action
-import app.auf.core.Feature
-import app.auf.core.FeatureState
-import app.auf.core.Identity
+import asareon.raam.core.Action
+import asareon.raam.core.Feature
+import asareon.raam.core.FeatureState
+import asareon.raam.core.Identity
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test

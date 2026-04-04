@@ -1,4 +1,4 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
@@ -20,18 +20,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-import app.auf.core.*
-import app.auf.core.Feature.ComposableProvider
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
-import app.auf.feature.agent.ui.AgentAvatarCard
-import app.auf.feature.agent.ui.AgentAvatarLogic
-import app.auf.feature.agent.ui.AgentManagerView
-import app.auf.feature.agent.ui.ManageContextView
-import app.auf.ui.components.IconRegistry
-import app.auf.ui.components.colorToHex
-import app.auf.ui.components.hslToColor
-import app.auf.util.*
+import asareon.raam.core.*
+import asareon.raam.core.Feature.ComposableProvider
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.agent.contextformatters.WorkspaceContextFormatter
+import asareon.raam.feature.agent.ui.AgentAvatarCard
+import asareon.raam.feature.agent.ui.AgentAvatarLogic
+import asareon.raam.feature.agent.ui.AgentManagerView
+import asareon.raam.feature.agent.ui.ManageContextView
+import asareon.raam.ui.components.IconRegistry
+import asareon.raam.ui.components.colorToHex
+import asareon.raam.ui.components.hslToColor
+import asareon.raam.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -131,23 +131,23 @@ class AgentRuntimeFeature(
     override fun init(store: Store) {
         // Register all built-in cognitive strategies before any agents boot.
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.MinimalStrategy)
+            asareon.raam.feature.agent.strategies.MinimalStrategy)
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.VanillaStrategy,
+            asareon.raam.feature.agent.strategies.VanillaStrategy,
             legacyId = "vanilla_v1"
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.SovereignStrategy,
+            asareon.raam.feature.agent.strategies.SovereignStrategy,
             legacyId = "sovereign_v1"
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.StateMachineStrategy
+            asareon.raam.feature.agent.strategies.StateMachineStrategy
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.PrivateSessionStrategy
+            asareon.raam.feature.agent.strategies.PrivateSessionStrategy
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.HKGStrategy
+            asareon.raam.feature.agent.strategies.HKGStrategy
         )
 
         coroutineScope.launch {

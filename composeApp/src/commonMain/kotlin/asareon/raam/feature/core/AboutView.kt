@@ -1,4 +1,4 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,8 +21,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

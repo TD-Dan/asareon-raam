@@ -1,13 +1,13 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
-import app.auf.ui.AppTheme
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
+import asareon.raam.ui.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json

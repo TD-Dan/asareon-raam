@@ -1,4 +1,4 @@
-package app.auf.feature.agent.ui
+package asareon.raam.feature.agent.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,17 +26,17 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.AgentRuntimeState
-import app.auf.feature.agent.AgentStatusInfo
-import app.auf.feature.agent.CollapseState
-import app.auf.feature.agent.ContextAssemblyResult
-import app.auf.feature.agent.ContextCollapseLogic
-import app.auf.feature.agent.ContextDelimiters
-import app.auf.ui.components.hslToColor
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.agent.AgentRuntimeState
+import asareon.raam.feature.agent.AgentStatusInfo
+import asareon.raam.feature.agent.CollapseState
+import asareon.raam.feature.agent.ContextAssemblyResult
+import asareon.raam.feature.agent.ContextCollapseLogic
+import asareon.raam.feature.agent.ContextDelimiters
+import asareon.raam.ui.components.hslToColor
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.roundToInt

@@ -1,9 +1,9 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -358,7 +358,7 @@ class CoreFeatureT2PermissionManagerViewTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withFeature(app.auf.feature.filesystem.FileSystemFeature(platform))
+            .withFeature(asareon.raam.feature.filesystem.FileSystemFeature(platform))
             .build(platform = platform)
 
         harness.store.updateIdentityRegistry { it + mapOf(
@@ -402,7 +402,7 @@ class CoreFeatureT2PermissionManagerViewTest {
 
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withFeature(app.auf.feature.filesystem.FileSystemFeature(platform))
+            .withFeature(asareon.raam.feature.filesystem.FileSystemFeature(platform))
             .withInitialState("core", CoreState(
                 lifecycle = AppLifecycle.RUNNING,
                 activeUserId = "core.alice"
@@ -552,7 +552,7 @@ class CoreFeatureT2PermissionManagerViewTest {
         val platform = FakePlatformDependencies("test")
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
-            .withFeature(app.auf.feature.filesystem.FileSystemFeature(platform))
+            .withFeature(asareon.raam.feature.filesystem.FileSystemFeature(platform))
             .build(platform = platform)
 
         // Toggle a permission on the core feature itself

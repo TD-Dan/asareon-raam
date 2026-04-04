@@ -1,12 +1,12 @@
-package app.auf.feature.commandbot
+package asareon.raam.feature.commandbot
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
-import app.auf.util.LogLevel
+import asareon.raam.core.Action
+import asareon.raam.core.AppState
+import asareon.raam.core.Identity
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakeStore
+import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive

@@ -1,6 +1,6 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject

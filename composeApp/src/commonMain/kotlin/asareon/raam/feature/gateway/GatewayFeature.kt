@@ -1,9 +1,9 @@
-package app.auf.feature.gateway
+package asareon.raam.feature.gateway
 
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch

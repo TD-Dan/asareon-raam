@@ -1,10 +1,10 @@
-package app.auf.fakes
+package asareon.raam.fakes
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.Store
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.AppState
+import asareon.raam.core.Feature
+import asareon.raam.core.Store
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 

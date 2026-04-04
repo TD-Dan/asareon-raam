@@ -1,4 +1,4 @@
-package app.auf.util
+package asareon.raam.util
 
 /**
 Converts Any type toString and abbreviates to given max length or returns original if already short enough.

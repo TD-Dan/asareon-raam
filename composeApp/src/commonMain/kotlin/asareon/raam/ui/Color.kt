@@ -1,4 +1,4 @@
-package app.auf.ui
+package asareon.raam.ui
 
 import androidx.compose.ui.graphics.Color
 

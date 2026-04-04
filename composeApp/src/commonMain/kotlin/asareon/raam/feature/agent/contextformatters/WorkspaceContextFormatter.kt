@@ -1,9 +1,9 @@
-package app.auf.feature.agent.contextformatters
+package asareon.raam.feature.agent.contextformatters
 
-import app.auf.feature.agent.CollapseState
-import app.auf.feature.agent.PromptSection
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.feature.agent.CollapseState
+import asareon.raam.feature.agent.PromptSection
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -45,7 +45,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Root workspace directory is EXPANDED (agent sees top-level contents).
  * Everything else defaults to COLLAPSED.
  *
- * Lives in `app.auf.feature.agent` (pipeline package). Consumed by strategies that
+ * Lives in `asareon.raam.feature.agent` (pipeline package). Consumed by strategies that
  * need workspace awareness. Each strategy duplicates its own call sites per §2.3.
  */
 object WorkspaceContextFormatter {
@@ -190,10 +190,10 @@ object WorkspaceContextFormatter {
     }
 
     /**
-     * Build the WORKSPACE_FILES section as a [app.auf.feature.agent.PromptSection.Group] whose
+     * Build the WORKSPACE_FILES section as a [asareon.raam.feature.agent.PromptSection.Group] whose
      * header contains the navigational index tree and explanatory text, and whose
      * internal structure mirrors the actual directory tree. Directories become nested
-     * [app.auf.feature.agent.PromptSection.Group]s; files become [app.auf.feature.agent.PromptSection.Section]s.
+     * [asareon.raam.feature.agent.PromptSection.Group]s; files become [asareon.raam.feature.agent.PromptSection.Section]s.
      *
      * This is the single consolidated partition for the agent's workspace — the index
      * tree and file contents live together. No separate WORKSPACE_INDEX partition.

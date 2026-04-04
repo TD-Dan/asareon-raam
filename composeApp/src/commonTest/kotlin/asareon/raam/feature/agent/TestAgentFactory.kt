@@ -1,13 +1,13 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Identity
-import app.auf.core.IdentityHandle
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.core.Action
-import app.auf.feature.session.LedgerEntry
-import app.auf.feature.session.Session
-import app.auf.test.TestHarness
+import asareon.raam.core.Identity
+import asareon.raam.core.IdentityHandle
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.core.Action
+import asareon.raam.feature.session.LedgerEntry
+import asareon.raam.feature.session.Session
+import asareon.raam.test.TestHarness
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -37,11 +37,11 @@ private fun resolveStrategyHandle(raw: String): IdentityHandle = when (raw) {
 private fun ensureTestStrategiesRegistered() {
     if (CognitiveStrategyRegistry.getAll().isEmpty()) {
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.MinimalStrategy)
+            asareon.raam.feature.agent.strategies.MinimalStrategy)
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
+            asareon.raam.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
+            asareon.raam.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
     }
 }
 

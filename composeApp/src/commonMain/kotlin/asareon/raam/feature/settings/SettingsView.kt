@@ -1,4 +1,4 @@
-package app.auf.feature.settings
+package asareon.raam.feature.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,8 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive

@@ -1,4 +1,4 @@
-package app.auf.feature.agent.strategies
+package asareon.raam.feature.agent.strategies
 
 /**
  * Immutable "Firmware" artifacts for the Sovereign Cognitive Strategy.

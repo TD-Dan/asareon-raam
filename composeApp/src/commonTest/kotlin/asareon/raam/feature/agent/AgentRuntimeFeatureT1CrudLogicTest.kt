@@ -1,9 +1,9 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
@@ -19,13 +19,13 @@ class AgentRuntimeFeatureT1CrudLogicTest {
     fun setUp() {
         CognitiveStrategyRegistry.clearForTesting()
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.MinimalStrategy)
+            asareon.raam.feature.agent.strategies.MinimalStrategy)
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.VanillaStrategy,
+            asareon.raam.feature.agent.strategies.VanillaStrategy,
             legacyId = "vanilla_v1"
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.SovereignStrategy,
+            asareon.raam.feature.agent.strategies.SovereignStrategy,
             legacyId = "sovereign_v1"
         )
     }

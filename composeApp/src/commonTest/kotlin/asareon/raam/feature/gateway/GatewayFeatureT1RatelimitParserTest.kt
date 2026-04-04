@@ -1,4 +1,4 @@
-package app.auf.feature.gateway
+package asareon.raam.feature.gateway
 
 import kotlin.test.*
 

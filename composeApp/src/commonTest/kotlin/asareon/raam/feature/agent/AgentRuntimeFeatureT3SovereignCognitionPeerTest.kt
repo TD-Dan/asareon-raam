@@ -1,23 +1,23 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.gateway.GatewayFeature
-import app.auf.feature.gateway.GatewayState
-import app.auf.feature.gateway.UniversalGatewayProvider
-import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
-import app.auf.feature.knowledgegraph.KnowledgeGraphState
-import app.auf.feature.session.Session
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.feature.gateway.GatewayFeature
+import asareon.raam.feature.gateway.GatewayState
+import asareon.raam.feature.gateway.UniversalGatewayProvider
+import asareon.raam.feature.knowledgegraph.KnowledgeGraphFeature
+import asareon.raam.feature.knowledgegraph.KnowledgeGraphState
+import asareon.raam.feature.session.Session
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.feature.session.SessionState
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,7 +37,7 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
         platformDependencies: FakePlatformDependencies,
         coroutineScope: CoroutineScope
     ) : GatewayFeature(platformDependencies, coroutineScope, emptyList<UniversalGatewayProvider>()) {
-        override fun handleSideEffects(action: Action, store: Store, previousState: app.auf.core.FeatureState?, newState: app.auf.core.FeatureState?) {
+        override fun handleSideEffects(action: Action, store: Store, previousState: asareon.raam.core.FeatureState?, newState: asareon.raam.core.FeatureState?) {
             if (action.name == ActionRegistry.Names.GATEWAY_GENERATE_CONTENT) {
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.content ?: return
                 val responsePayload = buildJsonObject {

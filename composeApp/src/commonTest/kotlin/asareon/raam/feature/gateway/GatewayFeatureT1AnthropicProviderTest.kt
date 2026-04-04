@@ -1,8 +1,8 @@
-package app.auf.feature.gateway
+package asareon.raam.feature.gateway
 
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.gateway.anthropic.AnthropicProvider
-import app.auf.util.LogLevel
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.gateway.anthropic.AnthropicProvider
+import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray

@@ -1,6 +1,6 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.IdentityHandle
+import asareon.raam.core.IdentityHandle
 
 /**
  * The Lookup Table for Cognitive Architectures.

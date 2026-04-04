@@ -1,6 +1,6 @@
-package app.auf.feature.gateway
+package asareon.raam.feature.gateway
 
-import app.auf.core.FeatureState
+import asareon.raam.core.FeatureState
 import kotlinx.serialization.Serializable
 
 /**

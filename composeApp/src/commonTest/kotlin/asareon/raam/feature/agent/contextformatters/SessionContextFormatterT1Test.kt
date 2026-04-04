@@ -1,10 +1,10 @@
-package app.auf.feature.agent.contextformatters
+package asareon.raam.feature.agent.contextformatters
 
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.agent.GatewayMessage
-import app.auf.feature.agent.PromptSection
-import app.auf.feature.agent.SessionInfo
-import app.auf.feature.agent.SessionParticipant
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.agent.GatewayMessage
+import asareon.raam.feature.agent.PromptSection
+import asareon.raam.feature.agent.SessionInfo
+import asareon.raam.feature.agent.SessionParticipant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

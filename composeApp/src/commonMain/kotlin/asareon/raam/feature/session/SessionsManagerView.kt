@@ -1,4 +1,4 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
@@ -20,9 +20,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.add

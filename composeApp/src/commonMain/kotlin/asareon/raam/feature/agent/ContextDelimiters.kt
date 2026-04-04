@@ -1,11 +1,11 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
 import kotlin.math.pow
 
 /**
  * Shared delimiter conventions for agent context partitions.
  *
- * Pipeline-level utility in `app.auf.feature.agent`. Used by the pipeline,
+ * Pipeline-level utility in `asareon.raam.feature.agent`. Used by the pipeline,
  * formatters, and strategies to produce structurally consistent context.
  *
  * ## Delimiter Hierarchy

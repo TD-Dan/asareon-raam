@@ -1,12 +1,12 @@
-package app.auf.core
+package asareon.raam.core
 
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreFeature
-import app.auf.feature.core.CoreState
-import app.auf.test.testDescriptorsFor
-import app.auf.util.LogLevel
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreFeature
+import asareon.raam.feature.core.CoreState
+import asareon.raam.test.testDescriptorsFor
+import asareon.raam.util.LogLevel
 import kotlin.test.*
 
 /**

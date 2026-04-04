@@ -1,10 +1,10 @@
-package app.auf.feature.agent.contextformatters
+package asareon.raam.feature.agent.contextformatters
 
-import app.auf.feature.agent.ContextDelimiters
-import app.auf.feature.agent.GatewayMessage
-import app.auf.feature.agent.PromptSection
-import app.auf.feature.agent.SessionInfo
-import app.auf.util.PlatformDependencies
+import asareon.raam.feature.agent.ContextDelimiters
+import asareon.raam.feature.agent.GatewayMessage
+import asareon.raam.feature.agent.PromptSection
+import asareon.raam.feature.agent.SessionInfo
+import asareon.raam.util.PlatformDependencies
 
 /**
  * Formats multi-session conversation ledgers into a structured text partition
@@ -30,7 +30,7 @@ import app.auf.util.PlatformDependencies
  * ## Truncation Direction
  *
  * Sessions truncate from the START (oldest messages removed first).
- * This is set via [app.auf.feature.agent.ContextCollapseLogic.ContextPartition.truncateFromStart]
+ * This is set via [asareon.raam.feature.agent.ContextCollapseLogic.ContextPartition.truncateFromStart]
  * in the pipeline, not by this formatter.
  *
  * ## Design Decisions
@@ -54,7 +54,7 @@ object SessionContextFormatter {
     )
 
     /**
-     * Builds a unified `SESSIONS` [app.auf.feature.agent.PromptSection.Group] that consolidates session
+     * Builds a unified `SESSIONS` [asareon.raam.feature.agent.PromptSection.Group] that consolidates session
      * subscription metadata, multi-agent participant context, and conversation
      * messages into one coherent structure.
      *

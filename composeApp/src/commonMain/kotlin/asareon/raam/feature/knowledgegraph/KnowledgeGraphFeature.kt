@@ -1,4 +1,4 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Hub
@@ -6,11 +6,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.FileEntry
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.FileEntry
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*

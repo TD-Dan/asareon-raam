@@ -1,4 +1,4 @@
-package app.auf.core
+package asareon.raam.core
 
 import androidx.compose.runtime.Composable
 

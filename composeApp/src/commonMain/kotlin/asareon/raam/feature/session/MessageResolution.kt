@@ -1,6 +1,6 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
-import app.auf.util.PlatformDependencies
+import asareon.raam.util.PlatformDependencies
 
 /**
  * Result of attempting to resolve a ledger entry by senderId + timestamp.

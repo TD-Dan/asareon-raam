@@ -1,10 +1,10 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.Identity
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.Identity
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
 
 /**
@@ -65,7 +65,7 @@ object AgentCrudLogic {
                 // Reject unknown strategy handles rather than silently accepting.
                 if (!CognitiveStrategyRegistry.isRegistered(strategyId)) {
                     platformDependencies.log(
-                        app.auf.util.LogLevel.ERROR, "AgentCrudLogic",
+                        asareon.raam.util.LogLevel.ERROR, "AgentCrudLogic",
                         "AGENT_CREATE rejected: cognitiveStrategyId '${strategyId.handle}' is not a registered strategy."
                     )
                     return state
@@ -136,7 +136,7 @@ object AgentCrudLogic {
                         val migrated = CognitiveStrategyRegistry.migrateStrategyId(raw)
                         if (!CognitiveStrategyRegistry.isRegistered(migrated)) {
                             platformDependencies.log(
-                                app.auf.util.LogLevel.ERROR, "AgentCrudLogic",
+                                asareon.raam.util.LogLevel.ERROR, "AgentCrudLogic",
                                 "AGENT_UPDATE_CONFIG rejected for agent '${agentId.uuid}': " +
                                         "cognitiveStrategyId '${migrated.handle}' is not a registered strategy."
                             )
@@ -315,7 +315,7 @@ object AgentCrudLogic {
                     val rejected = updates.keys - validKeys
                     if (rejected.isNotEmpty()) {
                         platformDependencies.log(
-                            app.auf.util.LogLevel.WARN, "AgentCrudLogic",
+                            asareon.raam.util.LogLevel.WARN, "AgentCrudLogic",
                             "UPDATE_NVRAM for agent '${agentId.uuid}': Rejected unknown keys $rejected. " +
                                     "Valid keys for strategy '${strategy.identityHandle.handle}': $validKeys"
                         )

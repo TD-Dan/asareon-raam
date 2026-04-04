@@ -1,4 +1,4 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

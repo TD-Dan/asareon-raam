@@ -1,8 +1,8 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put

@@ -1,17 +1,17 @@
-package app.auf.ui
+package asareon.raam.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.core.resolveDisplayColor
-import app.auf.feature.core.ConfirmationDialog
-import app.auf.feature.core.CoreState
-import app.auf.ui.components.colorToHsl
-import app.auf.ui.components.hslToColor
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.core.resolveDisplayColor
+import asareon.raam.feature.core.ConfirmationDialog
+import asareon.raam.feature.core.CoreState
+import asareon.raam.ui.components.colorToHsl
+import asareon.raam.ui.components.hslToColor
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

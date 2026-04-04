@@ -1,8 +1,8 @@
-package app.auf.feature.filesystem
+package asareon.raam.feature.filesystem
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

@@ -1,15 +1,15 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import app.auf.core.AppState
-import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
-import app.auf.feature.agent.ui.AgentAvatarCard
-import app.auf.feature.agent.ui.AgentAvatarLogic
-import app.auf.ui.AppTheme
+import asareon.raam.core.AppState
+import asareon.raam.core.Identity
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakeStore
+import asareon.raam.feature.agent.ui.AgentAvatarCard
+import asareon.raam.feature.agent.ui.AgentAvatarLogic
+import asareon.raam.ui.AppTheme
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.boolean

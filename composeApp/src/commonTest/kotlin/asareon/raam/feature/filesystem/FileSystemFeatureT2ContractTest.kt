@@ -1,12 +1,12 @@
-package app.auf.feature.filesystem
+package asareon.raam.feature.filesystem
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.util.BasePath
-import app.auf.util.FileEntry
-import app.auf.util.LogLevel
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.util.BasePath
+import asareon.raam.util.FileEntry
+import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean

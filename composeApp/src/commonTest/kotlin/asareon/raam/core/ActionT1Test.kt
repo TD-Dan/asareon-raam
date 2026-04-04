@@ -1,4 +1,4 @@
-package app.auf.core
+package asareon.raam.core
 
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put

@@ -1,7 +1,7 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 
 /**
  * Pipeline-level utility for enforcing the agent's context budget.

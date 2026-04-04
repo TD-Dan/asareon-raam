@@ -1,9 +1,9 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.JsonArray
@@ -35,12 +35,12 @@ class AgentRuntimeFeatureT1RuntimeReducerTest {
     fun setUp() {
         // SESSION_DELETED calls strategy.validateConfig() which requires registered strategies.
         CognitiveStrategyRegistry.clearForTesting()
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.MinimalStrategy)
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.StateMachineStrategy)
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.PrivateSessionStrategy)
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.HKGStrategy)
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.VanillaStrategy, legacyId = "vanilla_v1")
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.SovereignStrategy, legacyId = "sovereign_v1")
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.StateMachineStrategy)
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.PrivateSessionStrategy)
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.HKGStrategy)
     }
 
     @AfterTest

@@ -1,9 +1,9 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.AfterTest
@@ -34,7 +34,7 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
     @BeforeTest
     fun setUp() {
         CognitiveStrategyRegistry.clearForTesting()
-        CognitiveStrategyRegistry.register(app.auf.feature.agent.strategies.MinimalStrategy)
+        CognitiveStrategyRegistry.register(asareon.raam.feature.agent.strategies.MinimalStrategy)
     }
 
     @AfterTest

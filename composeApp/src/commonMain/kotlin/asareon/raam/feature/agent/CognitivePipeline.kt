@@ -1,17 +1,17 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.LogLevel
-import app.auf.core.Version
-import app.auf.feature.agent.contextformatters.ActionsContextFormatter
-import app.auf.feature.agent.contextformatters.HkgContextFormatter
-import app.auf.feature.agent.contextformatters.SessionContextFormatter
-import app.auf.feature.agent.contextformatters.SessionFilesContextFormatter
-import app.auf.feature.agent.contextformatters.WorkspaceContextFormatter
-import app.auf.feature.agent.ui.AgentAvatarLogic
-import app.auf.util.PlatformDependencies
-import app.auf.util.abbreviate
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.LogLevel
+import asareon.raam.core.Version
+import asareon.raam.feature.agent.contextformatters.ActionsContextFormatter
+import asareon.raam.feature.agent.contextformatters.HkgContextFormatter
+import asareon.raam.feature.agent.contextformatters.SessionContextFormatter
+import asareon.raam.feature.agent.contextformatters.SessionFilesContextFormatter
+import asareon.raam.feature.agent.contextformatters.WorkspaceContextFormatter
+import asareon.raam.feature.agent.ui.AgentAvatarLogic
+import asareon.raam.util.PlatformDependencies
+import asareon.raam.util.abbreviate
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 

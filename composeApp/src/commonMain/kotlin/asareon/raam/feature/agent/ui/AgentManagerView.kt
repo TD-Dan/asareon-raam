@@ -1,4 +1,4 @@
-package app.auf.feature.agent.ui
+package asareon.raam.feature.agent.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -24,22 +24,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.AgentInstance
-import app.auf.feature.agent.AgentResource
-import app.auf.feature.agent.AgentResourceType
-import app.auf.feature.agent.AgentRuntimeState
-import app.auf.feature.agent.CognitiveStrategy
-import app.auf.feature.agent.CognitiveStrategyRegistry
-import app.auf.feature.agent.StrategyConfigField
-import app.auf.feature.agent.StrategyConfigFieldType
-import app.auf.ui.components.CodeEditor
-import app.auf.ui.components.ColorPicker
-import app.auf.ui.components.IconRegistry
-import app.auf.ui.components.colorToHex
-import app.auf.ui.components.hexToColor
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.agent.AgentInstance
+import asareon.raam.feature.agent.AgentResource
+import asareon.raam.feature.agent.AgentResourceType
+import asareon.raam.feature.agent.AgentRuntimeState
+import asareon.raam.feature.agent.CognitiveStrategy
+import asareon.raam.feature.agent.CognitiveStrategyRegistry
+import asareon.raam.feature.agent.StrategyConfigField
+import asareon.raam.feature.agent.StrategyConfigFieldType
+import asareon.raam.ui.components.CodeEditor
+import asareon.raam.ui.components.ColorPicker
+import asareon.raam.ui.components.IconRegistry
+import asareon.raam.ui.components.colorToHex
+import asareon.raam.ui.components.hexToColor
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.put
 

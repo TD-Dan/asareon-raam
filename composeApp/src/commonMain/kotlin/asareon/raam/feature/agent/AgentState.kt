@@ -1,9 +1,9 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.FeatureState
-import app.auf.core.Identity
-import app.auf.core.IdentityHandle
-import app.auf.core.IdentityUUID
+import asareon.raam.core.FeatureState
+import asareon.raam.core.Identity
+import asareon.raam.core.IdentityHandle
+import asareon.raam.core.IdentityUUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonArray

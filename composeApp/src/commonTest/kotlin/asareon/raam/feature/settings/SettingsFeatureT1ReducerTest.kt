@@ -1,10 +1,10 @@
-package app.auf.feature.settings
+package asareon.raam.feature.settings
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.FeatureState
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.AppState
+import asareon.raam.core.FeatureState
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test

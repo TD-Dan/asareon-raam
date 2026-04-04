@@ -1,13 +1,13 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import app.auf.core.AppState
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
-import app.auf.feature.agent.ui.AgentManagerView
-import app.auf.ui.AppTheme
+import asareon.raam.core.AppState
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakeStore
+import asareon.raam.feature.agent.ui.AgentManagerView
+import asareon.raam.ui.AppTheme
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.After
@@ -54,20 +54,20 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         // which T1 tests intentionally skip (testing only the View layer).
         CognitiveStrategyRegistry.clearForTesting()
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.MinimalStrategy)
+            asareon.raam.feature.agent.strategies.MinimalStrategy)
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.VanillaStrategy,
+            asareon.raam.feature.agent.strategies.VanillaStrategy,
             legacyId = "vanilla_v1"
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.SovereignStrategy,
+            asareon.raam.feature.agent.strategies.SovereignStrategy,
             legacyId = "sovereign_v1"
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.StateMachineStrategy
+            asareon.raam.feature.agent.strategies.StateMachineStrategy
         )
         CognitiveStrategyRegistry.register(
-            app.auf.feature.agent.strategies.PrivateSessionStrategy
+            asareon.raam.feature.agent.strategies.PrivateSessionStrategy
         )
     }
 

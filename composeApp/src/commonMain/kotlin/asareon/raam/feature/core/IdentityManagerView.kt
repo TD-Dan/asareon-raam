@@ -1,4 +1,4 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -27,13 +27,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.Identity
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.core.resolveDisplayColor
-import app.auf.ui.components.ColorPicker
-import app.auf.ui.components.colorToHex
+import asareon.raam.core.Action
+import asareon.raam.core.Identity
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.core.resolveDisplayColor
+import asareon.raam.ui.components.ColorPicker
+import asareon.raam.ui.components.colorToHex
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

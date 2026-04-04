@@ -1,10 +1,10 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.test.TestEnvironment
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -33,7 +33,7 @@ class AgentRuntimeFeatureT2StartupTest {
         """.trimIndent()
 
         val environment = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
+            .withFeature(AgentRuntimeFeature(asareon.raam.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
 
         val harness = environment.build()
@@ -113,7 +113,7 @@ class AgentRuntimeFeatureT2StartupTest {
         """.trimIndent()
 
         val environment = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
+            .withFeature(AgentRuntimeFeature(asareon.raam.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
         val harness = environment.build()
 
@@ -184,7 +184,7 @@ class AgentRuntimeFeatureT2StartupTest {
         val agentConfigJson = """{"identity":{"uuid":"$agentId","localHandle":"real-agent","handle":"agent.real-agent","name":"Real Agent","parentHandle":"agent"},"modelProvider":"p","modelName":"m"}"""
 
         val environment = TestEnvironment.create()
-            .withFeature(AgentRuntimeFeature(app.auf.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
+            .withFeature(AgentRuntimeFeature(asareon.raam.fakes.FakePlatformDependencies("1.0"), kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)))
             .withInitialState("core", CoreState(lifecycle = AppLifecycle.INITIALIZING))
         val harness = environment.build()
 

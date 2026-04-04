@@ -1,4 +1,4 @@
-package app.auf.feature.gateway
+package asareon.raam.feature.gateway
 
 import io.ktor.client.plugins.*
 import io.ktor.client.statement.*

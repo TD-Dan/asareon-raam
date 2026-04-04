@@ -1,16 +1,16 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.IdentityUUID
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.agent.ui.AgentAvatarLogic
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.session.SessionFeature
-import app.auf.feature.session.SessionState
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityUUID
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.agent.ui.AgentAvatarLogic
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.feature.session.SessionState
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -67,7 +67,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
 
     private fun buildHarness(
         agents: Map<IdentityUUID, AgentInstance> = mapOf(IdentityUUID(agentId) to agent),
-        sessions: Map<String, app.auf.feature.session.Session> = mapOf(sessionUUID1 to testSession1),
+        sessions: Map<String, asareon.raam.feature.session.Session> = mapOf(sessionUUID1 to testSession1),
         agentStatuses: Map<IdentityUUID, AgentStatusInfo> = emptyMap(),
         agentAvatarCardIds: Map<IdentityUUID, Map<IdentityUUID, String>> = emptyMap()
     ) = TestEnvironment.create()
@@ -92,8 +92,8 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
      * can resolve session UUIDs → handles. Must be called after buildHarness().
      */
     private fun registerSessions(
-        harness: app.auf.test.TestHarness,
-        vararg sessions: app.auf.feature.session.Session
+        harness: asareon.raam.test.TestHarness,
+        vararg sessions: asareon.raam.feature.session.Session
     ) {
         for (session in sessions) {
             harness.registerSessionIdentity(session)
@@ -113,7 +113,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
     }
 
     /** Extracts the current AgentRuntimeState from the harness store. */
-    private fun agentState(harness: app.auf.test.TestHarness): AgentRuntimeState =
+    private fun agentState(harness: asareon.raam.test.TestHarness): AgentRuntimeState =
         harness.store.state.value.featureStates["agent"] as AgentRuntimeState
 
     /**
@@ -122,7 +122,7 @@ class AgentRuntimeFeatureT3AvatarSessionTest {
      * when the status change hasn't been applied to the store yet.
      */
     private fun agentStateWithStatus(
-        harness: app.auf.test.TestHarness,
+        harness: asareon.raam.test.TestHarness,
         agentId: IdentityUUID,
         status: AgentStatus
     ): AgentRuntimeState {

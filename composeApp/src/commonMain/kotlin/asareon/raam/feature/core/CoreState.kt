@@ -1,7 +1,7 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
-import app.auf.core.Action
-import app.auf.core.FeatureState
+import asareon.raam.core.Action
+import asareon.raam.core.FeatureState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 

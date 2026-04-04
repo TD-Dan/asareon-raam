@@ -1,20 +1,20 @@
-package app.auf.feature.agent.contextformatters
+package asareon.raam.feature.agent.contextformatters
 
-import app.auf.core.Identity
-import app.auf.core.PermissionLevel
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.PromptSection
+import asareon.raam.core.Identity
+import asareon.raam.core.PermissionLevel
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.agent.PromptSection
 
 /**
  * ## Mandate
  * Generates the "Available System Actions" context block for injection into an agent's
  * system prompt. This is fully data-driven: it reads from the build-time generated
- * [app.auf.core.generated.ActionRegistry] and filters by the agent's effective permissions, ensuring the
+ * [asareon.raam.core.generated.ActionRegistry] and filters by the agent's effective permissions, ensuring the
  * prompt always matches what the agent can actually do.
  *
  * Phase 2.B: Replaced the static `agentAllowedNames` allowlist with dynamic
- * permission-based filtering via [app.auf.core.Store.resolveEffectivePermissions].
+ * permission-based filtering via [asareon.raam.core.Store.resolveEffectivePermissions].
  *
  * The context teaches the agent:
  * 1. The `raam_` code block invocation syntax.
@@ -24,9 +24,9 @@ import app.auf.feature.agent.PromptSection
 object ActionsContextFormatter {
 
     /**
-     * Builds a [app.auf.feature.agent.PromptSection.Group] with per-feature children for the unified
+     * Builds a [asareon.raam.feature.agent.PromptSection.Group] with per-feature children for the unified
      * partition model. Each feature namespace (agent, filesystem, session, etc.)
-     * becomes an individually collapsible child [app.auf.feature.agent.PromptSection.Section].
+     * becomes an individually collapsible child [asareon.raam.feature.agent.PromptSection.Section].
      *
      * The shared preamble (syntax instructions, examples, constraints) lives in
      * the Group header. Feature groups are sorted alphabetically.

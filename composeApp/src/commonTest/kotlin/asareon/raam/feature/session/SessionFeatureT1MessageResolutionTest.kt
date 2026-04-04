@@ -1,6 +1,6 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlin.test.*
 
 /**

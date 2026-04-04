@@ -1,9 +1,9 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
-import app.auf.core.Identity
-import app.auf.core.Version
-import app.auf.core.generated.ActionRegistry.ActionDescriptor
-import app.auf.core.generated.ActionRegistry.FeatureDescriptor
+import asareon.raam.core.Identity
+import asareon.raam.core.Version
+import asareon.raam.core.generated.ActionRegistry.ActionDescriptor
+import asareon.raam.core.generated.ActionRegistry.FeatureDescriptor
 import kotlinx.serialization.json.*
 
 /**

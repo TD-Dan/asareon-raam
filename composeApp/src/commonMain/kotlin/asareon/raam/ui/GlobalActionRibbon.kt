@@ -1,4 +1,4 @@
-package app.auf.ui
+package asareon.raam.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,9 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.CoreState
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.CoreState
 import aufapp.composeapp.generated.resources.Res
 import aufapp.composeapp.generated.resources.icon
 import kotlinx.serialization.json.buildJsonObject

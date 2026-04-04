@@ -1,4 +1,4 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
@@ -34,14 +34,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.*
-import app.auf.core.resolveDisplayColor
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreState
-import app.auf.ui.components.IconRegistry
-import app.auf.ui.components.fileDropTargetModifier
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.resolveDisplayColor
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreState
+import asareon.raam.ui.components.IconRegistry
+import asareon.raam.ui.components.fileDropTargetModifier
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

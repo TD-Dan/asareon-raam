@@ -1,4 +1,4 @@
-package app.auf.ui.components
+package asareon.raam.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

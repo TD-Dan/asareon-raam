@@ -1,11 +1,11 @@
-package app.auf.feature.agent.strategies
+package asareon.raam.feature.agent.strategies
 
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
-import app.auf.feature.agent.*
-import app.auf.test.testDescriptorsFor
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakeStore
+import asareon.raam.feature.agent.*
+import asareon.raam.test.testDescriptorsFor
 import kotlinx.serialization.json.*
 import kotlin.test.*
 

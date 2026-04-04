@@ -1,14 +1,14 @@
-package app.auf.feature.filesystem
+package asareon.raam.feature.filesystem
 
-import app.auf.core.Action
-import app.auf.core.Identity
-import app.auf.core.PermissionGrant
-import app.auf.core.PermissionLevel
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.TestHarness
-import app.auf.util.BasePath
+import asareon.raam.core.Action
+import asareon.raam.core.Identity
+import asareon.raam.core.PermissionGrant
+import asareon.raam.core.PermissionLevel
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
+import asareon.raam.util.BasePath
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive

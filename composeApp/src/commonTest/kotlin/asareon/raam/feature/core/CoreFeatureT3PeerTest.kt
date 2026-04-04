@@ -1,10 +1,10 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
-import app.auf.core.Action
-import app.auf.core.Identity
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.Identity
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -37,7 +37,7 @@ class CoreFeatureT3PeerTest {
      * Call this AFTER building the TestEnvironment harness.
      */
     private fun seedIdentities(
-        store: app.auf.core.Store,
+        store: asareon.raam.core.Store,
         vararg featureHandles: String,
         extraRegistry: Map<String, Identity> = emptyMap()
     ) {

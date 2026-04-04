@@ -1,11 +1,11 @@
-package app.auf.core
+package asareon.raam.core
 
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.test.testDescriptorWithPermissions
-import app.auf.test.testDescriptorsFor
-import app.auf.util.LogLevel
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.test.testDescriptorWithPermissions
+import asareon.raam.test.testDescriptorsFor
+import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.*

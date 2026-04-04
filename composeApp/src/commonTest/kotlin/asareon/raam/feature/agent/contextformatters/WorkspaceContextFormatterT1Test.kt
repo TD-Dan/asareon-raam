@@ -1,8 +1,8 @@
-package app.auf.feature.agent.contextformatters
+package asareon.raam.feature.agent.contextformatters
 
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.agent.CollapseState
-import app.auf.feature.agent.PromptSection
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.agent.CollapseState
+import asareon.raam.feature.agent.PromptSection
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

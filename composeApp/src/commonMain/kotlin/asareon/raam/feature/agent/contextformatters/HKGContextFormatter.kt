@@ -1,9 +1,9 @@
-package app.auf.feature.agent.contextformatters
+package asareon.raam.feature.agent.contextformatters
 
-import app.auf.feature.agent.CollapseState
-import app.auf.feature.agent.PromptSection
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.feature.agent.CollapseState
+import asareon.raam.feature.agent.PromptSection
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
 import kotlin.collections.iterator
 
@@ -18,7 +18,7 @@ import kotlin.collections.iterator
  * **FILES partition** — complete JSON files for all EXPANDED holons. Participates
  * in the context budget algorithm (Phase D). Default: all files closed.
  *
- * Lives in `app.auf.feature.agent` (pipeline package), NOT in `strategies`.
+ * Lives in `asareon.raam.feature.agent` (pipeline package), NOT in `strategies`.
  * Consumed by strategies that need HKG awareness (HKGStrategy, SovereignStrategy).
  * Each strategy duplicates its own call sites per §2.3 (absolute decoupling).
  */
@@ -224,9 +224,9 @@ object HkgContextFormatter {
     }
 
     /**
-     * Build the FILES section as a [app.auf.feature.agent.PromptSection.Group] whose internal structure
-     * mirrors the actual holon tree. Branch holons become nested [app.auf.feature.agent.PromptSection.Group]s;
-     * leaf holons become [app.auf.feature.agent.PromptSection.Section]s.
+     * Build the FILES section as a [asareon.raam.feature.agent.PromptSection.Group] whose internal structure
+     * mirrors the actual holon tree. Branch holons become nested [asareon.raam.feature.agent.PromptSection.Group]s;
+     * leaf holons become [asareon.raam.feature.agent.PromptSection.Section]s.
      *
      * The child key convention is `hkg:<holonId>`, matching the existing
      * `contextCollapseOverrides` key space used by CONTEXT_COLLAPSE/UNCOLLAPSE.
@@ -257,10 +257,10 @@ object HkgContextFormatter {
      * @param platformDependencies For logging.
      */
     /**
-     * Recursively builds a [app.auf.feature.agent.PromptSection] for a single holon.
+     * Recursively builds a [asareon.raam.feature.agent.PromptSection] for a single holon.
      *
-     * - **Leaf holon** (no children in the loaded set) → [app.auf.feature.agent.PromptSection.Section]
-     * - **Branch holon** (has children in the loaded set) → [app.auf.feature.agent.PromptSection.Group]
+     * - **Leaf holon** (no children in the loaded set) → [asareon.raam.feature.agent.PromptSection.Section]
+     * - **Branch holon** (has children in the loaded set) → [asareon.raam.feature.agent.PromptSection.Group]
      *   whose `header` is the holon's own file content and whose `children` are
      *   the recursive results of its sub-holons.
      *

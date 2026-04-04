@@ -1,6 +1,6 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.util.PlatformDependencies
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }

@@ -1,6 +1,6 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.core.FeatureState
+import asareon.raam.core.FeatureState
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient

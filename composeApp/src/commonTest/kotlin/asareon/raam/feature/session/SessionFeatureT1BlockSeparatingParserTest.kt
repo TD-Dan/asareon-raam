@@ -1,6 +1,6 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
-import app.auf.core.Version
+import asareon.raam.core.Version
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

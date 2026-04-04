@@ -1,12 +1,12 @@
-package app.auf.ui
+package asareon.raam.ui
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import app.auf.core.AppState
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
-import app.auf.ui.components.CodeEditor
+import asareon.raam.core.AppState
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakeStore
+import asareon.raam.ui.components.CodeEditor
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test

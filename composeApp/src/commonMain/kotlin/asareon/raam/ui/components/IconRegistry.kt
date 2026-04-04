@@ -1,4 +1,4 @@
-package app.auf.ui.components
+package asareon.raam.ui.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*

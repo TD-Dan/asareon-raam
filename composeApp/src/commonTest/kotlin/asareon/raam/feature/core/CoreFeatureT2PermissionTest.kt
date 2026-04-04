@@ -1,14 +1,14 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
-import app.auf.core.Action
-import app.auf.core.DefaultPermissions
-import app.auf.core.Identity
-import app.auf.core.PermissionGrant
-import app.auf.core.PermissionLevel
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
-import app.auf.util.LogLevel
+import asareon.raam.core.Action
+import asareon.raam.core.DefaultPermissions
+import asareon.raam.core.Identity
+import asareon.raam.core.PermissionGrant
+import asareon.raam.core.PermissionLevel
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
+import asareon.raam.util.LogLevel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -26,7 +26,7 @@ import kotlin.test.*
 class CoreFeatureT2PermissionTest {
 
     private fun seedIdentities(
-        store: app.auf.core.Store,
+        store: asareon.raam.core.Store,
         vararg featureHandles: String,
         extraRegistry: Map<String, Identity> = emptyMap()
     ) {

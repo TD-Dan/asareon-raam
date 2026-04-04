@@ -1,13 +1,13 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Identity
-import app.auf.core.PermissionGrant
-import app.auf.core.PermissionLevel
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.fakes.FakeStore
+import asareon.raam.core.Action
+import asareon.raam.core.AppState
+import asareon.raam.core.Identity
+import asareon.raam.core.PermissionGrant
+import asareon.raam.core.PermissionLevel
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakeStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.buildJsonObject

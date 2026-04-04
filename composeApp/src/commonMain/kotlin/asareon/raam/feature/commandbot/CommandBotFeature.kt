@@ -1,10 +1,10 @@
-package app.auf.feature.commandbot
+package asareon.raam.feature.commandbot
 
 import androidx.compose.runtime.Composable
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -51,7 +51,7 @@ class CommandBotFeature(
         handle = "commandbot",
         localHandle = "commandbot",
         name = "CommandBot",
-        displayColor = app.auf.ui.components.colorToHex(app.auf.ui.tertiaryDark),
+        displayColor = asareon.raam.ui.components.colorToHex(asareon.raam.ui.tertiaryDark),
         displayIcon = "terminal"
     )
 

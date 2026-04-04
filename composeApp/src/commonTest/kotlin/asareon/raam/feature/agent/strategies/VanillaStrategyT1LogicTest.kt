@@ -1,7 +1,7 @@
-package app.auf.feature.agent.strategies
+package asareon.raam.feature.agent.strategies
 
-import app.auf.core.IdentityUUID
-import app.auf.feature.agent.*
+import asareon.raam.core.IdentityUUID
+import asareon.raam.feature.agent.*
 import kotlinx.serialization.json.JsonNull
 import kotlin.test.Test
 import kotlin.test.assertEquals

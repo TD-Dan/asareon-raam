@@ -1,4 +1,4 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
 /**
  * A robust, state-machine-based parser for the AUF's tagged text format.

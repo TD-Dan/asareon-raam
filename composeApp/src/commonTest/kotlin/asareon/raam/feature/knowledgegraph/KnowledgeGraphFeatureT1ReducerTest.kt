@@ -1,7 +1,7 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -23,7 +23,7 @@ class KnowledgeGraphFeatureT1ReducerTest {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val feature = KnowledgeGraphFeature(
-        platformDependencies = app.auf.fakes.FakePlatformDependencies("test"),
+        platformDependencies = asareon.raam.fakes.FakePlatformDependencies("test"),
         coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
     )
 

@@ -1,18 +1,18 @@
-package app.auf.core
+package asareon.raam.core
 
-import app.auf.feature.agent.AgentRuntimeFeature
-import app.auf.feature.commandbot.CommandBotFeature
-import app.auf.feature.core.CoreFeature
-import app.auf.feature.filesystem.FileSystemFeature
-import app.auf.feature.gateway.GatewayFeature
-import app.auf.feature.gateway.gemini.GeminiProvider
-import app.auf.feature.gateway.openai.OpenAIProvider
-import app.auf.feature.gateway.anthropic.AnthropicProvider
-import app.auf.feature.gateway.inception.InceptionProvider
-import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
-import app.auf.feature.settings.SettingsFeature
-import app.auf.feature.session.SessionFeature
-import app.auf.util.PlatformDependencies
+import asareon.raam.feature.agent.AgentRuntimeFeature
+import asareon.raam.feature.commandbot.CommandBotFeature
+import asareon.raam.feature.core.CoreFeature
+import asareon.raam.feature.filesystem.FileSystemFeature
+import asareon.raam.feature.gateway.GatewayFeature
+import asareon.raam.feature.gateway.gemini.GeminiProvider
+import asareon.raam.feature.gateway.openai.OpenAIProvider
+import asareon.raam.feature.gateway.anthropic.AnthropicProvider
+import asareon.raam.feature.gateway.inception.InceptionProvider
+import asareon.raam.feature.knowledgegraph.KnowledgeGraphFeature
+import asareon.raam.feature.settings.SettingsFeature
+import asareon.raam.feature.session.SessionFeature
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +34,7 @@ class AppContainer(
             store.handleFeatureException(throwable as Exception, "async-operation", "unknown-feature")
         } else {
             platformDependencies.log(
-                app.auf.util.LogLevel.FATAL,
+                asareon.raam.util.LogLevel.FATAL,
                 "AppContainer",
                 "FATAL: Uncaught exception before Store was initialized: ${throwable.stackTraceToString()}"
             )

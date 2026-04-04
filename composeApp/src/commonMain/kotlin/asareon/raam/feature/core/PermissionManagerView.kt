@@ -1,4 +1,4 @@
-package app.auf.feature.core
+package asareon.raam.feature.core
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -14,11 +14,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.core.resolveDisplayColor
-import app.auf.ui.LocalExtendedColors
-import app.auf.ui.components.IconRegistry
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.core.resolveDisplayColor
+import asareon.raam.ui.LocalExtendedColors
+import asareon.raam.ui.components.IconRegistry
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

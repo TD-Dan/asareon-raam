@@ -1,4 +1,4 @@
-package app.auf.feature.session
+package asareon.raam.feature.session
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -16,13 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.ui.components.CodeEditor
-import app.auf.ui.components.fileDragSource
-import app.auf.util.FileEntry
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.CodeEditor
+import asareon.raam.ui.components.fileDragSource
+import asareon.raam.util.FileEntry
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

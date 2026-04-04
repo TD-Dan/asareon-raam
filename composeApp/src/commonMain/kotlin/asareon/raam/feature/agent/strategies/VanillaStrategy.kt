@@ -1,7 +1,7 @@
-package app.auf.feature.agent.strategies
+package asareon.raam.feature.agent.strategies
 
-import app.auf.core.IdentityHandle
-import app.auf.feature.agent.*
+import asareon.raam.core.IdentityHandle
+import asareon.raam.feature.agent.*
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 

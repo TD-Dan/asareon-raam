@@ -1,11 +1,11 @@
-package app.auf.feature.agent.strategies
+package asareon.raam.feature.agent.strategies
 
-import app.auf.core.Action
-import app.auf.core.IdentityHandle
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.agent.*
-import app.auf.util.LogLevel
+import asareon.raam.core.Action
+import asareon.raam.core.IdentityHandle
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.agent.*
+import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject

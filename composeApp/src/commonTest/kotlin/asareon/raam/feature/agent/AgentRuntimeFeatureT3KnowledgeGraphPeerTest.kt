@@ -1,10 +1,10 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.Action
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.knowledgegraph.KnowledgeGraphFeature
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.test.TestEnvironment
+import asareon.raam.core.Action
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.knowledgegraph.KnowledgeGraphFeature
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.test.TestEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest

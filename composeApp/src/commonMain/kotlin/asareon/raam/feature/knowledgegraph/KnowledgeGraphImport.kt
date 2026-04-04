@@ -1,10 +1,10 @@
-package app.auf.feature.knowledgegraph
+package asareon.raam.feature.knowledgegraph
 
-import app.auf.core.Action
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.Action
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject

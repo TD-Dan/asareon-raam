@@ -1,6 +1,6 @@
-package app.auf.feature.filesystem
+package asareon.raam.feature.filesystem
 
-import app.auf.fakes.FakePlatformDependencies
+import asareon.raam.fakes.FakePlatformDependencies
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals

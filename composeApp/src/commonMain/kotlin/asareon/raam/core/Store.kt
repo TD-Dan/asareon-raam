@@ -1,10 +1,10 @@
-package app.auf.core
+package asareon.raam.core
 
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.AppLifecycle // Allowed: system and core are interconnected
-import app.auf.feature.core.CoreState // Allowed: system and core are interconnected
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.AppLifecycle // Allowed: system and core are interconnected
+import asareon.raam.feature.core.CoreState // Allowed: system and core are interconnected
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.JsonPrimitive

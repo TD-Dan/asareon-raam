@@ -1,4 +1,4 @@
-package app.auf.feature.commandbot
+package asareon.raam.feature.commandbot
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -11,9 +11,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import app.auf.core.Action
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
+import asareon.raam.core.Action
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

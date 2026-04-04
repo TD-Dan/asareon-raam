@@ -1,18 +1,18 @@
-package app.auf.test
+package asareon.raam.test
 
-import app.auf.core.Action
-import app.auf.core.AppState
-import app.auf.core.Feature
-import app.auf.core.FeatureState
-import app.auf.core.Identity
-import app.auf.core.PermissionGrant
-import app.auf.core.PermissionLevel
-import app.auf.core.Store
-import app.auf.core.generated.ActionRegistry
-import app.auf.fakes.FakePlatformDependencies
-import app.auf.feature.core.AppLifecycle
-import app.auf.feature.core.CoreFeature
-import app.auf.feature.core.CoreState
+import asareon.raam.core.Action
+import asareon.raam.core.AppState
+import asareon.raam.core.Feature
+import asareon.raam.core.FeatureState
+import asareon.raam.core.Identity
+import asareon.raam.core.PermissionGrant
+import asareon.raam.core.PermissionLevel
+import asareon.raam.core.Store
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.fakes.FakePlatformDependencies
+import asareon.raam.feature.core.AppLifecycle
+import asareon.raam.feature.core.CoreFeature
+import asareon.raam.feature.core.CoreState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 

@@ -1,7 +1,7 @@
-package app.auf.feature.agent
+package asareon.raam.feature.agent
 
-import app.auf.core.IdentityUUID
-import app.auf.feature.agent.contextformatters.SessionContextFormatter
+import asareon.raam.core.IdentityUUID
+import asareon.raam.feature.agent.contextformatters.SessionContextFormatter
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 

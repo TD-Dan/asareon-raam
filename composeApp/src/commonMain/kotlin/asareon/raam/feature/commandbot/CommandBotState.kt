@@ -1,6 +1,6 @@
-package app.auf.feature.commandbot
+package asareon.raam.feature.commandbot
 
-import app.auf.core.FeatureState
+import asareon.raam.core.FeatureState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 

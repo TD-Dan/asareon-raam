@@ -1,4 +1,4 @@
-package app.auf.util
+package asareon.raam.util
 
 import kotlinx.serialization.Serializable
 
