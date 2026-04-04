@@ -335,6 +335,13 @@
               "null"
             ],
             "description": "The ID of the message to toggle. If omitted or null, toggles all messages in the session."
+          },
+          "targetCollapsed": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "If provided, sets the collapsed state directly instead of toggling. true = collapse, false = expand. When omitted, the action toggles: single messages flip their state; bulk (no messageId) collapses all if any is expanded, otherwise expands all."
           }
         },
         "required": [

@@ -988,6 +988,34 @@ private fun MessageInput(store: Store, activeSession: Session, features: List<Fe
                             },
                             leadingIcon = { Icon(Icons.Default.ClearAll, null) }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Collapse All") },
+                            onClick = {
+                                store.dispatch("session", Action(
+                                    ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED,
+                                    buildJsonObject {
+                                        put("sessionId", activeSession.identity.localHandle)
+                                        put("targetCollapsed", true)
+                                    }
+                                ))
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.UnfoldLess, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Uncollapse All") },
+                            onClick = {
+                                store.dispatch("session", Action(
+                                    ActionRegistry.Names.SESSION_TOGGLE_MESSAGE_COLLAPSED,
+                                    buildJsonObject {
+                                        put("sessionId", activeSession.identity.localHandle)
+                                        put("targetCollapsed", false)
+                                    }
+                                ))
+                                menuExpanded = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.UnfoldMore, null) }
+                        )
 
                         // --- Feature-contributed menu items ---
                         val activeSessionUUID = activeSession.identity.uuid

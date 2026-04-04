@@ -34,7 +34,7 @@ class SessionFeature(
     @Serializable private data class MessageTargetPayload(val session: String, val messageId: String)
     @Serializable private data class SetEditingSessionPayload(val sessionId: String?)
     @Serializable private data class SetEditingMessagePayload(val messageId: String?)
-    @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String? = null)
+    @Serializable private data class ToggleMessageUiPayload(val sessionId: String, val messageId: String? = null, val targetCollapsed: Boolean? = null)
     @Serializable internal data class InternalSessionLoadedPayload(val sessions: Map<String, Session>)
     @Serializable private data class RequestLedgerPayload(val sessionId: String, val correlationId: String)
     @Serializable private data class GatewayMessage(val role: String, val content: String, val senderId: String, val senderName: String)
@@ -1758,22 +1758,26 @@ class SessionFeature(
                 val session = currentFeatureState.sessions[decoded.sessionId] ?: return currentFeatureState
                 val messageId = decoded.messageId
 
+                /** Resolves the effective collapsed state for an entry, checking
+                 *  explicit messageUiState first, then default_collapsed metadata. */
+                fun effectiveCollapsed(entryId: String): Boolean {
+                    val explicit = session.messageUiState[entryId]
+                    if (explicit != null) return explicit.isCollapsed
+                    val entry = session.ledger.find { it.id == entryId } ?: return false
+                    return entry.metadata?.get("default_collapsed")?.jsonPrimitive?.booleanOrNull ?: false
+                }
+
                 val updatedSession = if (messageId != null) {
-                    // Single message toggle (existing behaviour)
-                    val current = session.messageUiState[messageId] ?: MessageUiState()
-                    session.copy(messageUiState = session.messageUiState + (messageId to current.copy(isCollapsed = !current.isCollapsed)))
+                    // Single message: respect metadata default so first click works correctly
+                    val current = session.messageUiState[messageId] ?: MessageUiState(isCollapsed = effectiveCollapsed(messageId))
+                    val target = decoded.targetCollapsed ?: !current.isCollapsed
+                    session.copy(messageUiState = session.messageUiState + (messageId to current.copy(isCollapsed = target)))
                 } else {
-                    // Bulk toggle: if any message is expanded → collapse all, else expand all.
-                    // Respects default_collapsed metadata when no explicit messageUiState exists.
-                    val anyExpanded = session.ledger.any { entry ->
-                        val explicit = session.messageUiState[entry.id]
-                        val effectiveCollapsed = explicit?.isCollapsed
-                            ?: (entry.metadata?.get("default_collapsed")?.jsonPrimitive?.booleanOrNull ?: false)
-                        !effectiveCollapsed
-                    }
+                    // Bulk: use explicit target, or toggle (any expanded → collapse all, else expand all)
+                    val target = decoded.targetCollapsed ?: session.ledger.any { !effectiveCollapsed(it.id) }
                     val bulkUiState = session.ledger.associate { entry ->
                         val existing = session.messageUiState[entry.id] ?: MessageUiState()
-                        entry.id to existing.copy(isCollapsed = anyExpanded)
+                        entry.id to existing.copy(isCollapsed = target)
                     }
                     session.copy(messageUiState = session.messageUiState + bulkUiState)
                 }
