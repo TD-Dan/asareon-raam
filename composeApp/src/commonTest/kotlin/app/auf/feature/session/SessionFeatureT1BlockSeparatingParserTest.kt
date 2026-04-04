@@ -126,4 +126,96 @@ class SessionFeatureT1BlockSeparatingParserTest {
         val textBlocks = result.filterIsInstance<ContentBlock.Text>()
         assertTrue(textBlocks.any { it.text.contains("and then") }, "Trailing text should appear in a text block")
     }
+
+    // ---- Noise filtering: mid-line ``` (content on both sides) must not break outer fences ----
+
+    @Test
+    fun `should ignore triple backticks embedded mid-line inside a code block`() {
+        // Simulates the exact agent failure: a raam_ tool call whose JSON "message"
+        // value contains ``` mid-line.  Must not close the outer fence.
+        val rawResponse = "```raam_session.POST\n" +
+                "{ \"session\": \"s1\", \"message\": \"hello ```world``` bye\" }\n" +
+                "```"
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size, "Mid-line ``` must not split the outer code block")
+        assertEquals("raam_session.POST", codeBlocks[0].language)
+        assertTrue(codeBlocks[0].code.contains("hello ```world``` bye"), "Full JSON payload must be preserved")
+    }
+
+    @Test
+    fun `should accept end-of-line closer glued to content`() {
+        // LLM writes the closing fence at the end of a content line (no newline before it).
+        // This is a real fence because nothing follows it on the same line.
+        val rawResponse = "```kotlin\nval x = 1\nval y = 2```\nDone."
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size, "End-of-line ``` must be accepted as a closer")
+        assertEquals("kotlin", codeBlocks[0].language)
+        assertTrue(codeBlocks[0].code.contains("val y = 2"), "Code must include content up to the closer")
+        val textBlocks = result.filterIsInstance<ContentBlock.Text>()
+        assertTrue(textBlocks.any { it.text.contains("Done.") }, "Text after closer must appear")
+    }
+
+    @Test
+    fun `should ignore mid-line backticks in JSON value but find line-start closer`() {
+        // JSON payload contains ``` mid-line. The real closing fence is on its own line.
+        val payload = """{ "msg": "see ```this``` example" }"""
+        val rawResponse = "```raam_test.ACTION\n$payload\n```\nDone."
+        val result = parser.parse(rawResponse)
+        assertEquals(2, result.size, "Expected one code block + trailing text")
+        assertIs<ContentBlock.CodeBlock>(result[0])
+        assertIs<ContentBlock.Text>(result[1])
+        assertEquals("raam_test.ACTION", (result[0] as ContentBlock.CodeBlock).language)
+        assertTrue((result[0] as ContentBlock.CodeBlock).code.contains("```this```"), "Mid-line ``` must be preserved in code body")
+    }
+
+    @Test
+    fun `should still support genuine nested fences at line start`() {
+        // Nested ```kotlin at line start should still increment depth correctly.
+        val rawResponse = "```markdown\n## Header\n```kotlin\nval x = 1\n```\n## Footer\n```"
+        val result = parser.parse(rawResponse)
+        assertEquals(1, result.size, "Nested fences at line start should be depth-tracked")
+        assertIs<ContentBlock.CodeBlock>(result[0])
+        assertTrue((result[0] as ContentBlock.CodeBlock).code.contains("val x = 1"))
+        assertTrue((result[0] as ContentBlock.CodeBlock).code.contains("## Footer"))
+    }
+
+    @Test
+    fun `should handle multiple mid-line backtick occurrences without breaking`() {
+        // Stress test: multiple ``` mid-line, only one real closer at line start.
+        val rawResponse = "```json\n{\"a\": \"```\", \"b\": \"```\", \"c\": \"```\"}\n```"
+        val result = parser.parse(rawResponse)
+        val codeBlocks = result.filterIsInstance<ContentBlock.CodeBlock>()
+        assertEquals(1, codeBlocks.size)
+        assertEquals("json", codeBlocks[0].language)
+        // All three mid-line ``` must survive inside the code body.
+        assertEquals(3, Regex("```").findAll(codeBlocks[0].code).count(),
+            "All three mid-line ``` must be preserved in code body")
+    }
+
+    @Test
+    fun `should parse full agent turn with backticks in JSON message value`() {
+        // Realistic agent output: thinking text, then a tool-call code block whose
+        // JSON "message" value contains ``` as escaped markdown, then a second action.
+        val rawResponse = "*Thinking about architecture...*\n\n" +
+                "```raam_session.POST\n" +
+                "{ \"session\": \"session.raam-improvement\", \"message\": \"## Layer Cake\\n\\n```\\nL3: AgentRuntime\\nL2: Session\\n```\\n\\nDependencies flow down.\" }\n" +
+                "```\n\n" +
+                "```raam_agent.UPDATE_NVRAM\n" +
+                "{ \"updates\": { \"phase\": \"ACTIVE\" } }\n" +
+                "```"
+        val result = parser.parse(rawResponse)
+        assertEquals(4, result.size, "Expected: text, POST block, text, NVRAM block")
+        assertIs<ContentBlock.Text>(result[0])
+        assertIs<ContentBlock.CodeBlock>(result[1])
+        assertIs<ContentBlock.Text>(result[2])
+        assertIs<ContentBlock.CodeBlock>(result[3])
+        val postBlock = result[1] as ContentBlock.CodeBlock
+        assertEquals("raam_session.POST", postBlock.language)
+        assertTrue(postBlock.code.contains("L3: AgentRuntime"), "JSON payload must be intact")
+        assertTrue(postBlock.code.contains("Dependencies flow down"), "JSON payload must not be truncated")
+        val nvramBlock = result[3] as ContentBlock.CodeBlock
+        assertEquals("raam_agent.UPDATE_NVRAM", nvramBlock.language)
+    }
 }

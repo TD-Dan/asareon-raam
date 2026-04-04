@@ -13,6 +13,14 @@ package app.auf.feature.session
  * is treated as an **opening** fence that increments nesting depth. A ``` followed by whitespace,
  * a newline, or end-of-string is treated as a **closing** fence that decrements depth. The true
  * closing fence for an outer block is the one that brings the depth back to zero.
+ *
+ * Line-start rule: Inside an already-opened code block, only ``` sequences that appear at the
+ * start of a line OR at the end of a line are considered as fence boundaries. A ``` that has
+ * non-whitespace content on BOTH sides of it on the same line is treated as noise and skipped.
+ * This prevents ``` embedded mid-line (e.g. inside JSON string values in tool-call payloads)
+ * from being misidentified as code fence delimiters. Exception: on the opening fence's own line
+ * (before the first newline), all fences are considered so that single-line blocks like
+ * ```raam_toast Hello!``` continue to work.
  */
 class BlockSeparatingParser {
 
@@ -60,15 +68,36 @@ class BlockSeparatingParser {
      * Starting from [searchFrom] (the index immediately after the opening ```), scans forward for
      * the matching closing fence while tracking nesting depth.
      *
+     * A ``` is considered a real fence only if it is at the start of a line (preceded by newline
+     * or start-of-string, with optional whitespace) **or** at the end of a line (followed only by
+     * whitespace until the next newline or end-of-string). A ``` with non-whitespace on both
+     * sides of it on the same line is noise (e.g. inside a JSON string) and is skipped.
+     *
+     * Exception: on the **first line** (before any newline after the opening fence), all fences
+     * are considered so that single-line blocks like ```raam_toast Hello!``` work.
+     *
      * @return the index of the first backtick of the matching closing ```, or -1 if unterminated.
      */
     private fun findClosingFence(rawText: String, searchFrom: Int): Int {
         var depth = 1
         var i = searchFrom
 
+        // The position of the first newline after the opening fence.
+        // Before this point, allow mid-line closers (single-line blocks).
+        // After this point, require line-start fences only.
+        val firstNewline = rawText.indexOf('\n', searchFrom)
+
         while (i < rawText.length) {
             val nextFence = rawText.indexOf("```", i)
             if (nextFence == -1) return -1 // No more fences at all – unterminated.
+
+            // After the first newline, skip ``` that is embedded mid-line (noise).
+            // A fence is real if it's at line-start OR at line-end. Noise has content on both sides.
+            val pastFirstLine = firstNewline != -1 && nextFence > firstNewline
+            if (pastFirstLine && !isAtLineStart(rawText, nextFence) && !isAtLineEnd(rawText, nextFence)) {
+                i = nextFence + 3
+                continue
+            }
 
             if (isOpeningFence(rawText, nextFence)) {
                 depth++
@@ -79,6 +108,37 @@ class BlockSeparatingParser {
             i = nextFence + 3
         }
         return -1
+    }
+
+    /**
+     * Returns true if the ``` at [fencePos] is at the start of a line: either at position 0,
+     * or preceded only by whitespace back to the nearest newline or start-of-string.
+     */
+    private fun isAtLineStart(rawText: String, fencePos: Int): Boolean {
+        if (fencePos == 0) return true
+        var j = fencePos - 1
+        while (j >= 0) {
+            val ch = rawText[j]
+            if (ch == '\n') return true
+            if (ch != ' ' && ch != '\t') return false
+            j--
+        }
+        return true
+    }
+
+    /**
+     * Returns true if the ``` at [fencePos] is at the end of a line: followed only by
+     * whitespace until the next newline or end-of-string.
+     */
+    private fun isAtLineEnd(rawText: String, fencePos: Int): Boolean {
+        var j = fencePos + 3
+        while (j < rawText.length) {
+            val ch = rawText[j]
+            if (ch == '\n') return true
+            if (ch != ' ' && ch != '\t') return false
+            j++
+        }
+        return true // Reached EOF
     }
 
     /**
