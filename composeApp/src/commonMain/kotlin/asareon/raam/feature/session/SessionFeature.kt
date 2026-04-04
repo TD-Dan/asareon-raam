@@ -550,7 +550,7 @@ class SessionFeature(
                         action.name, true, summary = "Session '$sessionName' deleted.")
                 } else {
                     val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "SESSION_DELETE ignored: Session '$identifier' not found in state.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "SESSION_DELETE failed: Session '$identifier' not found in state.")
                     publishActionResult(store, action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull,
                         action.name, false, error = "Session '$identifier' not found.")
                 }
@@ -1002,7 +1002,7 @@ class SessionFeature(
                     publishActionResult(store, correlationId, action.name, success = true,
                         summary = "Listed ${sessionState.sessions.values.count { !it.isHidden }} sessions")
                 } else {
-                    platformDependencies.log(LogLevel.WARN, identity.handle, "LIST_SESSIONS: No response session specified.")
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "LIST_SESSIONS: No response session specified.")
                     publishActionResult(store, correlationId, action.name, success = false,
                         error = "No response session specified")
                 }
@@ -1313,7 +1313,7 @@ class SessionFeature(
         val session = state.sessions[localHandle] ?: return false
         val entry = session.ledger.find { it.id == messageId } ?: return false
         if (entry.isLocked) {
-            platformDependencies.log(LogLevel.WARN, identity.handle, "$actionContext blocked: Message '$messageId' in session '$localHandle' is locked.")
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "$actionContext blocked: Message '$messageId' in session '$localHandle' is locked.")
             store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.CORE_SHOW_TOAST, buildJsonObject {
                 put("message", "This message is locked and cannot be modified.")
             }))

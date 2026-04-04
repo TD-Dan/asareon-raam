@@ -109,7 +109,6 @@ BUG: gocnitivepipeline 969: should error not default
 # SESSION
 - Need to be able to edit session names and reorder from the tab bar
 - Delete session from tab right click menu
-- "add agent" isnt visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents"
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
 
 BUG: "add agent" isn't visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents". Probaply its visibility is gated by the AGENTS_UPDATED action broadcast and it stays hidden till it receives it?
@@ -125,9 +124,7 @@ BUG: "add agent" isn't visible in the session kebab menu, until agent is removed
 
 
 # COMMANDBOT
-- CommandBot by default posts collapsed messages when OK
 - Implement the ASK process for ASK level permissions
-- Commandbot clears old notifications away automatically
 
 
 # KNOWLEDGE GRAPH
@@ -137,14 +134,17 @@ BUG: "add agent" isn't visible in the session kebab menu, until agent is removed
 
 - KG Editor needs approx token sizes for holons and also total approx for parent holons
 
+
+# BACKUP
+- Add a "Backups" manager to the burger global menu.
+
+
 ## Ideas
 - Multi-user HKGs: reservation system, git, other method?
 
 
 # FUTURE IDEAS FOR FEATURES
 
-# BACKUP
-- AUTOMATIC SNAPSHOT BACKUP at app start! And a backup central.
 
 # WEB ACCESS
 - web search 

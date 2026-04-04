@@ -8,6 +8,7 @@ import asareon.raam.feature.core.CoreState
 import asareon.raam.feature.filesystem.FileSystemFeature
 import asareon.raam.fakes.FakePlatformDependencies
 import asareon.raam.test.TestEnvironment
+import asareon.raam.test.TestHarness
 import asareon.raam.util.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,7 +97,7 @@ class SessionFeatureT2ContractTest {
         sessions = mapOf(testSession.identity.localHandle to testSession)
     )
 
-    /** State with a locked message (for UNLOCK_MESSAGE happy path). */
+    /** State with a locked message (for UNLOCK_MESSAGE happy path and locked failure cases). */
     private val lockedState = SessionState(
         sessions = mapOf(sessionWithLockedEntry.identity.localHandle to sessionWithLockedEntry)
     )
@@ -425,7 +426,7 @@ class SessionFeatureT2ContractTest {
     private fun buildHarness(
         platform: FakePlatformDependencies,
         initialState: SessionState
-    ): TestEnvironment.Harness {
+    ): TestHarness {
         val sessionFeature = SessionFeature(platform, scope)
         val fileSystemFeature = FileSystemFeature(platform)
         return TestEnvironment.create()
