@@ -379,12 +379,12 @@ tasks.register("generateActionRegistry") {
             """        "$key" to PermissionDeclaration(
             |            key = "$key",
             |            description = "${decl["description"]!!.escKt()}",
-            |            dangerLevel = app.auf.core.DangerLevel.${decl["dangerLevel"]!!}
+            |            dangerLevel = asareon.raam.core.DangerLevel.${decl["dangerLevel"]!!}
             |        )""".trimMargin()
         }
 
         val actionRegistryContent = """
-            |package app.auf.core.generated
+            |package asareon.raam.core.generated
             |
             |/**
             | * THIS IS A GENERATED FILE. DO NOT EDIT.
@@ -456,7 +456,7 @@ tasks.register("generateActionRegistry") {
             |    data class PermissionDeclaration(
             |        val key: String,
             |        val description: String,
-            |        val dangerLevel: app.auf.core.DangerLevel
+            |        val dangerLevel: asareon.raam.core.DangerLevel
             |    )
             |
             |    // ================================================================
@@ -678,7 +678,7 @@ android {
 
 compose.desktop {
     application {
-        mainClass = "app.auf.MainKt"
+        mainClass = "asareon.raam.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
