@@ -170,7 +170,7 @@ class CommandBotFeatureT2TimeoutTest {
             val message = timeoutPost.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
             assertTrue(message.contains("nonexistent.GHOST_ACTION"),
                 "Timeout feedback should name the unhandled action. Got: $message")
-            assertTrue(message.contains("300"),
+            assertTrue(message.contains("30"),
                 "Timeout feedback should mention the TTL duration. Got: $message")
 
             // 3. WARN log should be emitted

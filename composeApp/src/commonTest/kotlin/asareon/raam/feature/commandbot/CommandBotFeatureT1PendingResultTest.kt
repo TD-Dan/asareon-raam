@@ -118,7 +118,7 @@ class CommandBotFeatureT1SideEffectsTest {
         val message = feedbackPost.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
         assertTrue(message.contains("TIMEOUT"), "Feedback should contain 'TIMEOUT'. Got: $message")
         assertTrue(message.contains("session.CREATE"), "Feedback should contain the action name. Got: $message")
-        assertTrue(message.contains("300"), "Feedback should mention the TTL duration (300s). Got: $message")
+        assertTrue(message.contains("30"), "Feedback should mention the TTL duration (30s). Got: $message")
 
         assertEquals("session-1", feedbackPost.payload?.get("session")?.jsonPrimitive?.contentOrNull,
             "Feedback should be posted to the session where the command originated.")
