@@ -143,7 +143,31 @@ open class FakePlatformDependencies(
 
     override fun getUserHomePath(): String = "/fake/user/home"
 
-    override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String, excludeDirectoryName: String) { /* No-op */ }
+    override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String, excludeDirectoryName: String) {
+        // Simulate creating a zip by writing a marker file
+        val parent = getParentDirectory(destinationZipPath)
+        if (parent != null) createDirectories(parent)
+        files[destinationZipPath] = FakeFile("ZIP_ARCHIVE:$sourceDirectoryPath:exclude=$excludeDirectoryName", currentTime)
+    }
+
+    /** Tracks all extract operations for test assertions. */
+    data class ExtractedZip(val zipPath: String, val targetDirectoryPath: String)
+    val extractedZips = mutableListOf<ExtractedZip>()
+
+    override fun extractZipArchive(zipPath: String, targetDirectoryPath: String) {
+        if (!files.containsKey(zipPath)) throw Exception("Fake zip file not found: $zipPath")
+        extractedZips.add(ExtractedZip(zipPath, targetDirectoryPath))
+    }
+
+    var restartRequested = false
+    override fun restartApplication() {
+        restartRequested = true
+    }
+
+    override fun fileSize(path: String): Long {
+        return files[path]?.content?.length?.toLong() ?: throw Exception("Fake file not found: $path")
+    }
+
     override fun openFolderInExplorer(path: String) {
         if (openFolderShouldThrow) throw Exception("Fake openFolderInExplorer error for path: $path")
         openedFolderPaths.add(path)

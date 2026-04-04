@@ -134,6 +134,24 @@
         },
         "required": ["operation", "success"]
       }
+    },
+    {
+      "action_name": "backup.ACTION_RESULT",
+      "summary": "Broadcast notification published after every public command-action completes. Follows the standardised ACTION_RESULT contract for cross-feature observability.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "requestAction": { "type": "string", "description": "The action name that triggered this result." },
+          "success": { "type": "boolean" },
+          "summary": { "type": "string", "description": "Human-readable summary on success." },
+          "error": { "type": "string", "description": "Human-readable error description on failure." }
+        },
+        "required": ["requestAction", "success"]
+      },
+      "required_permissions": []
     }
   ]
 }

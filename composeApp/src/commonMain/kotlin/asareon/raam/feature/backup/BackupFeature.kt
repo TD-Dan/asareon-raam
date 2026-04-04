@@ -194,7 +194,7 @@ class BackupFeature(
 
             ActionRegistry.Names.BACKUP_CREATE -> {
                 val label = action.payload?.get("label")?.jsonPrimitive?.content
-                performCreateBackup(store, state, label)
+                performCreateBackup(store, state, label, action.name)
             }
 
             ActionRegistry.Names.BACKUP_RESTORE -> {
@@ -212,18 +212,30 @@ class BackupFeature(
 
             ActionRegistry.Names.BACKUP_EXECUTE_RESTORE -> {
                 val filename = action.payload?.get("filename")?.jsonPrimitive?.content ?: return
-                performRestore(store, filename)
+                performRestore(store, filename, action.name)
             }
 
             ActionRegistry.Names.BACKUP_DELETE -> {
                 val filename = action.payload?.get("filename")?.jsonPrimitive?.content ?: return
-                performDelete(store, filename)
+                performDelete(store, filename, action.name)
             }
 
-            ActionRegistry.Names.BACKUP_PRUNE -> pruneBackups(store, state)
+            ActionRegistry.Names.BACKUP_PRUNE -> {
+                pruneBackups(store, state)
+                publishActionResult(store, action.name, success = true,
+                    summary = "Pruning complete")
+            }
 
             ActionRegistry.Names.BACKUP_OPEN_FOLDER -> {
-                platformDependencies.openFolderInExplorer(backupsDir)
+                try {
+                    platformDependencies.openFolderInExplorer(backupsDir)
+                    publishActionResult(store, action.name, success = true,
+                        summary = "Opened backup folder")
+                } catch (e: Exception) {
+                    platformDependencies.log(LogLevel.ERROR, tag, "Failed to open backup folder.", e)
+                    publishActionResult(store, action.name, success = false,
+                        error = "Failed to open backup folder: ${e.message}")
+                }
             }
 
             ActionRegistry.Names.BACKUP_REFRESH -> scanAndDispatchInventory(store)
@@ -303,7 +315,7 @@ class BackupFeature(
         }
     }
 
-    private fun performCreateBackup(store: Store, state: BackupState, label: String?) {
+    private fun performCreateBackup(store: Store, state: BackupState, label: String?, requestAction: String) {
         try {
             val timestamp = platformDependencies
                 .formatIsoTimestamp(platformDependencies.currentTimeMillis())
@@ -318,19 +330,25 @@ class BackupFeature(
                 excludeDirectoryName = "_backups"
             )
             dispatchResult(store, "create", true, "Backup created: $filename")
+            publishActionResult(store, requestAction, success = true,
+                summary = "Backup created: $filename")
             scanAndDispatchInventory(store)
             pruneBackups(store, state)
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, tag, "Failed to create manual backup.", e)
             dispatchResult(store, "create", false, "Backup creation failed: ${e.message}")
+            publishActionResult(store, requestAction, success = false,
+                error = "Backup creation failed: ${e.message}")
         }
     }
 
-    private fun performRestore(store: Store, filename: String) {
+    private fun performRestore(store: Store, filename: String, requestAction: String) {
         try {
             val backupPath = "$backupsDir$sep$filename"
             if (!platformDependencies.fileExists(backupPath)) {
                 dispatchResult(store, "restore", false, "Backup file not found: $filename")
+                publishActionResult(store, requestAction, success = false,
+                    error = "Backup file not found: $filename")
                 return
             }
 
@@ -374,22 +392,30 @@ class BackupFeature(
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, tag, "Restore failed.", e)
             dispatchResult(store, "restore", false, "Restore failed: ${e.message}")
+            publishActionResult(store, requestAction, success = false,
+                error = "Restore failed: ${e.message}")
         }
     }
 
-    private fun performDelete(store: Store, filename: String) {
+    private fun performDelete(store: Store, filename: String, requestAction: String) {
         try {
             val path = "$backupsDir$sep$filename"
             if (platformDependencies.fileExists(path)) {
                 platformDependencies.deleteFile(path)
                 dispatchResult(store, "delete", true, "Deleted: $filename")
+                publishActionResult(store, requestAction, success = true,
+                    summary = "Deleted: $filename")
                 scanAndDispatchInventory(store)
             } else {
                 dispatchResult(store, "delete", false, "File not found: $filename")
+                publishActionResult(store, requestAction, success = false,
+                    error = "File not found: $filename")
             }
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, tag, "Failed to delete backup.", e)
             dispatchResult(store, "delete", false, "Delete failed: ${e.message}")
+            publishActionResult(store, requestAction, success = false,
+                error = "Delete failed: ${e.message}")
         }
     }
 
@@ -421,6 +447,29 @@ class BackupFeature(
                 put("operation", operation)
                 put("success", success)
                 put("message", message)
+            }
+        ))
+    }
+
+    /**
+     * Publishes a lightweight, standardised broadcast notification after completing
+     * a command-dispatchable action. Follows the same contract as FileSystemFeature's
+     * ACTION_RESULT to enable cross-feature observability.
+     */
+    private fun publishActionResult(
+        store: Store,
+        requestAction: String,
+        success: Boolean,
+        summary: String? = null,
+        error: String? = null
+    ) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.BACKUP_ACTION_RESULT,
+            payload = buildJsonObject {
+                put("requestAction", requestAction)
+                put("success", success)
+                summary?.let { put("summary", it) }
+                error?.let { put("error", it) }
             }
         ))
     }

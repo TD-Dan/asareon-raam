@@ -317,4 +317,295 @@ class PlatformDependenciesJvmTest {
         // Assert
         assertNull(result, "Should return null for unparseable input")
     }
+
+    // === Tests for byte-level file I/O ===
+
+    @Test
+    fun `writeFileBytes and readFileBytes round-trip binary content`() {
+        // Arrange
+        val filePath = File(tempDir, "binary_test.dat").absolutePath
+        val binaryContent = byteArrayOf(0x00, 0x01, 0x7F, 0xFF.toByte(), 0xFE.toByte(), 0x42)
+
+        // Act
+        platform.writeFileBytes(filePath, binaryContent)
+        val readBack = platform.readFileBytes(filePath)
+
+        // Assert
+        assertTrue(File(filePath).exists(), "File should have been created.")
+        assertTrue(binaryContent.contentEquals(readBack),
+            "Read bytes should match written bytes.")
+    }
+
+    @Test
+    fun `writeFileBytes creates parent directories if needed`() {
+        // Arrange
+        val filePath = File(tempDir, "nested/dirs/binary.dat").absolutePath
+
+        // Act
+        platform.writeFileBytes(filePath, byteArrayOf(0x42))
+
+        // Assert
+        assertTrue(File(filePath).exists(), "File should exist in nested directory structure.")
+    }
+
+    // === Tests for copyFile ===
+
+    @Test
+    fun `copyFile duplicates file content to destination`() {
+        // Arrange
+        val src = File(tempDir, "copy_source.txt")
+        val dst = File(tempDir, "copy_dest.txt")
+        platform.writeFileContent(src.absolutePath, "original content")
+
+        // Act
+        platform.copyFile(src.absolutePath, dst.absolutePath)
+
+        // Assert
+        assertTrue(dst.exists(), "Destination file should exist.")
+        assertEquals("original content", platform.readFileContent(dst.absolutePath),
+            "Destination content should match source.")
+        assertTrue(src.exists(), "Source file should still exist after copy.")
+    }
+
+    @Test
+    fun `copyFile overwrites existing destination`() {
+        // Arrange
+        val src = File(tempDir, "overwrite_src.txt")
+        val dst = File(tempDir, "overwrite_dst.txt")
+        platform.writeFileContent(src.absolutePath, "new content")
+        platform.writeFileContent(dst.absolutePath, "old content")
+
+        // Act
+        platform.copyFile(src.absolutePath, dst.absolutePath)
+
+        // Assert
+        assertEquals("new content", platform.readFileContent(dst.absolutePath),
+            "Destination should be overwritten with source content.")
+    }
+
+    // === Tests for fileSize ===
+
+    @Test
+    fun `fileSize returns correct size for existing file`() {
+        // Arrange
+        val file = File(tempDir, "sized_file.txt")
+        val content = "Hello, World!" // 13 bytes in UTF-8
+        platform.writeFileContent(file.absolutePath, content)
+
+        // Act
+        val size = platform.fileSize(file.absolutePath)
+
+        // Assert
+        assertEquals(content.toByteArray().size.toLong(), size,
+            "fileSize should return the byte length of the file.")
+    }
+
+    @Test
+    fun `fileSize returns 0 for non-existent file`() {
+        // Arrange
+        val nonExistent = File(tempDir, "no_such_file.txt").absolutePath
+
+        // Act
+        val size = platform.fileSize(nonExistent)
+
+        // Assert
+        assertEquals(0L, size, "fileSize should return 0 for a non-existent file.")
+    }
+
+    // === Tests for createZipArchive and extractZipArchive ===
+
+    @Test
+    fun `createZipArchive produces a valid zip file`() {
+        // Arrange
+        val sourceDir = File(tempDir, "zip_source")
+        platform.createDirectories(sourceDir.absolutePath)
+        platform.writeFileContent(File(sourceDir, "file1.txt").absolutePath, "content-one")
+        platform.writeFileContent(File(sourceDir, "file2.md").absolutePath, "content-two")
+        val zipPath = File(tempDir, "output.zip").absolutePath
+
+        // Act
+        platform.createZipArchive(sourceDir.absolutePath, zipPath, "")
+
+        // Assert
+        assertTrue(File(zipPath).exists(), "Zip file should have been created.")
+        assertTrue(File(zipPath).length() > 0, "Zip file should not be empty.")
+    }
+
+    @Test
+    fun `createZipArchive excludes named directory`() {
+        // Arrange
+        val sourceDir = File(tempDir, "zip_exclude_source")
+        platform.createDirectories(sourceDir.absolutePath)
+        platform.writeFileContent(File(sourceDir, "keep.txt").absolutePath, "keep me")
+        val excludedDir = File(sourceDir, "_backups")
+        platform.createDirectories(excludedDir.absolutePath)
+        platform.writeFileContent(File(excludedDir, "old.zip").absolutePath, "old backup data")
+        val zipPath = File(tempDir, "excluded.zip").absolutePath
+
+        // Act
+        platform.createZipArchive(sourceDir.absolutePath, zipPath, "_backups")
+
+        // Assert: extract and verify _backups was excluded
+        val extractDir = File(tempDir, "zip_exclude_verify")
+        platform.extractZipArchive(zipPath, extractDir.absolutePath)
+
+        assertTrue(File(extractDir, "keep.txt").exists(),
+            "Non-excluded file should be in the archive.")
+        assertFalse(File(extractDir, "_backups").exists(),
+            "Excluded directory should NOT be in the archive.")
+    }
+
+    @Test
+    fun `extractZipArchive restores all files from an archive`() {
+        // Arrange: create source, zip it, then extract to a different location
+        val sourceDir = File(tempDir, "extract_source")
+        val subDir = File(sourceDir, "subdir")
+        platform.createDirectories(subDir.absolutePath)
+        platform.writeFileContent(File(sourceDir, "root.txt").absolutePath, "root-content")
+        platform.writeFileContent(File(subDir, "nested.txt").absolutePath, "nested-content")
+        val zipPath = File(tempDir, "extract_test.zip").absolutePath
+        platform.createZipArchive(sourceDir.absolutePath, zipPath, "")
+
+        val targetDir = File(tempDir, "extract_target")
+
+        // Act
+        platform.extractZipArchive(zipPath, targetDir.absolutePath)
+
+        // Assert
+        assertTrue(targetDir.exists(), "Target directory should exist.")
+        val rootFile = File(targetDir, "root.txt")
+        assertTrue(rootFile.exists(), "root.txt should be extracted.")
+        assertEquals("root-content", rootFile.readText(), "root.txt content should match.")
+        val nestedFile = File(targetDir, "subdir/nested.txt")
+        assertTrue(nestedFile.exists(), "Nested file should be extracted.")
+        assertEquals("nested-content", nestedFile.readText(), "Nested file content should match.")
+    }
+
+    @Test
+    fun `createZipArchive and extractZipArchive round-trip preserves content`() {
+        // Arrange
+        val sourceDir = File(tempDir, "roundtrip_source")
+        platform.createDirectories(sourceDir.absolutePath)
+        val fileContents = mapOf(
+            "config.json" to """{"key": "value"}""",
+            "data/records.csv" to "id,name\n1,Alice\n2,Bob",
+            "notes/readme.md" to "# Hello\nThis is a test."
+        )
+        fileContents.forEach { (path, content) ->
+            platform.writeFileContent(File(sourceDir, path).absolutePath, content)
+        }
+        val zipPath = File(tempDir, "roundtrip.zip").absolutePath
+        val extractDir = File(tempDir, "roundtrip_extract")
+
+        // Act
+        platform.createZipArchive(sourceDir.absolutePath, zipPath, "")
+        platform.extractZipArchive(zipPath, extractDir.absolutePath)
+
+        // Assert
+        fileContents.forEach { (path, expectedContent) ->
+            val extractedFile = File(extractDir, path)
+            assertTrue(extractedFile.exists(), "Extracted file '$path' should exist.")
+            assertEquals(expectedContent, extractedFile.readText(),
+                "Content of '$path' should survive round-trip.")
+        }
+    }
+
+    @Test
+    fun `extractZipArchive creates target directory if it does not exist`() {
+        // Arrange
+        val sourceDir = File(tempDir, "auto_create_source")
+        platform.createDirectories(sourceDir.absolutePath)
+        platform.writeFileContent(File(sourceDir, "file.txt").absolutePath, "data")
+        val zipPath = File(tempDir, "auto_create.zip").absolutePath
+        platform.createZipArchive(sourceDir.absolutePath, zipPath, "")
+        val targetDir = File(tempDir, "deeply/nested/target")
+        assertFalse(targetDir.exists(), "Precondition: target should not exist yet.")
+
+        // Act
+        platform.extractZipArchive(zipPath, targetDir.absolutePath)
+
+        // Assert
+        assertTrue(targetDir.exists(), "Target directory should have been auto-created.")
+        assertTrue(File(targetDir, "file.txt").exists(), "Extracted file should exist.")
+    }
+
+    // === Tests for resolveAbsoluteSandboxPath ===
+
+    @Test
+    fun `resolveAbsoluteSandboxPath builds correct path for simple feature handle`() {
+        // Act
+        val path = platform.resolveAbsoluteSandboxPath("session", "workspace/file.txt")
+
+        // Assert
+        val expectedBase = platform.getBasePathFor(BasePath.APP_ZONE)
+        val sep = File.separatorChar
+        assertEquals("$expectedBase${sep}session${sep}workspace/file.txt", path)
+    }
+
+    @Test
+    fun `resolveAbsoluteSandboxPath strips sub-identity from dotted handle`() {
+        // "agent.coder-1" should resolve to the "agent" sandbox, not "agent.coder-1"
+        // Act
+        val path = platform.resolveAbsoluteSandboxPath("agent.coder-1", "data.json")
+
+        // Assert
+        val expectedBase = platform.getBasePathFor(BasePath.APP_ZONE)
+        val sep = File.separatorChar
+        assertEquals("$expectedBase${sep}agent${sep}data.json", path)
+    }
+
+    @Test
+    fun `resolveAbsoluteSandboxPath with blank relative path returns sandbox root`() {
+        // Act
+        val path = platform.resolveAbsoluteSandboxPath("session", "")
+
+        // Assert
+        val expectedBase = platform.getBasePathFor(BasePath.APP_ZONE)
+        val sep = File.separatorChar
+        assertEquals("$expectedBase${sep}session", path)
+    }
+
+    @Test
+    fun `resolveAbsoluteSandboxPath sanitizes special characters in handle`() {
+        // Act
+        val path = platform.resolveAbsoluteSandboxPath("bad/handle\\name", "file.txt")
+
+        // Assert — '/' and '\' in the handle should be sanitized to '_'
+        val expectedBase = platform.getBasePathFor(BasePath.APP_ZONE)
+        val sep = File.separatorChar
+        assertFalse(path.contains("bad/handle"),
+            "Special characters in handle should be sanitized.")
+        assertTrue(path.startsWith("$expectedBase$sep"),
+            "Path should still be rooted under APP_ZONE.")
+    }
+
+    // === Tests for getFileName and getParentDirectory ===
+
+    @Test
+    fun `getFileName extracts file name from path`() {
+        assertEquals("file.txt", platform.getFileName("/some/path/file.txt"))
+        assertEquals("dir", platform.getFileName("/some/path/dir"))
+    }
+
+    @Test
+    fun `getParentDirectory returns parent path`() {
+        val parent = platform.getParentDirectory(File(tempDir, "child.txt").absolutePath)
+        assertNotNull(parent)
+        assertEquals(tempDir.absolutePath, parent)
+    }
+
+    // === Test for getLastModified ===
+
+    @Test
+    fun `getLastModified returns positive timestamp for existing file`() {
+        // Arrange
+        val file = File(tempDir, "lastmod.txt")
+        platform.writeFileContent(file.absolutePath, "data")
+
+        // Act
+        val lastMod = platform.getLastModified(file.absolutePath)
+
+        // Assert
+        assertTrue(lastMod > 0, "lastModified should be a positive epoch millis value.")
+    }
 }
