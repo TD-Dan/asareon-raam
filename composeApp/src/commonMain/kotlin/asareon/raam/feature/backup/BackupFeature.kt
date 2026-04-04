@@ -172,6 +172,8 @@ class BackupFeature(
         previousState: FeatureState?, newState: FeatureState?
     ) {
         val state = newState as? BackupState ?: return
+        // Extract correlationId from the action payload (injected by CommandBot / owning features).
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
 
         when (action.name) {
             ActionRegistry.Names.SYSTEM_INITIALIZING -> {
@@ -194,7 +196,7 @@ class BackupFeature(
 
             ActionRegistry.Names.BACKUP_CREATE -> {
                 val label = action.payload?.get("label")?.jsonPrimitive?.content
-                performCreateBackup(store, state, label, action.name)
+                performCreateBackup(store, state, label, action.name, correlationId)
             }
 
             ActionRegistry.Names.BACKUP_RESTORE -> {
@@ -208,34 +210,34 @@ class BackupFeature(
                         put("confirmActionPayload", buildJsonObject { put("filename", filename) })
                     }
                 ))
-                publishActionResult(store, action.name, success = true,
+                publishActionResult(store, correlationId, action.name, success = true,
                     summary = "Restore confirmation requested for $filename")
             }
 
             ActionRegistry.Names.BACKUP_EXECUTE_RESTORE -> {
                 val filename = action.payload?.get("filename")?.jsonPrimitive?.content ?: return
-                performRestore(store, filename, action.name)
+                performRestore(store, filename, action.name, correlationId)
             }
 
             ActionRegistry.Names.BACKUP_DELETE -> {
                 val filename = action.payload?.get("filename")?.jsonPrimitive?.content ?: return
-                performDelete(store, filename, action.name)
+                performDelete(store, filename, action.name, correlationId)
             }
 
             ActionRegistry.Names.BACKUP_PRUNE -> {
                 pruneBackups(store, state)
-                publishActionResult(store, action.name, success = true,
+                publishActionResult(store, correlationId, action.name, success = true,
                     summary = "Pruning complete")
             }
 
             ActionRegistry.Names.BACKUP_OPEN_FOLDER -> {
                 try {
                     platformDependencies.openFolderInExplorer(backupsDir)
-                    publishActionResult(store, action.name, success = true,
+                    publishActionResult(store, correlationId, action.name, success = true,
                         summary = "Opened backup folder")
                 } catch (e: Exception) {
                     platformDependencies.log(LogLevel.ERROR, tag, "Failed to open backup folder.", e)
-                    publishActionResult(store, action.name, success = false,
+                    publishActionResult(store, correlationId, action.name, success = false,
                         error = "Failed to open backup folder: ${e.message}")
                 }
             }
@@ -317,7 +319,7 @@ class BackupFeature(
         }
     }
 
-    private fun performCreateBackup(store: Store, state: BackupState, label: String?, requestAction: String) {
+    private fun performCreateBackup(store: Store, state: BackupState, label: String?, requestAction: String, correlationId: String?) {
         try {
             val timestamp = platformDependencies
                 .formatIsoTimestamp(platformDependencies.currentTimeMillis())
@@ -332,24 +334,24 @@ class BackupFeature(
                 excludeDirectoryName = "_backups"
             )
             dispatchResult(store, "create", true, "Backup created: $filename")
-            publishActionResult(store, requestAction, success = true,
+            publishActionResult(store, correlationId, requestAction, success = true,
                 summary = "Backup created: $filename")
             scanAndDispatchInventory(store)
             pruneBackups(store, state)
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, tag, "Failed to create manual backup.", e)
             dispatchResult(store, "create", false, "Backup creation failed: ${e.message}")
-            publishActionResult(store, requestAction, success = false,
+            publishActionResult(store, correlationId, requestAction, success = false,
                 error = "Backup creation failed: ${e.message}")
         }
     }
 
-    private fun performRestore(store: Store, filename: String, requestAction: String) {
+    private fun performRestore(store: Store, filename: String, requestAction: String, correlationId: String?) {
         try {
             val backupPath = "$backupsDir$sep$filename"
             if (!platformDependencies.fileExists(backupPath)) {
                 dispatchResult(store, "restore", false, "Backup file not found: $filename")
-                publishActionResult(store, requestAction, success = false,
+                publishActionResult(store, correlationId, requestAction, success = false,
                     error = "Backup file not found: $filename")
                 return
             }
@@ -394,29 +396,29 @@ class BackupFeature(
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, tag, "Restore failed.", e)
             dispatchResult(store, "restore", false, "Restore failed: ${e.message}")
-            publishActionResult(store, requestAction, success = false,
+            publishActionResult(store, correlationId, requestAction, success = false,
                 error = "Restore failed: ${e.message}")
         }
     }
 
-    private fun performDelete(store: Store, filename: String, requestAction: String) {
+    private fun performDelete(store: Store, filename: String, requestAction: String, correlationId: String?) {
         try {
             val path = "$backupsDir$sep$filename"
             if (platformDependencies.fileExists(path)) {
                 platformDependencies.deleteFile(path)
                 dispatchResult(store, "delete", true, "Deleted: $filename")
-                publishActionResult(store, requestAction, success = true,
+                publishActionResult(store, correlationId, requestAction, success = true,
                     summary = "Deleted: $filename")
                 scanAndDispatchInventory(store)
             } else {
                 dispatchResult(store, "delete", false, "File not found: $filename")
-                publishActionResult(store, requestAction, success = false,
+                publishActionResult(store, correlationId, requestAction, success = false,
                     error = "File not found: $filename")
             }
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, tag, "Failed to delete backup.", e)
             dispatchResult(store, "delete", false, "Delete failed: ${e.message}")
-            publishActionResult(store, requestAction, success = false,
+            publishActionResult(store, correlationId, requestAction, success = false,
                 error = "Delete failed: ${e.message}")
         }
     }
@@ -460,6 +462,7 @@ class BackupFeature(
      */
     private fun publishActionResult(
         store: Store,
+        correlationId: String?,
         requestAction: String,
         success: Boolean,
         summary: String? = null,
@@ -468,6 +471,7 @@ class BackupFeature(
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.BACKUP_ACTION_RESULT,
             payload = buildJsonObject {
+                correlationId?.let { put("correlationId", it) }
                 put("requestAction", requestAction)
                 put("success", success)
                 summary?.let { put("summary", it) }
