@@ -35,11 +35,11 @@ plugins {
 
 tasks.register("generateActionRegistry") {
     description = "Generates ActionRegistry.kt (unified action catalog) and ActionNames.kt (compat shim) from *.actions.json manifests."
-    group = "auf"
+    group = "raam"
 
     // --- Configuration ---
-    val inputDir = file("src/commonMain/kotlin/app/auf")
-    val generatedDir = layout.buildDirectory.dir("generated/kotlin/app/auf/core/generated")
+    val inputDir = file("src/commonMain/kotlin/asareon/raam")
+    val generatedDir = layout.buildDirectory.dir("generated/kotlin/asareon/raam/core/generated")
     val actionRegistryOutputFile = generatedDir.map { it.file("ActionRegistry.kt") }
     val actionNamesOutputFile = generatedDir.map { it.file("ActionNames.kt") }
 
@@ -644,11 +644,11 @@ tasks.withType<Test> {
 }
 
 android {
-    namespace = "app.auf"
+    namespace = "asareon.raam"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "app.auf"
+        applicationId = "asareon.raam"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
@@ -682,7 +682,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "app.auf"
+            packageName = "asareon.raam"
             packageVersion = "1.0.0"
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/icon.ico"))

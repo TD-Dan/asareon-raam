@@ -1,4 +1,4 @@
-package app.auf.util
+package asareon.raam.util
 
 import com.sun.jna.Platform
 import java.awt.Desktop

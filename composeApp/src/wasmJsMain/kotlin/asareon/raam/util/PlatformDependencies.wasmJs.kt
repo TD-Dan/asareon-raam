@@ -1,4 +1,4 @@
-package app.auf.util
+package asareon.raam.util
 
 /**
  * Placeholder Wasm/JS implementation of PlatformDependencies.

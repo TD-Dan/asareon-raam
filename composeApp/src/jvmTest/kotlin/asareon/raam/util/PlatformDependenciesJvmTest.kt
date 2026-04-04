@@ -1,4 +1,4 @@
-package app.auf.util
+package asareon.raam.util
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach

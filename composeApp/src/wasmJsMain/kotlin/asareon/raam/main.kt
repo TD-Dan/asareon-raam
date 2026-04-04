@@ -1,8 +1,8 @@
-package app.auf
+package asareon.raam
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
-import app.auf.ui.App
+import asareon.raam.ui.App
 import kotlinx.browser.document
 
 @OptIn(ExperimentalComposeUiApi::class)

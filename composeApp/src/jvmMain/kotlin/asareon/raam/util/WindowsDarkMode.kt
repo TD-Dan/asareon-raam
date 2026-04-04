@@ -1,4 +1,4 @@
-package app.auf.util
+package asareon.raam.util
 
 import com.sun.jna.Native
 import com.sun.jna.platform.win32.WinNT.HRESULT

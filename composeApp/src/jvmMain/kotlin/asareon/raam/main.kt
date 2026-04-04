@@ -1,4 +1,4 @@
-package app.auf
+package asareon.raam
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.unit.DpSize
@@ -6,12 +6,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import app.auf.core.*
-import app.auf.core.generated.ActionRegistry
-import app.auf.feature.core.CoreState
-import app.auf.ui.App
-import app.auf.util.LogLevel
-import app.auf.util.PlatformDependencies
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.core.CoreState
+import asareon.raam.ui.App
+import asareon.raam.util.LogLevel
+import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
