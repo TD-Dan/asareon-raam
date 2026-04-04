@@ -986,21 +986,21 @@ class AgentRuntimeFeature(
                 var finalPayload = applySandboxRewrite(actionName, actionPayload, agentUuid)
 
                 // NVRAM self-targeting enforcement: agents with only agent:cognition
-                // have agentId rewritten to their own UUID. Only agent:manage
-                // holders can target a different agent's NVRAM.
+                // can only target their own NVRAM. Cross-agent targeting requires
+                // agent:manage and is rejected with an error if missing.
                 if (actionName == ActionRegistry.Names.AGENT_UPDATE_NVRAM) {
-                    finalPayload = enforceNvramSelfTarget(finalPayload, agent, store)
+                    finalPayload = enforceSelfTargetOrReject(
+                        finalPayload, agent, agentUuid, store, correlationId, actionName
+                    ) ?: return // Rejected — error already published
                 }
 
-                // Context collapse/uncollapse self-targeting: inject agentId if missing.
-                // The agent's payload only contains partitionKey (+ scope), but the
-                // reducer needs agentId to know whose overrides to update. Always
-                // self-targeted — agents can only manage their own context.
+                // Context collapse/uncollapse self-targeting: same enforcement model.
+                // Agents can only manage their own context unless they hold agent:manage.
                 if (actionName == ActionRegistry.Names.AGENT_CONTEXT_UNCOLLAPSE ||
                     actionName == ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE) {
-                    if (finalPayload["agentId"] == null) {
-                        finalPayload = JsonObject(finalPayload + ("agentId" to JsonPrimitive(agentUuid.uuid)))
-                    }
+                    finalPayload = enforceSelfTargetOrReject(
+                        finalPayload, agent, agentUuid, store, correlationId, actionName
+                    ) ?: return // Rejected — error already published
                 }
 
                 // ============================================================
@@ -1323,37 +1323,79 @@ class AgentRuntimeFeature(
     }
 
     /**
-     * NVRAM self-targeting enforcement for agent-originated UPDATE_NVRAM commands.
+     * Shared self-targeting enforcement for agent-originated commands.
      *
-     * Agents with only `agent:cognition` have the `agentId` field rewritten to their own
-     * UUID — they can only write their own NVRAM. Agents with `agent:manage` (e.g.,
-     * a janitorial agent) can target any agent.
+     * Used by UPDATE_NVRAM, CONTEXT_UNCOLLAPSE, and CONTEXT_COLLAPSE to ensure
+     * agents can only target themselves unless they hold `agent:manage`.
      *
-     * This is a defense-in-depth measure: the permission guard allows the action
-     * (agent:cognition is satisfied), and this sandbox layer constrains the target.
+     * Resolution logic:
+     * 1. agentId absent       → inject caller's UUID (self-target)
+     * 2. agentId resolves to self → normalize to UUID
+     * 3. agentId resolves to another agent + caller holds agent:manage → allow, resolve to UUID
+     * 4. agentId resolves to another agent + caller lacks agent:manage → reject with error
+     * 5. agentId doesn't resolve to any known agent → reject with error
+     *
+     * @return Rewritten payload with agentId set to the resolved UUID, or null if
+     *         the request was rejected (ACTION_RESULT error already published).
      */
-    private fun enforceNvramSelfTarget(payload: JsonObject, agent: AgentInstance, store: Store): JsonObject {
-        val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
-            ?: return payload // Identity not found — let downstream validation handle it
+    private fun enforceSelfTargetOrReject(
+        payload: JsonObject,
+        callerAgent: AgentInstance,
+        callerUuid: IdentityUUID,
+        store: Store,
+        correlationId: String?,
+        actionName: String
+    ): JsonObject? {
+        val rawTargetId = payload["agentId"]?.jsonPrimitive?.contentOrNull
 
-        val effective = store.resolveEffectivePermissions(agentIdentity)
-        val hasManage = effective["agent:manage"]?.level == PermissionLevel.YES
-
-        if (hasManage) return payload // Full admin — allow cross-agent targeting
-
-        // Self-only: rewrite agentId to the caller's own UUID
-        val targetId = payload["agentId"]?.jsonPrimitive?.contentOrNull
-        if (targetId != null && targetId != agent.identityUUID.uuid && targetId != agent.identityHandle.handle) {
-            platformDependencies.log(
-                LogLevel.WARN, identity.handle,
-                "NVRAM sandbox: Agent '${agent.identityHandle}' attempted to write NVRAM for '$targetId' " +
-                        "without agent:manage. Rewriting target to self (${agent.identityUUID})."
-            )
+        if (rawTargetId == null) {
+            // Case 1: No agentId provided — self-target
+            return JsonObject(payload + ("agentId" to JsonPrimitive(callerUuid.uuid)))
         }
 
-        val mutablePayload = payload.toMutableMap()
-        mutablePayload["agentId"] = JsonPrimitive(agent.identityUUID.uuid)
-        return JsonObject(mutablePayload)
+        // Resolve the target through the identity registry
+        val registry = store.state.value.identityRegistry
+        val targetIdentity = registry.resolve(rawTargetId, parentHandle = "agent")
+
+        if (targetIdentity?.identityUUID == null) {
+            // Case 5: Target doesn't exist
+            val suggestions = registry.suggestMatches(rawTargetId, parentHandle = "agent")
+                .joinToString(", ") { "'${it.name}' (${it.uuid})" }
+            val hint = if (suggestions.isNotEmpty()) " Did you mean: $suggestions?" else ""
+            publishActionResult(store, correlationId, actionName, false,
+                error = "Agent '$rawTargetId' not found.$hint")
+            platformDependencies.log(LogLevel.WARN, identity.handle,
+                "enforceSelfTarget: Agent '$rawTargetId' not found for $actionName " +
+                        "(caller=${callerAgent.identityHandle.handle}).$hint")
+            return null
+        }
+
+        if (targetIdentity.identityUUID == callerUuid) {
+            // Case 2: Targeting self (by handle, name, or UUID) — normalize to UUID
+            return JsonObject(payload + ("agentId" to JsonPrimitive(callerUuid.uuid)))
+        }
+
+        // Cross-agent targeting — check permissions
+        val callerIdentity = registry[callerAgent.identityHandle.handle]
+        val effective = callerIdentity?.let { store.resolveEffectivePermissions(it) }
+        val hasManage = effective?.get("agent:manage")?.level == PermissionLevel.YES
+
+        if (!hasManage) {
+            // Case 4: No permission — reject
+            publishActionResult(store, correlationId, actionName, false,
+                error = "Permission denied: '${callerAgent.identity.name}' cannot target " +
+                        "agent '${targetIdentity.name}' for $actionName. Requires agent:manage permission.")
+            platformDependencies.log(LogLevel.WARN, identity.handle,
+                "enforceSelfTarget: Agent '${callerAgent.identityHandle.handle}' attempted " +
+                        "cross-agent $actionName targeting '${targetIdentity.name}' without agent:manage. Rejected.")
+            return null
+        }
+
+        // Case 3: Has agent:manage — allow cross-agent targeting, resolve to UUID
+        platformDependencies.log(LogLevel.INFO, identity.handle,
+            "enforceSelfTarget: Agent '${callerAgent.identityHandle.handle}' targeting " +
+                    "'${targetIdentity.name}' for $actionName (permitted via agent:manage).")
+        return JsonObject(payload + ("agentId" to JsonPrimitive(targetIdentity.identityUUID!!.uuid)))
     }
 
     // ========================================================================

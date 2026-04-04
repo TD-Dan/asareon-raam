@@ -56,6 +56,8 @@
 
 - Runtime payload schema validation
 
+- agent should be informed about the permissions it has alongside the action manifest
+
 - scheduleDelayed re-enters via deferredDispatch. The implementation is platformDependencies.scheduleDelayed(delayMs) { deferredDispatch(originator, action) }. This means the delayed callback fires on whatever thread the platform schedules it on, then calls deferredDispatch, which adds to the queue and calls ensureProcessingLoop(). If the platform callback fires on a background thread while the main loop is already processing, ensureProcessingLoop will return immediately (because isDispatching is true) and the action sits in the queue until the current loop picks it up. But if the main loop has already finished, the callback starts a new processing loop on the background thread. This could be a thread-safety issue — deferredActionQueue is a plain mutableListOf, not thread-safe, and isDispatching has no synchronization. On JVM desktop this might be fine if everything runs on the main/UI thread, but on Android or with coroutine dispatchers it could be a subtle race.
 
 - add ui header composable to share with features (ui consistency)

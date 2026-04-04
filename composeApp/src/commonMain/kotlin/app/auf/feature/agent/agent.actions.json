@@ -528,7 +528,7 @@
     },
     {
       "action_name": "agent.UPDATE_NVRAM",
-      "summary": "Updates the agent's cognitive state (NVRAM). Updates are merged into existing state. Sandbox-enforced: callers with only agent:cognition have agentId rewritten to their own UUID. Callers with agent:manage can target any agent.",
+      "summary": "Updates the agent's cognitive state (NVRAM). Updates are merged into existing state. Self-targeting by default; cross-agent targeting requires agent:manage permission and is rejected with an error if missing.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -537,7 +537,7 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name. Sandbox-enforced to self for callers without agent:manage."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
           },
           "updates": {
             "type": "object",
@@ -553,7 +553,6 @@
           }
         },
         "required": [
-          "agentId",
           "updates"
         ]
       },
@@ -1146,7 +1145,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
           },
           "partitionKey": {
             "type": "string",
@@ -1164,7 +1164,6 @@
           }
         },
         "required": [
-          "agentId",
           "partitionKey"
         ]
       },
@@ -1182,7 +1181,8 @@
         "type": "object",
         "properties": {
           "agentId": {
-            "type": "string"
+            "type": "string",
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
           },
           "partitionKey": {
             "type": "string",
@@ -1190,7 +1190,6 @@
           }
         },
         "required": [
-          "agentId",
           "partitionKey"
         ]
       },
