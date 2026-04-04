@@ -143,7 +143,7 @@ open class FakePlatformDependencies(
 
     override fun getUserHomePath(): String = "/fake/user/home"
 
-    override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) { /* No-op */ }
+    override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String, excludeDirectoryName: String) { /* No-op */ }
     override fun openFolderInExplorer(path: String) {
         if (openFolderShouldThrow) throw Exception("Fake openFolderInExplorer error for path: $path")
         openedFolderPaths.add(path)

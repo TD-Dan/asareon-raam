@@ -982,6 +982,9 @@ class CommandBotFeature(
 
         val messageId = platformDependencies.generateUUID()
         val formattedMessage = "```text\n$message\n```"
+        val feedbackMetadata = buildJsonObject {
+            put("default_collapsed", true)
+        }
         val feedbackAction = Action(
             name = ActionRegistry.Names.SESSION_POST,
             payload = buildJsonObject {
@@ -989,6 +992,7 @@ class CommandBotFeature(
                 put("senderId", identity.handle)
                 put("message", formattedMessage)
                 put("messageId", messageId)
+                put("metadata", feedbackMetadata)
             }
         )
         store.deferredDispatch(identity.handle, feedbackAction)

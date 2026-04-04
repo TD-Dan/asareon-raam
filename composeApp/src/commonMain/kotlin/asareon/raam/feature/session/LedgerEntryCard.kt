@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.util.PlatformDependencies
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,8 +46,11 @@ fun LedgerEntryCard(
     platformDependencies: PlatformDependencies,
     senderColor: Color? = null
 ) {
-    val uiState = remember(session.messageUiState, entry.id) {
-        session.messageUiState[entry.id] ?: MessageUiState()
+    val uiState = remember(session.messageUiState, entry.id, entry.metadata) {
+        session.messageUiState[entry.id] ?: MessageUiState(
+            isCollapsed = entry.metadata?.get("default_collapsed")
+                ?.jsonPrimitive?.booleanOrNull ?: false
+        )
     }
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()

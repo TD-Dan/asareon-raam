@@ -49,11 +49,11 @@ class GatewayFeatureT2CoreTest {
             }))
         }
 
-        override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
+        override suspend fun listAvailableModels(settings: Map<String, String>): List<ModelDescriptor> {
             val apiKey = settings[apiKeySettingKey].orEmpty()
             if (apiKey.isBlank()) return emptyList()
             listAvailableModelsCallCount++
-            return modelsToReturn
+            return modelsToReturn.map { ModelDescriptor(it) }
         }
 
         override suspend fun generateContent(request: GatewayRequest, settings: Map<String, String>): GatewayResponse {
@@ -128,8 +128,8 @@ class GatewayFeatureT2CoreTest {
             assertEquals(1, fakeProvider2.listAvailableModelsCallCount)
 
             val finalState = harness.store.state.value.featureStates["gateway"] as GatewayState
-            assertEquals(listOf("model-1", "model-2"), finalState.availableModels["provider-1"])
-            assertEquals(listOf("gpt-x"), finalState.availableModels["provider-2"])
+            assertEquals(listOf(ModelDescriptor("model-1"), ModelDescriptor("model-2")), finalState.availableModels["provider-1"])
+            assertEquals(listOf(ModelDescriptor("gpt-x")), finalState.availableModels["provider-2"])
         }
     }
 
@@ -375,7 +375,7 @@ class GatewayFeatureT2CoreTest {
         runCurrent()
 
         val stateAfterLoad = harness.store.state.value.featureStates["gateway"] as GatewayState
-        assertEquals(listOf("model-1", "model-2"), stateAfterLoad.availableModels["provider-1"],
+        assertEquals(listOf(ModelDescriptor("model-1"), ModelDescriptor("model-2")), stateAfterLoad.availableModels["provider-1"],
             "Pre-condition: provider-1 should have models in state before key is cleared.")
 
         // ACT: Simulate user clearing the API key — provider returns emptyList() when key is blank.

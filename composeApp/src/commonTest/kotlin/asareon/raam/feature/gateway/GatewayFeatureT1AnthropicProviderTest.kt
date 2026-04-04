@@ -39,7 +39,7 @@ class GatewayFeatureT1AnthropicProviderTest {
         )
         val expected = buildJsonObject {
             put("model", "claude-3-5-sonnet-20241022")
-            put("max_tokens", 8192)
+            put("max_tokens", DEFAULT_MAX_OUTPUT_TOKENS)
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
@@ -70,7 +70,7 @@ class GatewayFeatureT1AnthropicProviderTest {
         )
         val expected = buildJsonObject {
             put("model", "claude-3-5-sonnet-20241022")
-            put("max_tokens", 8192)
+            put("max_tokens", DEFAULT_MAX_OUTPUT_TOKENS)
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
@@ -296,7 +296,7 @@ class GatewayFeatureT1AnthropicProviderTest {
         // ASSERT
         assertTrue(preview.contains("\"model\": \"claude-3-5-sonnet-20241022\""), "Should contain model name")
         assertTrue(preview.contains("\"messages\": ["), "Should contain messages array")
-        assertTrue(preview.contains("\"max_tokens\": 8192"), "Should contain max_tokens")
+        assertTrue(preview.contains("\"max_tokens\": 16384"), "Should contain max_tokens")
         assertTrue(preview.contains("Hello"), "Should contain message content")
     }
 
