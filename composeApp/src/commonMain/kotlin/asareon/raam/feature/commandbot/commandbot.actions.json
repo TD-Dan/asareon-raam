@@ -209,6 +209,59 @@
       }
     },
     {
+      "action_name": "commandbot.TRACK_FEEDBACK",
+      "summary": "[INTERNAL] Records a CommandBot-posted message ID in trackedFeedback for later autocleanup. Dispatched alongside every tracked SESSION_POST so CommandBot can delete its own stale messages.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session localHandle where the message was posted."
+          },
+          "originatorId": {
+            "type": "string",
+            "description": "The identity that triggered this feedback (e.g., the agent whose command produced the result)."
+          },
+          "messageId": {
+            "type": "string",
+            "description": "The ID of the CommandBot message to track."
+          }
+        },
+        "required": [
+          "sessionId",
+          "originatorId",
+          "messageId"
+        ]
+      }
+    },
+    {
+      "action_name": "commandbot.CLEANUP_FEEDBACK",
+      "summary": "[INTERNAL] Clears all tracked feedback message IDs for a given (session, originator) key. Dispatched after the tracked messages have been deleted from the session ledger.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session localHandle."
+          },
+          "originatorId": {
+            "type": "string",
+            "description": "The originator identity whose tracked feedback should be cleared."
+          }
+        },
+        "required": [
+          "sessionId",
+          "originatorId"
+        ]
+      }
+    },
+    {
       "action_name": "commandbot.DELIVER_TO_SESSION",
       "summary": "Targeted data delivery channel. Core or Agent dispatches this to route command result data (e.g., file contents, directory listings) into the session where the command was typed. The message is pre-formatted by the sender. CommandBot posts it to the specified session without modification.",
       "public": true,

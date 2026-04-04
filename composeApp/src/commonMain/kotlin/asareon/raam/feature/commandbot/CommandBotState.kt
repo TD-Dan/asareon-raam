@@ -30,7 +30,18 @@ data class CommandBotState(
      * {feature}.ACTION_RESULT broadcast arrives. Entries are cleaned up on match
      * or after a TTL (5 minutes).
      */
-    val pendingResults: Map<String, PendingResult> = emptyMap()
+    val pendingResults: Map<String, PendingResult> = emptyMap(),
+
+    /**
+     * Tracks CommandBot-posted feedback message IDs for autocleanup.
+     * Key: composite "$sessionLocalHandle::$originatorId"
+     * Value: list of message IDs posted by CommandBot in response to that originator.
+     *
+     * Before posting new feedback for an originator, all tracked IDs are deleted
+     * from the session ledger, then replaced with the new message's ID.
+     * Entries are pruned when their session is deleted or cleared.
+     */
+    val trackedFeedback: Map<String, List<String>> = emptyMap()
 ) : FeatureState
 
 @Serializable

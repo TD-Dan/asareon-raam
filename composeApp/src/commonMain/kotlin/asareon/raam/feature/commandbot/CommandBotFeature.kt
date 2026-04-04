@@ -193,17 +193,32 @@ class CommandBotFeature(
                 )
             }
 
-            // Clean up resolved approvals when their card message is deleted
+            // Clean up resolved approvals and tracked feedback when a message is deleted
             ActionRegistry.Names.SESSION_MESSAGE_DELETED -> {
                 val messageId = action.payload?.get("messageId")?.jsonPrimitive?.contentOrNull ?: return currentState
-                val matchingApprovalId = currentState.resolvedApprovals.values
+                var state = currentState
+
+                // Prune resolved approvals
+                val matchingApprovalId = state.resolvedApprovals.values
                     .firstOrNull { it.cardMessageId == messageId }
                     ?.approvalId
                 if (matchingApprovalId != null) {
-                    currentState.copy(resolvedApprovals = currentState.resolvedApprovals - matchingApprovalId)
-                } else {
-                    currentState
+                    state = state.copy(resolvedApprovals = state.resolvedApprovals - matchingApprovalId)
                 }
+
+                // Prune trackedFeedback: remove the deleted messageId from whichever key holds it.
+                val prunedTracked = mutableMapOf<String, List<String>>()
+                var trackingChanged = false
+                for ((key, ids) in state.trackedFeedback) {
+                    val filtered = ids.filter { it != messageId }
+                    if (filtered.size != ids.size) trackingChanged = true
+                    if (filtered.isNotEmpty()) prunedTracked[key] = filtered
+                }
+                if (trackingChanged) {
+                    state = state.copy(trackedFeedback = prunedTracked)
+                }
+
+                state
             }
 
             // --- Pending Result Tracking ---
@@ -249,6 +264,51 @@ class CommandBotFeature(
                 currentState.copy(
                     pendingResults = currentState.pendingResults - correlationId
                 )
+            }
+
+            // --- Feedback Autocleanup Tracking ---
+
+            ActionRegistry.Names.COMMANDBOT_TRACK_FEEDBACK -> {
+                val payload = action.payload ?: return currentState
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val messageId = payload["messageId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val key = "$sessionId::$originatorId"
+                val existing = currentState.trackedFeedback[key] ?: emptyList()
+                currentState.copy(
+                    trackedFeedback = currentState.trackedFeedback + (key to existing + messageId)
+                )
+            }
+
+            ActionRegistry.Names.COMMANDBOT_CLEANUP_FEEDBACK -> {
+                val payload = action.payload ?: return currentState
+                val sessionId = payload["sessionId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val originatorId = payload["originatorId"]?.jsonPrimitive?.contentOrNull ?: return currentState
+                val key = "$sessionId::$originatorId"
+                currentState.copy(
+                    trackedFeedback = currentState.trackedFeedback - key
+                )
+            }
+
+            // Prune trackedFeedback when a session is deleted (avoid leaking stale keys).
+            ActionRegistry.Names.SESSION_SESSION_DELETED -> {
+                val deletedLocalHandle = action.payload?.get("localHandle")?.jsonPrimitive?.contentOrNull
+                    ?: return currentState
+                val prefix = "$deletedLocalHandle::"
+                val pruned = currentState.trackedFeedback.filterKeys { !it.startsWith(prefix) }
+                if (pruned.size == currentState.trackedFeedback.size) currentState
+                else currentState.copy(trackedFeedback = pruned)
+            }
+
+            // When SESSION_CLEAR fires, the session reducer removes non-locked/non-doNotClear
+            // entries. Our tracked message IDs are now stale — prune the affected session's keys.
+            ActionRegistry.Names.SESSION_CLEAR -> {
+                val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
+                    ?: return currentState
+                val prefix = "$identifier::"
+                val pruned = currentState.trackedFeedback.filterKeys { !it.startsWith(prefix) }
+                if (pruned.size == currentState.trackedFeedback.size) currentState
+                else currentState.copy(trackedFeedback = pruned)
             }
 
             else -> currentState
@@ -335,7 +395,8 @@ class CommandBotFeature(
                 postFeedbackToSession(
                     approval.sessionId,
                     "[COMMAND BOT] Action '${approval.actionName}' requested by '${approval.requestingAgentName}' was denied.",
-                    store
+                    store,
+                    originatorId = approval.requestingAgentId
                 )
             }
 
@@ -416,7 +477,7 @@ class CommandBotFeature(
                     val feedbackMessage = "TIMEOUT ⏱ ${expiredResult.actionName} — " +
                             "No response received within ${PENDING_RESULT_TTL_MS / 1000}s. " +
                             "The command may not have been handled by any feature."
-                    postFeedbackToSession(expiredResult.sessionId, feedbackMessage, store)
+                    postFeedbackToSession(expiredResult.sessionId, feedbackMessage, store, originatorId = expiredResult.originatorId)
                     platformDependencies.log(
                         LogLevel.WARN, identity.handle,
                         "Pending result EXPIRED for '${expiredResult.actionName}' " +
@@ -440,7 +501,13 @@ class CommandBotFeature(
                     platformDependencies.log(LogLevel.WARN, identity.handle, "DELIVER_TO_SESSION: Missing 'message' for session '$sessionId'. Nothing to deliver.")
                     return
                 }
-                postRawToSession(sessionId, message, store)
+
+                // Resolve originatorId from correlationId for autocleanup (best-effort).
+                val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+                val commandBotState = newState as? CommandBotState
+                val originatorId = correlationId?.let { commandBotState?.pendingResults?.get(it)?.originatorId }
+
+                postRawToSession(sessionId, message, store, originatorId = originatorId)
             }
 
             // --- Permission Denial Feedback ---
@@ -479,7 +546,7 @@ class CommandBotFeature(
                 val permList = missingPermissions.joinToString(", ")
                 val feedbackMessage = "ERROR ✗ ${pendingResult.actionName} — Permission denied for '${pendingResult.originatorName}'. Missing permission: $permList"
 
-                postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store)
+                postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store, originatorId = pendingResult.originatorId)
 
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.COMMANDBOT_CLEAR_PENDING_RESULT,
@@ -543,7 +610,7 @@ class CommandBotFeature(
                 }
                 val feedbackMessage = "$icon ${pendingResult.actionName} — $detail"
 
-                postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store)
+                postFeedbackToSession(pendingResult.sessionId, feedbackMessage, store, originatorId = pendingResult.originatorId)
 
                 // Clear with reason="matched" so the TTL side-effect handler knows
                 // this was consumed by a real ACTION_RESULT, not an expiry timeout.
@@ -626,7 +693,8 @@ class CommandBotFeature(
             postFeedbackToSession(
                 sessionId,
                 "[COMMAND BOT ERROR] Unknown action: '$actionName'",
-                store
+                store,
+                originatorId = originalSenderId
             )
             return
         }
@@ -639,7 +707,8 @@ class CommandBotFeature(
             postFeedbackToSession(
                 sessionId,
                 "[COMMAND BOT ERROR] Unknown action: '$actionName'",
-                store
+                store,
+                originatorId = originalSenderId
             )
             return
         }
@@ -665,7 +734,8 @@ class CommandBotFeature(
                     postFeedbackToSession(
                         sessionId,
                         "[COMMAND BOT] $denialMessage",
-                        store
+                        store,
+                        originatorId = originalSenderId
                     )
                     return
                 }
@@ -710,7 +780,8 @@ class CommandBotFeature(
             postFeedbackToSession(
                 sessionId,
                 "[COMMAND BOT ERROR]\nAction Name: $actionName\nError: Failed to parse command JSON payload. Please check for syntax errors.\nDetails: ${e.message}",
-                store
+                store,
+                originatorId = originalSenderId
             )
         }
     }
@@ -832,9 +903,84 @@ class CommandBotFeature(
     }
 
     /**
-     * Posts a feedback message to the originating session with CommandBot as the sender.
+     * Builds the composite key used in [CommandBotState.trackedFeedback].
      */
-    private fun postFeedbackToSession(sessionId: String, message: String, store: Store) {
+    private fun trackingKey(sessionId: String, originatorId: String): String =
+        "$sessionId::$originatorId"
+
+    /**
+     * Deletes all previously tracked CommandBot messages for a given (session, originator)
+     * pair, then clears the tracking map entry. Call this **before** posting new feedback
+     * so that only the latest result remains visible.
+     *
+     * Safe to call when there are no tracked messages (no-ops gracefully).
+     */
+    private fun cleanupStaleFeedback(sessionId: String, originatorId: String, store: Store) {
+        val commandBotState = store.state.value.featureStates[identity.handle] as? CommandBotState
+            ?: return
+        val key = trackingKey(sessionId, originatorId)
+        val staleIds = commandBotState.trackedFeedback[key]
+        if (staleIds.isNullOrEmpty()) return
+
+        // Dispatch DELETE_MESSAGE for each tracked message ID.
+        staleIds.forEach { messageId ->
+            store.deferredDispatch(identity.handle, Action(
+                ActionRegistry.Names.SESSION_DELETE_MESSAGE,
+                buildJsonObject {
+                    put("session", sessionId)
+                    put("messageId", messageId)
+                }
+            ))
+        }
+
+        // Clear the tracking map entry (the reducer handles idempotency).
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.COMMANDBOT_CLEANUP_FEEDBACK,
+            buildJsonObject {
+                put("sessionId", sessionId)
+                put("originatorId", originatorId)
+            }
+        ))
+
+        platformDependencies.log(
+            LogLevel.DEBUG, identity.handle,
+            "Autocleanup: deleted ${staleIds.size} stale feedback message(s) for key '$key'."
+        )
+    }
+
+    /**
+     * Dispatches [COMMANDBOT_TRACK_FEEDBACK] so the reducer records this message ID
+     * for future autocleanup.
+     */
+    private fun trackFeedbackMessage(sessionId: String, originatorId: String, messageId: String, store: Store) {
+        store.deferredDispatch(identity.handle, Action(
+            ActionRegistry.Names.COMMANDBOT_TRACK_FEEDBACK,
+            buildJsonObject {
+                put("sessionId", sessionId)
+                put("originatorId", originatorId)
+                put("messageId", messageId)
+            }
+        ))
+    }
+
+    /**
+     * Posts a feedback message to the originating session with CommandBot as the sender.
+     *
+     * @param originatorId If non-null, enables autocleanup: previous feedback for this
+     *   (session, originator) pair is deleted before posting, and the new message ID is
+     *   tracked for future cleanup.
+     */
+    private fun postFeedbackToSession(
+        sessionId: String,
+        message: String,
+        store: Store,
+        originatorId: String? = null
+    ) {
+        if (originatorId != null) {
+            cleanupStaleFeedback(sessionId, originatorId, store)
+        }
+
+        val messageId = platformDependencies.generateUUID()
         val formattedMessage = "```text\n$message\n```"
         val feedbackAction = Action(
             name = ActionRegistry.Names.SESSION_POST,
@@ -842,23 +988,46 @@ class CommandBotFeature(
                 put("session", sessionId)
                 put("senderId", identity.handle)
                 put("message", formattedMessage)
+                put("messageId", messageId)
             }
         )
         store.deferredDispatch(identity.handle, feedbackAction)
+
+        if (originatorId != null) {
+            trackFeedbackMessage(sessionId, originatorId, messageId, store)
+        }
     }
 
     /**
      * Posts a pre-formatted message to a session without additional wrapping.
      * Used by DELIVER_TO_SESSION where the sender (Core/Agent) controls formatting.
+     *
+     * @param originatorId If non-null, enables autocleanup (same semantics as
+     *   [postFeedbackToSession]).
      */
-    private fun postRawToSession(sessionId: String, message: String, store: Store) {
+    private fun postRawToSession(
+        sessionId: String,
+        message: String,
+        store: Store,
+        originatorId: String? = null
+    ) {
+        if (originatorId != null) {
+            cleanupStaleFeedback(sessionId, originatorId, store)
+        }
+
+        val messageId = platformDependencies.generateUUID()
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.SESSION_POST,
             payload = buildJsonObject {
                 put("session", sessionId)
                 put("senderId", identity.handle)
                 put("message", message)
+                put("messageId", messageId)
             }
         ))
+
+        if (originatorId != null) {
+            trackFeedbackMessage(sessionId, originatorId, messageId, store)
+        }
     }
 }
