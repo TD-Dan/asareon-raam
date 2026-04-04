@@ -331,22 +331,11 @@ tasks.register("generateActionRegistry") {
                 val reqFieldsStr = if (reqFields.isEmpty()) "emptyList()"
                 else "listOf(${reqFields.joinToString(", ") { "\"$it\"" }})"
 
-                // autoFillRules and sandboxRule as top-level fields
+                // autoFillRules as top-level field
                 @Suppress("UNCHECKED_CAST")
                 val autoFills = action["autoFillRules"] as? Map<String, String> ?: emptyMap()
                 val autoFillStr = if (autoFills.isEmpty()) "emptyMap()"
                 else "mapOf(${autoFills.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-
-                @Suppress("UNCHECKED_CAST")
-                val sr = action["sandboxRule"] as? Map<String, Any>
-                val sandboxStr = if (sr == null) "null"
-                else {
-                    @Suppress("UNCHECKED_CAST")
-                    val rw = sr["payloadRewrites"] as? Map<String, String> ?: emptyMap()
-                    val rwStr = if (rw.isEmpty()) "emptyMap()"
-                    else "mapOf(${rw.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-                    "SandboxRule(\n                        strategy = \"${sr["strategy"]}\",\n                        pathPrefixTemplate = \"${sr["pathPrefixTemplate"]}\",\n                        payloadRewrites = $rwStr\n                    )"
-                }
 
                 @Suppress("UNCHECKED_CAST")
                 val reqPerms = action["requiredPermissions"] as? List<String>
@@ -366,7 +355,6 @@ tasks.register("generateActionRegistry") {
                 |                    payloadFields = $fieldsStr,
                 |                    requiredFields = $reqFieldsStr,
                 |                    autoFillRules = $autoFillStr,
-                |                    sandboxRule = $sandboxStr,
                 |                    requiredPermissions = $reqPermsStr
                 |                )""".trimMargin()
             }
@@ -428,12 +416,6 @@ tasks.register("generateActionRegistry") {
             |        val default: String? = null
             |    )
             |
-            |    data class SandboxRule(
-            |        val strategy: String,
-            |        val pathPrefixTemplate: String,
-            |        val payloadRewrites: Map<String, String> = emptyMap()
-            |    )
-            |
             |    data class ActionDescriptor(
             |        val fullName: String,
             |        val featureName: String,
@@ -446,7 +428,6 @@ tasks.register("generateActionRegistry") {
             |        val payloadFields: List<PayloadField>,
             |        val requiredFields: List<String>,
             |        val autoFillRules: Map<String, String> = emptyMap(),
-            |        val sandboxRule: SandboxRule? = null,
             |        val requiredPermissions: List<String>? = null
             |    ) {
             |        /** A Command is any action public to all originators. */
@@ -502,10 +483,6 @@ tasks.register("generateActionRegistry") {
             |    val agentAutoFillRules: Map<String, Map<String, String>> = byActionName.values
             |        .filter { it.autoFillRules.isNotEmpty() }
             |        .associate { it.fullName to it.autoFillRules }
-            |
-            |    /** Sandbox rules for agent actions. */
-            |    val agentSandboxRules: Map<String, SandboxRule> = byActionName.values
-            |        .mapNotNull { d -> d.sandboxRule?.let { d.fullName to it } }.toMap()
             |
             |    // ================================================================
             |    // Section 5: Permission Declarations (Phase 1)

@@ -981,9 +981,8 @@ class AgentRuntimeFeature(
                     "ACTION_CREATED: Handling '$actionName' for agent '$originatorId' (uuid=$agentUuid, correlationId=$correlationId)."
                 )
 
-                // Apply sandbox rewrite for actions that need it.
-                // Uses UUID because workspace paths are "{uuid}/workspace/".
-                var finalPayload = applySandboxRewrite(actionName, actionPayload, agentUuid)
+                // Apply self-targeting enforcement for identity-scoped actions.
+                var finalPayload = actionPayload
 
                 // NVRAM self-targeting enforcement: agents with only agent:cognition
                 // can only target their own NVRAM. Cross-agent targeting requires
@@ -1070,64 +1069,61 @@ class AgentRuntimeFeature(
                 // ============================================================
                 // Workspace Write Guard
                 //
-                // When an agent targets filesystem.WRITE for a file in its
-                // workspace, verify the target file is EXPANDED in the agent's
-                // context. Block the write if not — the agent must expand the
-                // file first to avoid writing stale or partial data.
+                // Agent-dispatched writes are sandboxed to {uuid}/workspace/
+                // by FileSystemFeature's identity-aware sandbox. The path in
+                // the payload is a clean relative path. Verify the target file
+                // is EXPANDED in the agent's context before allowing overwrites.
+                // New file creation (file not in listing) is always allowed.
                 // Same rationale as the HKG Write Guard above.
                 // ============================================================
                 if (actionName == ActionRegistry.Names.FILESYSTEM_WRITE) {
-                    val targetPath = finalPayload["path"]?.jsonPrimitive?.contentOrNull
-                    if (targetPath != null) {
+                    val relativePath = finalPayload["path"]?.jsonPrimitive?.contentOrNull
+                    if (relativePath != null) {
+                        val agentStatusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
+                        val fileCollapseState = agentStatusInfo.contextCollapseOverrides["ws:$relativePath"]
+
+                        // Workspace listing entries are relative to the feature sandbox
+                        // ({APP_ZONE}/agent/) and include the {uuid}/workspace/ prefix.
+                        // Strip that prefix to compare against the clean relative path.
                         val safeAgentIdStr = agentUuid.uuid.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-                        val workspaceMarker = "$safeAgentIdStr/workspace/"
+                        val workspacePrefix = "$safeAgentIdStr/workspace/"
+                        val workspaceListing = agentStatusInfo.transientWorkspaceListing
+                        val fileExistsInListing = workspaceListing != null && workspaceListing.any { entry ->
+                            val entryPath = entry.jsonObject["path"]?.jsonPrimitive?.contentOrNull
+                                ?.replace("\\", "/")
+                                ?.removePrefix(workspacePrefix)
+                            entryPath == relativePath
+                        }
 
-                        if (targetPath.startsWith(workspaceMarker)) {
-                            val relativePath = targetPath.removePrefix(workspaceMarker)
-                            val agentStatusInfo = agentState.agentStatuses[agentUuid] ?: AgentStatusInfo()
-                            val fileCollapseState = agentStatusInfo.contextCollapseOverrides["ws:$relativePath"]
-
-                            // Only guard writes to files that already exist in the workspace listing.
-                            // New file creation (file not in listing) is always allowed — the agent
-                            // can create files without first expanding them.
-                            val workspaceListing = agentStatusInfo.transientWorkspaceListing
-                            val fileExistsInListing = workspaceListing != null && workspaceListing.any { entry ->
-                                val entryPath = entry.jsonObject["path"]?.jsonPrimitive?.contentOrNull
-                                    ?.replace("\\", "/")
-                                    ?.removePrefix(workspaceMarker)
-                                entryPath == relativePath
+                        if (fileExistsInListing && fileCollapseState != CollapseState.EXPANDED) {
+                            // Block — post sentinel error to agent's output session
+                            val targetSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
+                            if (targetSessionUUID != null) {
+                                store.deferredDispatch(identity.handle, Action(
+                                    ActionRegistry.Names.SESSION_POST,
+                                    buildJsonObject {
+                                        put("session", targetSessionUUID.uuid)
+                                        put("senderId", "system")
+                                        put("message", "SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify workspace file " +
+                                                "'$relativePath' which is not expanded in your context. Expand the file first:\n" +
+                                                "```raam_agent.CONTEXT_UNCOLLAPSE\n" +
+                                                "{ \"partitionKey\": \"ws:$relativePath\", \"scope\": \"single\" }\n" +
+                                                "```\n" +
+                                                "Then retry your write to ensure you are not omitting data.")
+                                    }
+                                ))
                             }
 
-                            if (fileExistsInListing && fileCollapseState != CollapseState.EXPANDED) {
-                                // Block — post sentinel error to agent's output session
-                                val targetSessionUUID = agent.outputSessionId ?: agent.subscribedSessionIds.firstOrNull()
-                                if (targetSessionUUID != null) {
-                                    store.deferredDispatch(identity.handle, Action(
-                                        ActionRegistry.Names.SESSION_POST,
-                                        buildJsonObject {
-                                            put("session", targetSessionUUID.uuid)
-                                            put("senderId", "system")
-                                            put("message", "SYSTEM SENTINEL: Error: Write blocked! You are attempting to modify workspace file " +
-                                                    "'$relativePath' which is not expanded in your context. Expand the file first:\n" +
-                                                    "```raam_agent.CONTEXT_UNCOLLAPSE\n" +
-                                                    "{ \"partitionKey\": \"ws:$relativePath\", \"scope\": \"single\" }\n" +
-                                                    "```\n" +
-                                                    "Then retry your write to ensure you are not omitting data.")
-                                        }
-                                    ))
-                                }
+                            platformDependencies.log(
+                                LogLevel.WARN, identity.handle,
+                                "Workspace Write Guard: Blocked write to collapsed file '$relativePath' by agent '$agentUuid'."
+                            )
 
-                                platformDependencies.log(
-                                    LogLevel.WARN, identity.handle,
-                                    "Workspace Write Guard: Blocked write to collapsed file '$relativePath' by agent '$agentUuid'."
-                                )
-
-                                publishActionResult(
-                                    store, correlationId, actionName, success = false,
-                                    error = "Write blocked: workspace file '$relativePath' is not expanded in agent context."
-                                )
-                                return // Do not forward the action
-                            }
+                            publishActionResult(
+                                store, correlationId, actionName, success = false,
+                                error = "Write blocked: workspace file '$relativePath' is not expanded in agent context."
+                            )
+                            return // Do not forward the action
                         }
                     }
                 }
@@ -1300,28 +1296,6 @@ class AgentRuntimeFeature(
         ))
     }
 
-    // ========================================================================
-    // ACTION_CREATED: Sandbox rewrite
-    // ========================================================================
-
-    private fun applySandboxRewrite(actionName: String, payload: JsonObject, agentId: IdentityUUID): JsonObject {
-        val rule = ActionRegistry.agentSandboxRules[actionName] ?: return payload
-        if (rule.strategy != "AGENT_WORKSPACE") return payload
-
-        val mutablePayload = payload.toMutableMap()
-
-        val originalPath = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
-        val prefix = rule.pathPrefixTemplate.replace("{agentId}", agentId.uuid)
-        val sandboxedPath = if (originalPath.isNotBlank()) "$prefix/$originalPath" else prefix
-        mutablePayload["path"] = JsonPrimitive(sandboxedPath)
-
-        rule.payloadRewrites.forEach { (key, jsonLiteralValue) ->
-            mutablePayload[key] = Json.parseToJsonElement(jsonLiteralValue)
-        }
-
-        return JsonObject(mutablePayload)
-    }
-
     /**
      * Shared self-targeting enforcement for agent-originated commands.
      *
@@ -1356,8 +1330,9 @@ class AgentRuntimeFeature(
         // Resolve the target through the identity registry
         val registry = store.state.value.identityRegistry
         val targetIdentity = registry.resolve(rawTargetId, parentHandle = "agent")
+        val targetUuid = targetIdentity?.identityUUID
 
-        if (targetIdentity?.identityUUID == null) {
+        if (targetUuid == null) {
             // Case 5: Target doesn't exist
             val suggestions = registry.suggestMatches(rawTargetId, parentHandle = "agent")
                 .joinToString(", ") { "'${it.name}' (${it.uuid})" }
@@ -1370,7 +1345,7 @@ class AgentRuntimeFeature(
             return null
         }
 
-        if (targetIdentity.identityUUID == callerUuid) {
+        if (targetUuid == callerUuid) {
             // Case 2: Targeting self (by handle, name, or UUID) — normalize to UUID
             return JsonObject(payload + ("agentId" to JsonPrimitive(callerUuid.uuid)))
         }
@@ -1395,7 +1370,7 @@ class AgentRuntimeFeature(
         platformDependencies.log(LogLevel.INFO, identity.handle,
             "enforceSelfTarget: Agent '${callerAgent.identityHandle.handle}' targeting " +
                     "'${targetIdentity.name}' for $actionName (permitted via agent:manage).")
-        return JsonObject(payload + ("agentId" to JsonPrimitive(targetIdentity.identityUUID!!.uuid)))
+        return JsonObject(payload + ("agentId" to JsonPrimitive(targetUuid.uuid)))
     }
 
     // ========================================================================

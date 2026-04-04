@@ -42,15 +42,25 @@ class FileSystemFeature(
     private val settingKeyWhitelist = "filesystem.whitelistedPaths"
     private val settingKeyFavorites = "filesystem.favoritePaths"
 
-    private fun getSandboxPathFor(originator: String): String {
-        // Pre-Phase 1 fix: resolve to feature-level prefix to preserve storage layout.
-        // When agent dispatch changes from "agent" to "agent.coder-1", we still want
-        // APP_ZONE/agent as the sandbox root, not APP_ZONE/agent_coder-1.
-        // "agent.coder-1" → "agent", "session.chat1" → "session", "settings" → "settings"
-        val featureHandle = originator.substringBefore('.')
+    private fun getSandboxPathFor(originator: String, store: Store): String {
         val appZoneRoot = platformDependencies.getBasePathFor(BasePath.APP_ZONE)
-        val safeOriginator = featureHandle.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-        return "$appZoneRoot${platformDependencies.pathSeparator}$safeOriginator"
+        val sep = platformDependencies.pathSeparator
+        val featureHandle = originator.substringBefore('.')
+        val safeFeature = featureHandle.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+
+        // Resolve UUID from the identity registry for per-identity isolation.
+        // Identities with a UUID (e.g., agents, sessions) get an isolated workspace:
+        //   {APP_ZONE}/{feature}/{uuid}/workspace/
+        // Feature-level originators without a UUID get a flat sandbox:
+        //   {APP_ZONE}/{feature}/
+        val identity = store.state.value.identityRegistry[originator]
+        val uuid = identity?.uuid
+
+        return if (uuid != null) {
+            "$appZoneRoot$sep$safeFeature$sep$uuid${sep}workspace"
+        } else {
+            "$appZoneRoot$sep$safeFeature"
+        }
     }
 
     private fun filenameGuard(path: String, originator: String, operation: String): Boolean {
@@ -388,7 +398,7 @@ class FileSystemFeature(
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemListPayload>(it) } ?: SystemListPayload()
                 if (!filepathGuard(payload.path, originator, "list directory")) return
 
-                val sandboxPath = getSandboxPathFor(originator)
+                val sandboxPath = getSandboxPathFor(originator, store)
                 val fullPath = if (payload.path.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}${payload.path}" else sandboxPath
                 try {
                     if (!platformDependencies.fileExists(fullPath)) platformDependencies.createDirectories(fullPath)
@@ -437,7 +447,7 @@ class FileSystemFeature(
                 // Pass through correlationId if provided (e.g., workspace file reads use "ws:<agentId>").
                 // ReadFilesContentPayload doesn't model this field, so extract from raw payload.
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-                val sandboxPath = getSandboxPathFor(originator)
+                val sandboxPath = getSandboxPathFor(originator, store)
                 val contentMap = mutableMapOf<String, String>()
                 payload.paths.forEach { path ->
                     if (!filenameGuard(path, originator, "bulk read")) return@forEach
@@ -475,7 +485,7 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_READ -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemReadPayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "read")) return
-                val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
+                val fullPath = "${getSandboxPathFor(originator, store)}${platformDependencies.pathSeparator}${payload.path}"
 
                 // Fast path: file does not exist. This is a normal, expected condition
                 // (e.g., context.json not yet created for an agent). Return content:null
@@ -537,7 +547,7 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_WRITE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemWritePayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "write")) return
-                val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
+                val fullPath = "${getSandboxPathFor(originator, store)}${platformDependencies.pathSeparator}${payload.path}"
                 try {
                     platformDependencies.writeFileContent(fullPath, if (payload.encrypt) cryptoManager.encrypt(payload.content) else payload.content)
                     publishActionResult(store, payload.correlationId, action.name, success = true,
@@ -552,7 +562,7 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_DELETE_FILE -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemDeletePayload>(it) } ?: return
                 if (!filenameGuard(payload.path, originator, "delete")) return
-                val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
+                val fullPath = "${getSandboxPathFor(originator, store)}${platformDependencies.pathSeparator}${payload.path}"
                 try {
                     if (platformDependencies.fileExists(fullPath)) {
                         platformDependencies.deleteFile(fullPath)
@@ -571,7 +581,7 @@ class FileSystemFeature(
             ActionRegistry.Names.FILESYSTEM_DELETE_DIRECTORY -> {
                 val payload = action.payload?.let { json.decodeFromJsonElement<SystemDeleteDirectoryPayload>(it) } ?: return
                 if (!filepathGuard(payload.path, originator, "delete directory")) return
-                val fullPath = "${getSandboxPathFor(originator)}${platformDependencies.pathSeparator}${payload.path}"
+                val fullPath = "${getSandboxPathFor(originator, store)}${platformDependencies.pathSeparator}${payload.path}"
                 try {
                     if (platformDependencies.fileExists(fullPath)) {
                         platformDependencies.deleteDirectory(fullPath)
@@ -592,7 +602,7 @@ class FileSystemFeature(
                     ?.let { json.decodeFromJsonElement<PathPayload>(it) }
                     ?.path
                     ?: ""
-                val sandboxPath = getSandboxPathFor(originator)
+                val sandboxPath = getSandboxPathFor(originator, store)
                 val fullPath = if (path.isNotBlank()) "$sandboxPath${platformDependencies.pathSeparator}$path" else sandboxPath
                 try {
                     if (!platformDependencies.fileExists(fullPath)) {
