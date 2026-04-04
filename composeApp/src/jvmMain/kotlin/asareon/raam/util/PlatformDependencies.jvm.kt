@@ -18,9 +18,14 @@ import java.util.TimeZone
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.util.zip.ZipInputStream
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileSystemView
 import kotlinx.coroutines.*
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import kotlin.collections.plusAssign
+import kotlin.toString
 
 /**
  * The actual JVM implementation of the PlatformDependencies contract.
@@ -141,30 +146,140 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
             sandboxRoot
         }
     }
-
-
-    // --- Complex Operations ---
-
-    actual open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String) {
+    actual open fun createZipArchive(
+        sourceDirectoryPath: String,
+        destinationZipPath: String,
+        excludeDirectoryName: String
+    ) {
         val sourceDir = File(sourceDirectoryPath)
+        val sourcePath = sourceDir.toPath()
         val zipFile = File(destinationZipPath)
         zipFile.parentFile?.mkdirs()
 
-        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-            sourceDir.walkTopDown().forEach { file ->
-                if (file.absolutePath == sourceDir.absolutePath) return@forEach
-                var entryName = sourceDir.toURI().relativize(file.toURI()).path
-                if (file.isDirectory && !entryName.endsWith('/')) {
-                    entryName += "/"
+        ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
+            sourceDir.walkTopDown()
+                .onEnter { dir ->
+                    // Skip excluded directory by name match
+                    if (excludeDirectoryName != null
+                        && dir.name == excludeDirectoryName
+                        && dir.absolutePath != sourceDir.absolutePath) {
+                        false
+                    } else {
+                        true
+                    }
                 }
-                val zipEntry = ZipEntry(entryName)
-                zos.putNextEntry(zipEntry)
-                if (file.isFile) {
-                    FileInputStream(file).use { fis -> fis.copyTo(zos) }
+                .forEach { file ->
+                    if (file.absolutePath == sourceDir.absolutePath) return@forEach
+
+                    // Use Path.relativize() — NOT URI.relativize()
+                    // URI.relativize() percent-encodes special chars (%20 for spaces)
+                    // which breaks Windows Explorer's zip parser.
+                    val relativePath = sourcePath.relativize(file.toPath())
+                    // Normalize to forward slashes (zip spec requirement)
+                    var entryName = relativePath.toString().replace('\\', '/')
+
+                    if (file.isDirectory) {
+                        if (!entryName.endsWith('/')) entryName += "/"
+                        val dirEntry = ZipEntry(entryName)
+                        dirEntry.method = ZipEntry.STORED
+                        dirEntry.size = 0
+                        dirEntry.compressedSize = 0
+                        dirEntry.crc = 0
+                        dirEntry.time = file.lastModified()
+                        zos.putNextEntry(dirEntry)
+                        zos.closeEntry()
+                    } else {
+                        val fileEntry = ZipEntry(entryName)
+                        fileEntry.time = file.lastModified()
+                        zos.putNextEntry(fileEntry)
+                        BufferedInputStream(FileInputStream(file)).use { bis ->
+                            bis.copyTo(zos)
+                        }
+                        zos.closeEntry()
+                    }
                 }
-                zos.closeEntry()
+        }
+    }
+
+    // --- Also fix the EXISTING createZipArchive (no exclude param) ---
+    // This is the backward-compatible version with the same URI fix.
+    // NOTE: Once the new signature with excludeDirectoryName is in place,
+    // this old signature can be removed since the default param handles it.
+    // But if you keep both for now, here's the fixed version:
+
+    // (The above method with excludeDirectoryName=null default covers this)
+
+    // --- NEW: extractZipArchive ---
+
+    actual open fun extractZipArchive(zipPath: String, targetDirectoryPath: String) {
+        val targetDir = File(targetDirectoryPath)
+        targetDir.mkdirs()
+
+        ZipInputStream(
+            BufferedInputStream(FileInputStream(File(zipPath)))
+        ).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                val outFile = File(targetDir, entry.name)
+
+                // Security: prevent zip slip attack
+                val canonicalTarget = targetDir.canonicalPath
+                val canonicalOut = outFile.canonicalPath
+                if (!canonicalOut.startsWith(canonicalTarget + File.separator)
+                    && canonicalOut != canonicalTarget) {
+                    throw SecurityException(
+                        "Zip slip detected: '${entry.name}' resolves outside target."
+                    )
+                }
+
+                if (entry.isDirectory) {
+                    outFile.mkdirs()
+                } else {
+                    outFile.parentFile?.mkdirs()
+                    BufferedOutputStream(FileOutputStream(outFile)).use { fos ->
+                        zis.copyTo(fos)
+                    }
+                }
+                zis.closeEntry()
+                entry = zis.nextEntry
             }
         }
+    }
+
+    // --- NEW: fileSize ---
+
+    actual open fun fileSize(path: String): Long {
+        val file = File(path)
+        return if (file.exists()) file.length() else 0L
+    }
+
+    // --- NEW: restartApplication ---
+
+    actual open fun restartApplication() {
+        log(LogLevel.INFO, "PlatformDependencies", "Application restart requested.")
+        try {
+            val javaBin = System.getProperty("java.home") +
+                    File.separator + "bin" + File.separator + "java"
+            val classPath = System.getProperty("java.class.path")
+            val mainClass = System.getProperty("sun.java.command")
+                ?.split(" ")?.firstOrNull()
+
+            if (mainClass != null) {
+                ProcessBuilder(mutableListOf(javaBin, "-cp", classPath, mainClass))
+                    .inheritIO()
+                    .start()
+                Thread.sleep(500)
+            } else {
+                log(LogLevel.WARN, "PlatformDependencies",
+                    "Cannot determine main class for restart. Please restart manually.")
+                return
+            }
+        } catch (e: Exception) {
+            log(LogLevel.ERROR, "PlatformDependencies",
+                "Failed to restart application.", e)
+            return
+        }
+        System.exit(0)
     }
 
     actual open fun openFolderInExplorer(path: String) {

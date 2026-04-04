@@ -34,6 +34,27 @@ interface Feature {
      */
     fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {}
 
+    /**
+     * Pre-initialization lifecycle hook. Called by [Store.initFeatureLifecycles] BEFORE
+     * [init] and before the Store's action bus is operational.
+     *
+     * **Contract:**
+     * - Runs during bootstrap, before any state mutations or action dispatch.
+     * - Must be synchronous and blocking (called from a synchronous `remember {}` block).
+     * - Must NOT depend on the Store, action bus, or any other feature's state.
+     * - Must NOT modify application data on disk — this phase is read-only + snapshot.
+     * - Dependencies are available only via constructor injection (e.g., platformDependencies).
+     * - Failures must be handled internally (log + continue). Never throw — a failed
+     *   preInit must not prevent the application from starting.
+     *
+     * **Use cases:** Creating protective snapshots (backups), validating data integrity,
+     * reading bootstrap configuration from non-encrypted sources.
+     *
+     * Default implementation is a no-op. Override only if your feature needs
+     * pre-initialization work.
+     */
+    fun preInit() {}
+
     fun init(store: Store) {}
 
     val composableProvider: ComposableProvider?

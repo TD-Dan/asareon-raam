@@ -3,6 +3,7 @@ package asareon.raam.core
 import asareon.raam.feature.agent.AgentRuntimeFeature
 import asareon.raam.feature.commandbot.CommandBotFeature
 import asareon.raam.feature.core.CoreFeature
+import asareon.raam.feature.backup.BackupFeature
 import asareon.raam.feature.filesystem.FileSystemFeature
 import asareon.raam.feature.gateway.GatewayFeature
 import asareon.raam.feature.gateway.gemini.GeminiProvider
@@ -57,6 +58,7 @@ class AppContainer(
 
         val allFeatures = mutableListOf<Feature>()
         allFeatures.addAll(listOf(
+            BackupFeature(platformDependencies),
             CoreFeature(platformDependencies),
             SettingsFeature(platformDependencies),
             FileSystemFeature(platformDependencies),

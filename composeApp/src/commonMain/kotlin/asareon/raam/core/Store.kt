@@ -100,10 +100,16 @@ open class Store(
                 identityRegistry = _state.value.identityRegistry + featureIdentities
             )
 
+            // PRE_INIT phase: Allow features to perform pre-initialization work
+            // (e.g., creating protective snapshots) before the Store is operational.
+            // See Feature.preInit() KDoc for the full contract.
+            features.forEach { it.preInit() }
+
             features.forEach { it.init(this) }
             lifecycleStarted = true
         }
     }
+
 
     /**
      * Enqueues an action to be dispatched.

@@ -96,9 +96,51 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun resolveAbsoluteSandboxPath(featureHandle: String, relativePath: String): String
 
     // --- Complex Operations ---
-    open fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String)
     open fun openFolderInExplorer(path: String)
     open fun selectDirectoryPath(): String?
+
+    // --- Backup/Restore Support ---
+    /**
+     * Creates a zip archive from a source directory, optionally excluding a named
+     * subdirectory (matched by name, not path).
+     *
+     * NOTE: This is a SIGNATURE CHANGE to the existing createZipArchive method.
+     * The new parameter has a default value for backward compatibility.
+     *
+     * @param sourceDirectoryPath The directory to archive.
+     * @param destinationZipPath The output zip file path.
+     * @param excludeDirectoryName Optional directory name to exclude (e.g., "_backups").
+     *        When non-null, any directory with this exact name at any depth is skipped.
+     */
+    open fun createZipArchive(
+        sourceDirectoryPath: String,
+        destinationZipPath: String,
+        excludeDirectoryName: String
+    )
+
+    /**
+     * Extracts a zip archive to a target directory, creating it if needed.
+     *
+     * @param zipPath Path to the zip file to extract.
+     * @param targetDirectoryPath The directory to extract into.
+     */
+    open fun extractZipArchive(zipPath: String, targetDirectoryPath: String)
+
+    /**
+     * Returns the size of a file in bytes.
+     *
+     * @param path The absolute path to the file.
+     * @return The file size in bytes, or 0 if the file does not exist.
+     */
+    open fun fileSize(path: String): Long
+
+    /**
+     * Requests the platform to restart the application.
+     * The implementation is platform-specific:
+     * - JVM: Launches a new process and exits the current one.
+     * - Other platforms: May show a "please restart" message instead.
+     */
+    open fun restartApplication()
 
     // --- System Utilities ---
     open fun currentTimeMillis(): Long

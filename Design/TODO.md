@@ -127,6 +127,7 @@ BUG: "add agent" isn't visible in the session kebab menu, until agent is removed
 # COMMANDBOT
 - CommandBot by default posts collapsed messages when OK
 - Implement the ASK process for ASK level permissions
+- Commandbot clears old notifications away automatically
 
 # KNOWLEDGE GRAPH
 - KG Editor needs the export KG button
