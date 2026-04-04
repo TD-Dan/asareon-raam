@@ -106,6 +106,7 @@ BUG: gocnitivepipeline 969: should error not default
 
 # SESSION
 - Need to be able to edit session names and reorder from the tab bar
+- Delete session from tab right click menu
 - "add agent" isnt visible in the session kebab menu, until agent is removed from the session. Please write a test case "add agent is visible and populated with agents"
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
 

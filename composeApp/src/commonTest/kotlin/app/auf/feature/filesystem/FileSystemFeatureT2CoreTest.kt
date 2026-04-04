@@ -112,7 +112,7 @@ class FileSystemFeatureT2CoreTest {
 
             assertNotNull(writtenContent, "File should have been written.")
             assertNotEquals(originalContent, writtenContent, "Written content should be encrypted.")
-            assertTrue(writtenContent.startsWith("[AUF_ENC_V1]"), "Written content should have the encryption prefix.")
+            assertTrue(writtenContent.startsWith("[RAAM_ENC_V1]"), "Written content should have the encryption prefix.")
         }
     }
 

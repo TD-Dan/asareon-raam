@@ -31,7 +31,7 @@ internal class CryptoManager(
         0x12.toByte(), 0x34.toByte(), 0x56.toByte(), 0x78.toByte(), 0x9A.toByte(), 0xBC.toByte(), 0xDE.toByte(), 0xF0.toByte(), 0x2A.toByte(), 0x6C.toByte(), 0x9E.toByte(), 0x4D.toByte(), 0x8F.toByte(), 0x0B.toByte(), 0x5A.toByte(), 0x7C.toByte()
     )
 
-    private val encryptionPrefix = "[AUF_ENC_V1]"
+    private val encryptionPrefix = "[RAAM_ENC_V1]"
 
     /**
      * Checks if a given string is prefixed with the encryption marker.

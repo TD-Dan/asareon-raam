@@ -43,7 +43,7 @@ class FileSystemFeatureT1CryptoManagerTest {
     @Test
     fun `decrypt on a malformed or corrupted string returns the original malformed string`() {
         // Arrange
-        val malformedCiphertext = "[AUF_ENC_V1]not_valid_base64_$$$"
+        val malformedCiphertext = "[RAAM_ENC_V1]not_valid_base64_$$$"
 
         // Act
         val result = cryptoManager.decrypt(malformedCiphertext)
