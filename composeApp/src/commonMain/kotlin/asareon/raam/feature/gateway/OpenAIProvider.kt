@@ -111,6 +111,7 @@ class OpenAIProvider(
         return buildJsonObject {
             put("model", request.modelName)
             put("messages", openAiMessages)
+            request.maxOutputTokens?.let { put("max_tokens", it) }
         }
     }
 
@@ -157,7 +158,7 @@ class OpenAIProvider(
         dispatch(Action(ActionRegistry.Names.SETTINGS_ADD, payload))
     }
 
-    override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
+    override suspend fun listAvailableModels(settings: Map<String, String>): List<ModelDescriptor> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) return emptyList()
 
@@ -169,6 +170,10 @@ class OpenAIProvider(
                 .map { it.id }
                 .filter { it.startsWith("gpt-") }
                 .sorted()
+                // OpenAI's list-models API does not expose per-model output token limits.
+                // maxOutputTokens is left null — the user-configured default will be used,
+                // and the API will return a clear error if it exceeds the model's ceiling.
+                .map { ModelDescriptor(it) }
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.WARN, id, "Failed to fetch OpenAI models: ${e.message}")
             emptyList()

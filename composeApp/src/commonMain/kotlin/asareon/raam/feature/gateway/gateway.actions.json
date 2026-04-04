@@ -239,21 +239,30 @@
     },
     {
       "action_name": "gateway.AVAILABLE_MODELS_UPDATED",
-      "summary": "Broadcasts the list of currently available providers and their models.",
+      "summary": "Broadcasts the list of currently available providers and their models, including per-model metadata such as output token limits where available.",
       "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
         "type": "object",
-        "properties": {
-          "models": {
+        "description": "A map where the key is the provider ID and the value is a list of ModelDescriptor objects.",
+        "additionalProperties": {
+          "type": "array",
+          "items": {
             "type": "object",
-            "description": "A map where the key is the provider ID and the value is a list of model name strings."
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The model's unique identifier as reported by the provider."
+              },
+              "maxOutputTokens": {
+                "type": ["integer", "null"],
+                "description": "The maximum number of output tokens this model supports, or null if the provider does not expose this information."
+              }
+            },
+            "required": ["id"]
           }
-        },
-        "required": [
-          "models"
-        ]
+        }
       }
     },
     {
@@ -270,8 +279,20 @@
           },
           "models": {
             "type": "array",
+            "description": "A list of ModelDescriptor objects for the provider.",
             "items": {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The model's unique identifier as reported by the provider."
+                },
+                "maxOutputTokens": {
+                  "type": ["integer", "null"],
+                  "description": "The maximum number of output tokens this model supports, or null if unknown."
+                }
+              },
+              "required": ["id"]
             }
           }
         },

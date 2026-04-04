@@ -42,6 +42,16 @@ open class GatewayFeature(
                 providerMap.values.forEach { provider ->
                     provider.registerSettings { actionToDispatch -> store.deferredDispatch(identity.handle, actionToDispatch) }
                 }
+                // Register the global max output tokens setting.
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
+                    put("key", MAX_OUTPUT_TOKENS_SETTING_KEY)
+                    put("type", "NUMERIC_LONG")
+                    put("label", "Max Output Tokens")
+                    put("description", "Maximum number of tokens the model can generate per response. " +
+                            "If the selected model supports fewer tokens, the model's limit takes precedence.")
+                    put("section", "Gateway")
+                    put("defaultValue", DEFAULT_MAX_OUTPUT_TOKENS.toString())
+                }))
             }
 
             ActionRegistry.Names.SYSTEM_RUNNING -> {
@@ -62,6 +72,8 @@ open class GatewayFeature(
                     val providerId = key.split('.')[1]
                     refreshProviderModels(providerId, gatewayState, store)
                 }
+                // No side effect needed for maxOutputTokens changes — the reducer captures
+                // it into state, and it takes effect on the next generation request.
             }
 
             ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS -> {
@@ -86,6 +98,24 @@ open class GatewayFeature(
                 handleRequestCompleted(action)
             }
         }
+    }
+
+    /**
+     * Resolves the effective max output tokens for a given provider and model.
+     *
+     * Uses min(user setting, model's known maximum) when the model exposes its limit
+     * via the provider's models API (Anthropic, Gemini). Falls back to the user setting
+     * alone when the model's limit is unknown (OpenAI, Inception).
+     */
+    private fun resolveMaxOutputTokens(
+        providerId: String,
+        modelName: String,
+        gatewayState: GatewayState
+    ): Int {
+        val modelDescriptor = gatewayState.availableModels[providerId]?.find { it.id == modelName }
+        val modelMax = modelDescriptor?.maxOutputTokens
+        val settingMax = gatewayState.maxOutputTokens
+        return if (modelMax != null) minOf(settingMax, modelMax) else settingMax
     }
 
     private fun handleCancelRequest(action: Action) {
@@ -167,11 +197,14 @@ open class GatewayFeature(
             return
         }
 
+        // Resolve effective max output tokens from user setting and model metadata.
+        val effectiveMaxTokens = resolveMaxOutputTokens(providerId, modelName, gatewayState)
+
         // AUDIT: Log the request intention
-        platformDependencies.log(LogLevel.INFO, identity.handle, "Generating content via $providerId ($modelName). CorrelationId: $correlationId. SystemPrompt: ${systemPrompt != null}")
+        platformDependencies.log(LogLevel.INFO, identity.handle, "Generating content via $providerId ($modelName). CorrelationId: $correlationId. SystemPrompt: ${systemPrompt != null}. MaxOutputTokens: $effectiveMaxTokens")
 
         val job = coroutineScope.launch {
-            val request = GatewayRequest(modelName, contents, correlationId, systemPrompt)
+            val request = GatewayRequest(modelName, contents, correlationId, systemPrompt, effectiveMaxTokens)
             val response = provider.generateContent(request, gatewayState.apiKeys)
 
             // Log token usage if available
@@ -259,7 +292,9 @@ open class GatewayFeature(
             return
         }
 
-        val agnosticRequest = GatewayRequest(modelName, contents, correlationId, systemPrompt)
+        // Resolve effective max output tokens so the preview reflects the actual value.
+        val effectiveMaxTokens = resolveMaxOutputTokens(providerId, modelName, gatewayState)
+        val agnosticRequest = GatewayRequest(modelName, contents, correlationId, systemPrompt, effectiveMaxTokens)
 
         // ARCHITECTURE: Use the polymorphic interface (Provider is the Translator)
         // We launch a coroutine because generatePreview is suspendable
@@ -330,7 +365,7 @@ open class GatewayFeature(
             ActionRegistry.Names.GATEWAY_MODELS_UPDATED -> {
                 val payload = action.payload ?: return currentFeatureState
                 val providerId = payload["providerId"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
-                val models = Json.decodeFromJsonElement<List<String>>(payload["models"] ?: return currentFeatureState)
+                val models = Json.decodeFromJsonElement<List<ModelDescriptor>>(payload["models"] ?: return currentFeatureState)
                 // If the provider returned no models (e.g. API key is blank or the call failed),
                 // remove it from the map entirely so it never surfaces in the UI.
                 val newModels = if (models.isEmpty()) {
@@ -342,16 +377,29 @@ open class GatewayFeature(
             }
             ActionRegistry.Names.SETTINGS_LOADED -> {
                 val loadedValues = action.payload?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
-                val relevantKeys = loadedValues.filterKeys { it in providerApiKeys }
-                if (relevantKeys.isNotEmpty()) {
-                    return currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + relevantKeys)
+                val relevantApiKeys = loadedValues.filterKeys { it in providerApiKeys }
+                val maxTokensValue = loadedValues[MAX_OUTPUT_TOKENS_SETTING_KEY]?.toIntOrNull()
+
+                var newState = currentFeatureState
+                if (relevantApiKeys.isNotEmpty()) {
+                    newState = newState.copy(apiKeys = newState.apiKeys + relevantApiKeys)
                 }
+                if (maxTokensValue != null && maxTokensValue > 0) {
+                    newState = newState.copy(maxOutputTokens = maxTokensValue)
+                }
+                return if (newState != currentFeatureState) newState else currentFeatureState
             }
             ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
                 val key = action.payload?.get("key")?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 val value = action.payload["value"]?.jsonPrimitive?.contentOrNull ?: return currentFeatureState
                 if (key in providerApiKeys) {
                     return currentFeatureState.copy(apiKeys = currentFeatureState.apiKeys + (key to value))
+                }
+                if (key == MAX_OUTPUT_TOKENS_SETTING_KEY) {
+                    val maxTokens = value.toIntOrNull()
+                    if (maxTokens != null && maxTokens > 0) {
+                        return currentFeatureState.copy(maxOutputTokens = maxTokens)
+                    }
                 }
             }
         }

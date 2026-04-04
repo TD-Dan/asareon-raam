@@ -66,7 +66,14 @@ private data class ModelInfo(
     @kotlinx.serialization.SerialName("created_at")
     val createdAt: String? = null,
     @kotlinx.serialization.SerialName("display_name")
-    val displayName: String? = null
+    val displayName: String? = null,
+    /**
+     * Maximum value for the max_tokens parameter when using this model.
+     * Populated by the Anthropic Models API (GET /v1/models).
+     * This is the model's output token ceiling.
+     */
+    @kotlinx.serialization.SerialName("max_tokens")
+    val maxTokens: Int? = null
 )
 
 // --- Token Counting API ---
@@ -135,7 +142,7 @@ class AnthropicProvider(
 
         return buildJsonObject {
             put("model", request.modelName)
-            put("max_tokens", 8192)
+            put("max_tokens", request.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS)
             put("messages", anthropicMessages)
             request.systemPrompt?.let {
                 put("system", it)
@@ -203,7 +210,7 @@ class AnthropicProvider(
         dispatch(Action(ActionRegistry.Names.SETTINGS_ADD, payload))
     }
 
-    override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
+    override suspend fun listAvailableModels(settings: Map<String, String>): List<ModelDescriptor> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) {
             platformDependencies.log(LogLevel.WARN, id, "Cannot list models: Anthropic API Key is not configured.")
@@ -222,17 +229,19 @@ class AnthropicProvider(
                 platformDependencies.log(LogLevel.ERROR, id, "Failed to fetch models from Anthropic API: ${it.message}")
                 throw Exception("API Error: ${it.message}")
             }
-            response.data?.map { it.id } ?: emptyList()
+            response.data?.map { ModelDescriptor(it.id, it.maxTokens) } ?: emptyList()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Failed to list models: ${e.stackTraceToString()}")
+            // Fallback with null maxOutputTokens — the user setting will be used directly,
+            // and the API will reject if it exceeds the model's actual limit.
             listOf(
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307"
+                ModelDescriptor("claude-3-5-sonnet-20241022"),
+                ModelDescriptor("claude-3-5-haiku-20241022"),
+                ModelDescriptor("claude-3-opus-20240229"),
+                ModelDescriptor("claude-3-sonnet-20240229"),
+                ModelDescriptor("claude-3-haiku-20240307")
             )
         }
     }

@@ -293,7 +293,23 @@ object AgentRuntimeReducer {
             }
 
             ActionRegistry.Names.GATEWAY_AVAILABLE_MODELS_UPDATED -> {
-                val decodedModels: Map<String, List<String>>? = try { action.payload?.let { json.decodeFromJsonElement(it) } } catch (e: Exception) { null }
+                // The gateway now broadcasts ModelDescriptor objects ({id, maxOutputTokens?})
+                // instead of plain model name strings. We extract only the IDs here to keep
+                // the agent feature decoupled from the gateway's internal data model.
+                // Backward-compatible: also accepts the legacy plain-string format.
+                val decodedModels: Map<String, List<String>>? = try {
+                    action.payload?.let { payload ->
+                        payload.mapValues { (_, modelsElement) ->
+                            modelsElement.jsonArray.map { element ->
+                                when (element) {
+                                    is JsonPrimitive -> element.content // Legacy: plain string
+                                    is JsonObject -> element["id"]?.jsonPrimitive?.content ?: ""
+                                    else -> ""
+                                }
+                            }.filter { it.isNotBlank() }
+                        }
+                    }
+                } catch (e: Exception) { null }
                 state.copy(availableModels = decodedModels ?: emptyMap())
             }
 

@@ -106,6 +106,7 @@ class InceptionProvider(
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         return buildJsonObject {
             put("model", request.modelName)
+            request.maxOutputTokens?.let { put("max_tokens", it) }
             put("messages", buildJsonArray {
                 request.systemPrompt?.let {
                     add(buildJsonObject {
@@ -176,7 +177,7 @@ class InceptionProvider(
         dispatch(Action(ActionRegistry.Names.SETTINGS_ADD, payload))
     }
 
-    override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
+    override suspend fun listAvailableModels(settings: Map<String, String>): List<ModelDescriptor> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) {
             platformDependencies.log(LogLevel.WARN, id, "Cannot list models: Inception API Key is not configured.")
@@ -193,12 +194,14 @@ class InceptionProvider(
                 platformDependencies.log(LogLevel.ERROR, id, "Failed to fetch models from Inception API: ${it.extractErrorMessage()}")
                 throw Exception("API Error: ${it.extractErrorMessage()}")
             }
-            response.data.map { it.id }.sorted()
+            // Inception's OpenAI-compatible API does not expose per-model output token limits.
+            // maxOutputTokens is left null — the user-configured default will be used.
+            response.data.map { ModelDescriptor(it.id) }.sortedBy { it.id }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.ERROR, id, "Failed to list Inception models: ${e.stackTraceToString()}")
-            listOf("mercury-2", "mercury-coder-small")
+            listOf(ModelDescriptor("mercury-2"), ModelDescriptor("mercury-coder-small"))
         }
     }
 

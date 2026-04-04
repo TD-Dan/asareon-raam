@@ -19,7 +19,21 @@ data class GatewayRequest(
     val modelName: String,
     val contents: List<GatewayMessage>,
     val correlationId: String,
-    val systemPrompt: String? = null
+    val systemPrompt: String? = null,
+    /**
+     * Maximum number of tokens the model should generate in its response.
+     *
+     * Resolved by GatewayFeature as: min(user setting, model's known maximum).
+     * When the model's maximum is unknown (provider API doesn't expose it),
+     * the user setting is used directly.
+     *
+     * Providers map this to their API-specific parameter:
+     *   - Anthropic:  max_tokens
+     *   - OpenAI:     max_tokens
+     *   - Gemini:     generationConfig.maxOutputTokens
+     *   - Inception:  max_tokens
+     */
+    val maxOutputTokens: Int? = null
 )
 
 /**
@@ -46,6 +60,28 @@ data class GatewayResponse(
 @Serializable
 data class TokenCountEstimate(
     val inputTokens: Int
+)
+
+/**
+ * A provider-agnostic descriptor for a model reported by a provider's list-models API.
+ *
+ * This replaces the plain String model ID to carry additional metadata discovered
+ * at model-listing time — currently the model's maximum output token limit.
+ *
+ * Providers that expose output token limits via their API (Anthropic, Gemini)
+ * populate [maxOutputTokens] directly from the API response. Providers that do not
+ * (OpenAI, Inception) leave it null, and the GatewayFeature falls back to the
+ * user-configured default.
+ */
+@Serializable
+data class ModelDescriptor(
+    /** The model's unique identifier as reported by the provider (e.g., "claude-3-5-sonnet-20241022"). */
+    val id: String,
+    /**
+     * The maximum number of output tokens this model supports, or null if the provider's
+     * list-models API does not expose this information.
+     */
+    val maxOutputTokens: Int? = null
 )
 
 /**
@@ -123,11 +159,13 @@ interface UniversalGatewayProvider {
     suspend fun generatePreview(request: GatewayRequest, settings: Map<String, String>): String
 
     /**
-     * Fetches the list of available model names from the provider's API.
+     * Fetches the list of available models from the provider's API, including any metadata
+     * the API exposes (such as maximum output token limits).
+     *
      * @param settings A map of all current application settings.
-     * @return A list of model name strings, or an empty list on failure.
+     * @return A list of [ModelDescriptor] objects, or an empty list on failure.
      */
-    suspend fun listAvailableModels(settings: Map<String, String>): List<String>
+    suspend fun listAvailableModels(settings: Map<String, String>): List<ModelDescriptor>
 
     /**
      * Estimates the token count for a request payload WITHOUT executing it.

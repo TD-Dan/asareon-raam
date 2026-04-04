@@ -50,7 +50,12 @@ private data class ListModelsResponse(val models: List<ModelInfo>)
 @Serializable
 private data class ModelInfo(
     val name: String,
-    val supportedGenerationMethods: List<String> = emptyList()
+    val supportedGenerationMethods: List<String> = emptyList(),
+    /**
+     * Maximum number of output tokens available when using this model.
+     * Populated by the Gemini Models API (GET /v1beta/models).
+     */
+    val outputTokenLimit: Int? = null
 )
 
 // --- Token Counting API ---
@@ -122,6 +127,12 @@ class GeminiProvider(
                 }
             }
             put("contents", apiContents)
+            // Gemini uses generationConfig for output token limits.
+            request.maxOutputTokens?.let { maxTokens ->
+                putJsonObject("generationConfig") {
+                    put("maxOutputTokens", maxTokens)
+                }
+            }
         }
     }
 
@@ -177,7 +188,7 @@ class GeminiProvider(
         dispatch(Action(ActionRegistry.Names.SETTINGS_ADD, payload))
     }
 
-    override suspend fun listAvailableModels(settings: Map<String, String>): List<String> {
+    override suspend fun listAvailableModels(settings: Map<String, String>): List<ModelDescriptor> {
         val apiKey = settings[apiKeySettingKey].orEmpty()
         if (apiKey.isBlank()) return emptyList()
 
@@ -187,8 +198,11 @@ class GeminiProvider(
             }.body()
             response.models
                 .filter { "generateContent" in it.supportedGenerationMethods }
-                .map { it.name.replace("models/", "") }
-                .sorted()
+                .map { ModelDescriptor(
+                    id = it.name.replace("models/", ""),
+                    maxOutputTokens = it.outputTokenLimit
+                ) }
+                .sortedBy { it.id }
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.WARN, id, "Failed to fetch Gemini models: ${e.message}")
             emptyList()
