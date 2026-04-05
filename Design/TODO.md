@@ -21,6 +21,11 @@
 	- Scope and purpose
 	- UI layouts
 
+#Overall
+
+- clean silent returns from the codebase to log an error (f.ex. "return@mapNotNull")
+
+
 # FILESYSTEM
 - filesystem.SEARCH_IN_FILE: Find a string in a file. Return the line number and whole line contents of all occurences of the string.
 - filesystem.SEARCH_IN_MULTIPLE_FILES: Find a string in multiple file. Returns the filename, line number and whole line contents of all occurences of the string.
@@ -103,6 +108,7 @@ BUG: gocnitivepipeline 969: should error not default
 - Need to be able to edit session names and reorder from the tab bar
 - Delete session from tab right click menu
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
+- non destructive ledger deletions
 
 
 ## WorkspacePane

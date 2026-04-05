@@ -82,6 +82,25 @@ class OpenAIProvider(
         return raw.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(64)
     }
 
+    /**
+     * Returns the correct JSON parameter name for capping output tokens.
+     *
+     * Reasoning and GPT-5+ models **only** accept `max_completion_tokens`;
+     * legacy GPT-4/3.5 models expect the original `max_tokens` parameter.
+     */
+    internal fun maxTokensParamFor(modelName: String): String {
+        val lower = modelName.lowercase()
+        // o-series reasoning models (o1, o3, o4, …) and GPT-5+ families
+        return if (lower.startsWith("o1") ||
+            lower.startsWith("o3") ||
+            lower.startsWith("o4") ||
+            lower.startsWith("gpt-5")) {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        }
+    }
+
     internal fun buildRequestPayload(request: GatewayRequest): JsonElement {
         val openAiMessages = buildJsonArray {
             request.systemPrompt?.let {
@@ -111,7 +130,7 @@ class OpenAIProvider(
         return buildJsonObject {
             put("model", request.modelName)
             put("messages", openAiMessages)
-            request.maxOutputTokens?.let { put("max_tokens", it) }
+            request.maxOutputTokens?.let { put(maxTokensParamFor(request.modelName), it) }
         }
     }
 

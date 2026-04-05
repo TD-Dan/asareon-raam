@@ -432,7 +432,20 @@ class CommandBotFeature(
                     if (!type.contains("CodeBlock")) return@forEach
 
                     val language = block["language"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                    if (!language.startsWith(Version.APP_TOOL_PREFIX)) return@forEach
+                    if (!language.startsWith(Version.APP_TOOL_PREFIX)) {
+                        // Sentinel: warn when a known action name is used without the raam_ prefix.
+                        // This catches agents that emit e.g. ```session.POST``` instead of ```raam_session.POST```.
+                        if (ActionRegistry.byActionName.containsKey(language)) {
+                            postFeedbackToSession(
+                                sessionId,
+                                "[COMMAND BOT] Raam action detected in code block: '$language'. " +
+                                        "Did you mean to use '${Version.APP_TOOL_PREFIX}$language'?",
+                                store,
+                                originatorId = senderId
+                            )
+                        }
+                        return@forEach
+                    }
 
                     val code = block["code"]?.jsonPrimitive?.contentOrNull ?: ""
 

@@ -203,11 +203,11 @@ object SessionContextFormatter {
         } else {
             for (msg in session.messages) {
                 val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
-                append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp"))
+                val lockIndicator = if (msg.isLocked) " [🔒]" else ""
+                append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp$lockIndicator"))
                 appendLine(msg.content)
                 append(ContextDelimiters.h3End())
             }
         }
     }
-
 }

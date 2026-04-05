@@ -182,6 +182,7 @@ object CognitivePipeline {
                 val senderId = entryJson["senderId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val rawContent = entryJson["rawContent"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val timestamp = entryJson["timestamp"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                val isLocked = entryJson["isLocked"]?.jsonPrimitive?.booleanOrNull ?: false
 
                 val user = state.userIdentities.find { it.handle == senderId }
                 // Dual check: senderId may be UUID (old ledger entries) or handle (new entries)
@@ -195,7 +196,7 @@ object CognitivePipeline {
                     user != null -> user.name to "user"
                     else -> "Unknown" to "user"
                 }
-                GatewayMessage(role, rawContent, senderId, senderName, timestamp)
+                GatewayMessage(role, rawContent, senderId, senderName, timestamp, isLocked)
             } catch (e: Exception) {
                 store.platformDependencies.log(
                     LogLevel.WARN, LOG_TAG,
@@ -1078,7 +1079,7 @@ object CognitivePipeline {
         contextMap["METADATA"] = stringToSection("METADATA", """
             This data is provided for you to reason about your running environment and is updated on the moment of latest request to you.
             
-            You are running on platform: 'AUF App ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
+            You are running on platform: '${Version.APP_NAME} ${Version.APP_VERSION} (Windows), a multi-agent, multi-session agent/chat platform.'
             Your Host LLM (API connection): '${agent.modelProvider}' / '${agent.modelName}'
             Your agent handle is: '${agent.identityHandle}'
             Your agent id (internal): '${agentUuid}'

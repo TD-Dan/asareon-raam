@@ -420,9 +420,10 @@ class CommandBotFeatureT2GuardrailsTest {
             assertTrue(keysExcludingCorrelation.isEmpty(),
                 "actionPayload should have no user-specified keys when the code block body is empty.")
 
-            // CoreFeature should claim it and dispatch the domain action
-            val toast = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(toast, "CoreFeature should dispatch the domain action even for an empty payload.")
+            // Verify the action name in ACTION_CREATED is correct
+            assertEquals("core.SHOW_TOAST",
+                actionCreated.payload?.get("actionName")?.jsonPrimitive?.contentOrNull,
+                "ACTION_CREATED should carry the correct action name even for an empty payload.")
         }
     }
 
@@ -491,14 +492,19 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            // CommandBot publishes two ACTION_CREATED events; CoreFeature dispatches two domain actions
-            val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertEquals(2, toasts.size,
-                "Both raam_ code blocks in a single message should be processed into domain actions.")
+            // CommandBot publishes two ACTION_CREATED events (domain dispatch is subject to permissions)
+            val actionCreatedEvents = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED &&
+                        it.payload?.get("actionName")?.jsonPrimitive?.contentOrNull == "core.SHOW_TOAST"
+            }
+            assertEquals(2, actionCreatedEvents.size,
+                "Both raam_ code blocks in a single message should be published as ACTION_CREATED.")
 
-            val messages = toasts.mapNotNull { it.payload?.get("message")?.jsonPrimitive?.contentOrNull }
-            assertTrue("Toast One" in messages, "First command payload should be dispatched.")
-            assertTrue("Toast Two" in messages, "Second command payload should be dispatched.")
+            val messages = actionCreatedEvents.mapNotNull {
+                it.payload?.get("actionPayload")?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
+            }
+            assertTrue("Toast One" in messages, "First command payload should be published.")
+            assertTrue("Toast Two" in messages, "Second command payload should be published.")
         }
     }
 
@@ -521,11 +527,173 @@ class CommandBotFeatureT2GuardrailsTest {
         runCurrent()
 
         harness.runAndLogOnFailure {
-            val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertEquals(1, toasts.size,
+            val actionCreatedEvents = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
+            }
+            assertEquals(1, actionCreatedEvents.size,
                 "Only the raam_ block should be processed; the json block should be ignored.")
             assertEquals("Only this one",
-                toasts.first().payload?.get("message")?.jsonPrimitive?.contentOrNull)
+                actionCreatedEvents.first().payload?.get("actionPayload")?.jsonObject
+                    ?.get("message")?.jsonPrimitive?.contentOrNull)
+        }
+    }
+
+    // ========================================================================
+    // 4b. Sentinel: Known Action Name Without raam_ Prefix
+    // ========================================================================
+
+    @Test
+    fun `sentinel - known action name without prefix posts warning to session`() = runTest {
+        val harness = buildStandardHarness()
+        runCurrent()
+
+        // Post a code block using a known action name WITHOUT the raam_ prefix.
+        // session.POST is a real registered action — the sentinel should fire.
+        postRawMessage(harness, testUser.handle, "```session.POST\n{ \"session\": \"test\", \"message\": \"hello\" }\n```")
+        runCurrent()
+
+        harness.runAndLogOnFailure {
+            // A warning feedback message should be posted by CommandBot
+            val sentinelWarning = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        it.originator == "commandbot"
+            }.find {
+                val msg = it.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
+                msg.contains("Raam action detected")
+            }
+            assertNotNull(sentinelWarning,
+                "CommandBot should post a sentinel warning when a known action name is used without the raam_ prefix.")
+
+            val message = sentinelWarning.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
+            assertTrue(message.contains("session.POST"),
+                "Warning should name the detected action. Got: $message")
+            assertTrue(message.contains("raam_session.POST"),
+                "Warning should suggest the corrected prefixed name. Got: $message")
+
+            // The block should NOT have been processed as a command
+            val actionCreated = harness.processedActions.find {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
+            }
+            assertNull(actionCreated,
+                "An unprefixed code block must NOT be processed as a command — only a warning should be posted.")
+        }
+    }
+
+    @Test
+    fun `sentinel - agent using known action without prefix gets warning`() = runTest {
+        val harness = buildHarnessWithKnownAgent()
+        runCurrent()
+
+        // Agent posts a code block with a known action name but no raam_ prefix
+        postRawMessage(harness, testAgentHandle, "```session.POST\n{ \"message\": \"hello\" }\n```")
+        runCurrent()
+
+        harness.runAndLogOnFailure {
+            val sentinelWarning = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        it.originator == "commandbot"
+            }.find {
+                val msg = it.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
+                msg.contains("Raam action detected")
+            }
+            assertNotNull(sentinelWarning,
+                "Sentinel should fire for agents as well as human users.")
+        }
+    }
+
+    @Test
+    fun `sentinel - unknown language tag does not trigger warning`() = runTest {
+        val harness = buildStandardHarness()
+        runCurrent()
+
+        val actionCountBefore = harness.processedActions.size
+
+        // "python" is not a known action name — no warning should be posted
+        postRawMessage(harness, testUser.handle, "```python\nprint('hello')\n```")
+        runCurrent()
+
+        harness.runAndLogOnFailure {
+            val commandBotPosts = harness.processedActions.drop(actionCountBefore).filter {
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        it.originator == "commandbot"
+            }
+            assertTrue(commandBotPosts.isEmpty(),
+                "A code block with an unrecognised language tag ('python') should not trigger a sentinel warning. " +
+                        "Found: ${commandBotPosts.map { it.payload?.get("message")?.jsonPrimitive?.contentOrNull }}")
+        }
+    }
+
+    @Test
+    fun `sentinel - properly prefixed block is processed normally without warning`() = runTest {
+        val harness = buildStandardHarness()
+        runCurrent()
+
+        // Properly prefixed — should process as command, no sentinel warning
+        postRawMessage(harness, testUser.handle, "```raam_core.SHOW_TOAST\n{ \"message\": \"Good\" }\n```")
+        runCurrent()
+
+        harness.runAndLogOnFailure {
+            // Command should be processed
+            val actionCreated = harness.processedActions.find {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
+            }
+            assertNotNull(actionCreated,
+                "A properly prefixed command should be processed via ACTION_CREATED.")
+
+            // No sentinel warning should be posted
+            val sentinelWarning = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        it.originator == "commandbot"
+            }.find {
+                val msg = it.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
+                msg.contains("Raam action detected")
+            }
+            assertNull(sentinelWarning,
+                "A properly prefixed raam_ block should not trigger a sentinel warning.")
+        }
+    }
+
+    @Test
+    fun `sentinel - mixed prefixed and unprefixed blocks warns for unprefixed and processes prefixed`() = runTest {
+        val harness = buildStandardHarness()
+        runCurrent()
+
+        val mixedMessage = """
+            Bad block (no prefix):
+            ```core.SHOW_TOAST
+            { "message": "Oops" }
+            ```
+            Good block (with prefix):
+            ```raam_core.SHOW_TOAST
+            { "message": "Correct" }
+            ```
+        """.trimIndent()
+
+        postRawMessage(harness, testUser.handle, mixedMessage)
+        runCurrent()
+
+        harness.runAndLogOnFailure {
+            // The sentinel should fire for the unprefixed block
+            val sentinelWarning = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.SESSION_POST &&
+                        it.originator == "commandbot"
+            }.find {
+                val msg = it.payload?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
+                msg.contains("Raam action detected") && msg.contains("core.SHOW_TOAST")
+            }
+            assertNotNull(sentinelWarning,
+                "Sentinel should fire for the unprefixed 'core.SHOW_TOAST' block.")
+
+            // The prefixed block should still be published as ACTION_CREATED
+            val actionCreatedEvents = harness.processedActions.filter {
+                it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED
+            }
+            assertEquals(1, actionCreatedEvents.size,
+                "Only the properly prefixed block should be published as ACTION_CREATED.")
+            assertEquals("Correct",
+                actionCreatedEvents.first().payload?.get("actionPayload")?.jsonObject
+                    ?.get("message")?.jsonPrimitive?.contentOrNull,
+                "The ACTION_CREATED should come from the prefixed block, not the unprefixed one.")
         }
     }
 

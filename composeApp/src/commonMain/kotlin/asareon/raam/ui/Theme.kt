@@ -145,7 +145,7 @@ private val darkScheme = darkColorScheme(
 )
 
 /**
- * The main theme composable for the AUF application, now using Material 3.
+ * The main theme composable for the Raam application, using Material 3.
  * It automatically selects between the Dark and Light color schemes based on the system theme.
  *
  * When [primaryOverride] is non-null, the primary and secondary color families

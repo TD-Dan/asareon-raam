@@ -61,7 +61,8 @@ data class GatewayMessage(
     val content: String,
     val senderId: String,
     val senderName: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val isLocked: Boolean = false
 )
 
 @Serializable
