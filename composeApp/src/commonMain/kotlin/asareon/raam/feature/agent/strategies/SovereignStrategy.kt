@@ -257,7 +257,7 @@ object SovereignStrategy : CognitiveStrategy {
         AgentResource(
             id = "res-sovereign-constitution-v1",
             type = AgentResourceType.CONSTITUTION,
-            name = "Sovereign Constitution (v5.9)",
+            name = "Sovereign Constitution (v6.0)",
             content = SovereignDefaults.DEFAULT_CONSTITUTION_XML,
             isBuiltIn = true
         ),
