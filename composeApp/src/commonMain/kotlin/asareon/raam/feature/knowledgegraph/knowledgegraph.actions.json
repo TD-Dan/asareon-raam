@@ -404,7 +404,7 @@
         "knowledgegraph:write"
       ]
     },
-Added PATCH_HOLOMN    {
+    {
       "action_name": "knowledgegraph.PATCH_HOLON",
       "summary": "Performs surgical, path-targeted modifications to an existing holon using JSON Pointer (RFC 6901) paths and a subset of JSON Patch (RFC 6902) operations. Supports 'replace', 'add', and 'remove' ops with validate-then-apply atomicity. Protected structural fields (id, filePath, parentId, depth, sub_holons, created_at) cannot be modified. The agent must have the holon expanded in context.",
       "public": true,
