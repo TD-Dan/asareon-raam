@@ -48,8 +48,6 @@
 - BUG: Agent identities are not removed from core when agent is deleted
 - BUG: stale identities remain at the core from session, agent, others?
 
-- user files should go to core/<username> instead of core root.
-
 - Runtime payload schema validation
 
 - agent should be informed about the permissions it has alongside the action manifest
@@ -131,6 +129,7 @@ BUG: gocnitivepipeline 969: should error not default
 
 # BACKUP
 - Add a "Backups" manager to the burger global menu.
+- Allow selecting backup folder location
 
 
 ## Ideas

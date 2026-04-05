@@ -404,7 +404,7 @@ class CommandBotFeatureT2GuardrailsTest {
     fun `edge case - empty payload code block dispatches with empty JsonObject`() = runTest {
         val harness = buildStandardHarness()
 
-        // Code block with auf_ prefix but empty body
+        // Code block with raam_ prefix but empty body
         postRawMessage(harness, testUser.handle, "```raam_core.SHOW_TOAST\n```")
         runCurrent()
 
@@ -467,7 +467,7 @@ class CommandBotFeatureT2GuardrailsTest {
                         !it.name.startsWith("filesystem.")
             }
             assertTrue(commandActions.isEmpty(),
-                "A code block with a non-auf_ language tag should be ignored. " +
+                "A code block with a non-raam_ language tag should be ignored. " +
                         "Found: ${commandActions.map { it.name }}")
         }
     }
@@ -494,7 +494,7 @@ class CommandBotFeatureT2GuardrailsTest {
             // CommandBot publishes two ACTION_CREATED events; CoreFeature dispatches two domain actions
             val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertEquals(2, toasts.size,
-                "Both auf_ code blocks in a single message should be processed into domain actions.")
+                "Both raam_ code blocks in a single message should be processed into domain actions.")
 
             val messages = toasts.mapNotNull { it.payload?.get("message")?.jsonPrimitive?.contentOrNull }
             assertTrue("Toast One" in messages, "First command payload should be dispatched.")
@@ -523,7 +523,7 @@ class CommandBotFeatureT2GuardrailsTest {
         harness.runAndLogOnFailure {
             val toasts = harness.processedActions.filter { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
             assertEquals(1, toasts.size,
-                "Only the auf_ block should be processed; the json block should be ignored.")
+                "Only the raam_ block should be processed; the json block should be ignored.")
             assertEquals("Only this one",
                 toasts.first().payload?.get("message")?.jsonPrimitive?.contentOrNull)
         }

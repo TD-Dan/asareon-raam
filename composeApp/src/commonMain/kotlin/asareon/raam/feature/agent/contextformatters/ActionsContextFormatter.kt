@@ -110,7 +110,7 @@ object ActionsContextFormatter {
         appendLine("--- AVAILABLE SYSTEM ACTIONS ---")
         appendLine()
         appendLine("You can invoke system actions by including a fenced code block in your response.")
-        appendLine("The code block's language tag must be 'auf_' followed by the full action name.")
+        appendLine("The code block's language tag must be 'raam_' followed by the full action name.")
         appendLine("The code block body must be a valid JSON payload, or empty for no-payload actions.")
         appendLine()
         appendLine("IMPORTANT CONSTRAINTS:")

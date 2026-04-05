@@ -47,7 +47,7 @@
     },
     {
       "action_name": "commandbot.ACTION_CREATED",
-      "summary": "Published after CommandBot validates an agent command from an auf_* code block. Any feature that manages the originator entity should subscribe, apply its own sandboxing/routing, and dispatch the domain action. CommandBot does NOT dispatch domain actions itself.",
+      "summary": "Published after CommandBot validates an agent command from an raam_* code block. Any feature that manages the originator entity should subscribe, apply its own sandboxing/routing, and dispatch the domain action. CommandBot does NOT dispatch domain actions itself.",
       "public": false,
       "broadcast": true,
       "targeted": false,

@@ -9,6 +9,7 @@ import asareon.raam.test.TestEnvironment
 import asareon.raam.test.TestHarness
 import asareon.raam.util.LogLevel
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonPrimitive
@@ -252,6 +253,22 @@ class KnowledgeGraphFeatureT2ContractTest {
                     put("correlationId", "test-correlation-1")
                 },
                 buildState = ::loadedState
+            ),
+            HappyCase(
+                label = "PATCH_HOLON",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_PATCH_HOLON,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("holonId", CHILD_HOLON_ID)
+                    put("operations", buildJsonArray {
+                        add(buildJsonObject {
+                            put("op", "replace")
+                            put("path", "/payload/content")
+                            put("value", kotlinx.serialization.json.JsonPrimitive("patched content"))
+                        })
+                    })
+                },
+                buildState = ::loadedState
             )
         )
     }
@@ -463,6 +480,61 @@ class KnowledgeGraphFeatureT2ContractTest {
                 originator = "agent",
                 payload = buildJsonObject {
                     put("personaId", PERSONA_ID)
+                },
+                buildState = ::loadedState
+            ),
+            // PATCH_HOLON
+            FailureCase(
+                label = "PATCH_HOLON (missing holonId)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_PATCH_HOLON,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("operations", buildJsonArray {
+                        add(buildJsonObject {
+                            put("op", "replace")
+                            put("path", "/payload/content")
+                            put("value", kotlinx.serialization.json.JsonPrimitive("v"))
+                        })
+                    })
+                }
+            ),
+            FailureCase(
+                label = "PATCH_HOLON (missing operations)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_PATCH_HOLON,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("holonId", CHILD_HOLON_ID)
+                },
+                buildState = ::loadedState
+            ),
+            FailureCase(
+                label = "PATCH_HOLON (holon not found)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_PATCH_HOLON,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("holonId", "nonexistent-holon")
+                    put("operations", buildJsonArray {
+                        add(buildJsonObject {
+                            put("op", "replace")
+                            put("path", "/payload/content")
+                            put("value", kotlinx.serialization.json.JsonPrimitive("v"))
+                        })
+                    })
+                }
+            ),
+            FailureCase(
+                label = "PATCH_HOLON (protected field)",
+                actionName = ActionRegistry.Names.KNOWLEDGEGRAPH_PATCH_HOLON,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("holonId", CHILD_HOLON_ID)
+                    put("operations", buildJsonArray {
+                        add(buildJsonObject {
+                            put("op", "replace")
+                            put("path", "/header/id")
+                            put("value", kotlinx.serialization.json.JsonPrimitive("tampered-id"))
+                        })
+                    })
                 },
                 buildState = ::loadedState
             )

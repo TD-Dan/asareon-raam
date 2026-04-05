@@ -1331,7 +1331,7 @@
     },
     "ContentBlock.CodeBlock": {
       "type": "object",
-      "description": "A fenced code block with a language tag. CommandBot watches for code blocks whose language starts with 'auf_' and dispatches the body as an action payload.",
+      "description": "A fenced code block with a language tag. CommandBot watches for code blocks whose language starts with 'raam_' and dispatches the body as an action payload.",
       "properties": {
         "type": {
           "type": "string",
@@ -1340,7 +1340,7 @@
         },
         "language": {
           "type": "string",
-          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'auf_filesystem.WRITE')."
+          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'raam_filesystem.WRITE')."
         },
         "code": {
           "type": "string",

@@ -14,6 +14,8 @@ import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import kotlin.text.get
+import kotlin.text.iterator
 
 class KnowledgeGraphFeature(
     private val platformDependencies: PlatformDependencies,
@@ -70,7 +72,6 @@ class KnowledgeGraphFeature(
         val payload = action.payload
 
         when (action.name) {
-            // Phase 3: Targeted responses from FilesystemFeature — migrated from onPrivateData.
             ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> {
                 val listing = action.payload?.get("listing")?.let { json.decodeFromJsonElement<List<FileEntry>>(it) } ?: run {
                     platformDependencies.log(LogLevel.WARN, identity.handle, "RETURN_LIST: Missing or malformed 'listing' field. Ignoring.")
@@ -448,6 +449,131 @@ class KnowledgeGraphFeature(
                 }
 
                 publishActionResult(store, correlationId, action.name, true, summary = "Holon '$name' ($newId) created under '$parentId'.")
+            }
+            ActionRegistry.Names.KNOWLEDGEGRAPH_PATCH_HOLON -> {
+                val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+                val holonId = payload?.get("holonId")?.jsonPrimitive?.content ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PATCH_HOLON: Missing required 'holonId' field. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing required 'holonId' field.")
+                    return
+                }
+                val operationsArray = payload["operations"] as? JsonArray ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PATCH_HOLON: Missing or invalid 'operations' array. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Missing or invalid 'operations' array.")
+                    return
+                }
+                if (operationsArray.isEmpty()) {
+                    publishActionResult(store, correlationId, action.name, false, error = "'operations' array must not be empty.")
+                    return
+                }
+
+                // --- Lock check ---
+                if (isModificationLocked(holonId = holonId, originator = originator, kgState = kgState, store = store)) {
+                    publishActionResult(store, correlationId, action.name, false, error = "HKG is locked by another user.")
+                    return
+                }
+
+                // --- Fetch existing holon ---
+                val existingHolon = kgState.holons[holonId] ?: run {
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PATCH_HOLON: Holon '$holonId' not found in state. Ignoring.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Holon '$holonId' not found in state.")
+                    return
+                }
+
+                // --- Build the navigable JSON tree from the holon ---
+                val holonTree = buildHolonJsonTree(existingHolon, json)
+
+                // --- PASS 1: Validate all operations ---
+                val (validatedOps, validationErrors) = validatePatchOperations(operationsArray, holonTree)
+
+                if (validationErrors.isNotEmpty()) {
+                    val errorMsg = "Patch validation failed (${validationErrors.size} error(s)). No changes applied:\n" +
+                            validationErrors.joinToString("\n") { "  • $it" }
+                    platformDependencies.log(LogLevel.WARN, identity.handle, "PATCH_HOLON on '$holonId': $errorMsg")
+                    publishActionResult(store, correlationId, action.name, false, error = errorMsg)
+                    return
+                }
+
+                // --- PASS 2: Apply all operations sequentially ---
+                var currentTree: JsonElement = holonTree
+                try {
+                    for (patchOp in validatedOps) {
+                        currentTree = applyPatchOp(currentTree, patchOp.path, patchOp.op, patchOp.value)
+                    }
+                } catch (e: Exception) {
+                    val errorMsg = "Patch application failed unexpectedly: ${e.message}. No changes were persisted."
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "PATCH_HOLON on '$holonId': $errorMsg", e)
+                    publishActionResult(store, correlationId, action.name, false, error = errorMsg)
+                    return
+                }
+
+                val patchedTree = currentTree as? JsonObject ?: run {
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "PATCH_HOLON: Result is not a JsonObject after patching. This should never happen.")
+                    publishActionResult(store, correlationId, action.name, false, error = "Internal error: patched result is not a valid holon structure.")
+                    return
+                }
+
+                // --- Extract components and rebuild the holon ---
+                val (patchedHeader, patchedPayload, patchedExecute) = try {
+                    extractPatchedComponents(patchedTree, existingHolon, json)
+                } catch (e: Exception) {
+                    val errorMsg = "Failed to reconstruct holon after patching: ${e.message}"
+                    platformDependencies.log(LogLevel.ERROR, identity.handle, "PATCH_HOLON on '$holonId': $errorMsg", e)
+                    publishActionResult(store, correlationId, action.name, false, error = errorMsg)
+                    return
+                }
+
+                // --- Stamp modified_at ---
+                val newTimestamp = platformDependencies.formatIsoTimestamp(platformDependencies.currentTimeMillis())
+                val finalHeader = patchedHeader.copy(modifiedAt = newTimestamp)
+
+                val patchedHolon = existingHolon.copy(
+                    header = finalHeader,
+                    payload = patchedPayload,
+                    execute = patchedExecute
+                )
+                val finalSyncedHolon = synchronizeRawContent(patchedHolon)
+
+                // --- Update parent's sub_holon ref if name/type/summary changed ---
+                existingHolon.header.parentId?.let { parentId ->
+                    kgState.holons[parentId]?.let { parentHolon ->
+                        val updatedSubHolons = parentHolon.header.subHolons.map { ref ->
+                            if (ref.id == holonId) {
+                                ref.copy(
+                                    type = finalHeader.type,
+                                    summary = finalHeader.summary ?: finalHeader.name
+                                )
+                            } else ref
+                        }
+                        if (updatedSubHolons != parentHolon.header.subHolons) {
+                            val updatedParent = parentHolon.copy(
+                                header = parentHolon.header.copy(
+                                    subHolons = updatedSubHolons,
+                                    modifiedAt = newTimestamp
+                                )
+                            )
+                            val syncedParent = synchronizeRawContent(updatedParent)
+                            store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                                put("path", syncedParent.header.filePath)
+                                put("content", prepareHolonForWriting(syncedParent))
+                            }))
+                        }
+                    }
+                }
+
+                // --- Write the patched holon ---
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_WRITE, buildJsonObject {
+                    put("path", finalSyncedHolon.header.filePath)
+                    put("content", prepareHolonForWriting(finalSyncedHolon))
+                }))
+
+                // --- Reload the persona ---
+                findRootPersonaId(holonId, kgState)?.let {
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_LOAD_PERSONA, buildJsonObject { put("personaId", it) }))
+                }
+
+                val opSummary = validatedOps.joinToString(", ") { "${it.op} ${it.path.joinToString("/", "/")}" }
+                publishActionResult(store, correlationId, action.name, true, summary = "Holon '$holonId' patched (${validatedOps.size} op(s): $opSummary).")
             }
             ActionRegistry.Names.KNOWLEDGEGRAPH_REPLACE_HOLON -> {
                 val correlationId = payload?.get("correlationId")?.jsonPrimitive?.contentOrNull

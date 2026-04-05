@@ -12,7 +12,7 @@ import kotlinx.serialization.json.*
  * Reads from ActionRegistry.features and AppState.identityRegistry to provide:
  * - Feature and action candidate filtering with prefix/substring matching
  * - Context auto-fill for session handle and user identity
- * - auf_ code block generation
+ * - raam_ code block generation
  * - Three-stage state machine (FEATURE → ACTION → PARAMS)
  *
  * Two modes:

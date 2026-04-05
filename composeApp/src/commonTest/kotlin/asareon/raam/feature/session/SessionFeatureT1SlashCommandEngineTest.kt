@@ -453,14 +453,14 @@ class SlashCommandEngineTest {
     // ========================================================================
 
     @Test
-    fun `generateCodeBlock produces correct auf_ format`() {
+    fun `generateCodeBlock produces correct raam_ format`() {
         val engine = createEngine()
         val result = engine.generateCodeBlock(
             sessionPostDescriptor,
             mapOf("session" to "my-chat", "senderId" to "core.alice", "message" to "Hello!")
         )
 
-        assertTrue(result.startsWith("```raam_session.POST\n"), "Should start with auf_ fence: got\n$result")
+        assertTrue(result.startsWith("```raam_session.POST\n"), "Should start with raam_ fence: got\n$result")
         assertTrue(result.trimEnd().endsWith("```"), "Should end with closing fence")
         assertTrue("\"session\"" in result)
         assertTrue("\"my-chat\"" in result)
@@ -737,7 +737,7 @@ class SlashCommandEngineTest {
     }
 
     @Test
-    fun `generateCodeBlock for zero-param action produces empty auf_ block`() {
+    fun `generateCodeBlock for zero-param action produces empty raam_ block`() {
         val engine = createEngine()
         val result = engine.generateCodeBlock(sessionLoadedDescriptor, emptyMap())
 

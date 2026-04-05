@@ -404,6 +404,46 @@
         "knowledgegraph:write"
       ]
     },
+Added PATCH_HOLOMN    {
+      "action_name": "knowledgegraph.PATCH_HOLON",
+      "summary": "Performs surgical, path-targeted modifications to an existing holon using JSON Pointer (RFC 6901) paths and a subset of JSON Patch (RFC 6902) operations. Supports 'replace', 'add', and 'remove' ops with validate-then-apply atomicity. Protected structural fields (id, filePath, parentId, depth, sub_holons, created_at) cannot be modified. The agent must have the holon expanded in context.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "holonId": {
+            "type": "string",
+            "description": "The ID of the holon to patch. Must be loaded in state."
+          },
+          "operations": {
+            "type": "array",
+            "description": "An array of patch operations to apply atomically (all-or-nothing).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": ["replace", "add", "remove"],
+                  "description": "The operation type."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "JSON Pointer (RFC 6901) path into the holon document. Must start with '/'. Top-level segments are 'header', 'payload', 'execute'. Examples: '/payload/state/project_status', '/header/name', '/payload/items/-' (append to array)."
+                },
+                "value": {
+                  "description": "The value to set. Required for 'replace' and 'add' ops. Must be omitted for 'remove'."
+                }
+              },
+              "required": ["op", "path"]
+            }
+          }
+        },
+        "required": ["holonId", "operations"]
+      },
+      "required_permissions": ["knowledgegraph:write"]
+    },
     {
       "action_name": "knowledgegraph.REPLACE_HOLON",
       "summary": "Performs a full content replacement of an existing holon. Preserves structural integrity fields (id, filePath, parentId, depth, sub_holons) and stamps modified_at. The agent must have the holon expanded in context.",
