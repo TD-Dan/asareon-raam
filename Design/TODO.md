@@ -4,7 +4,7 @@
 
 # GENERAL
 
-**- Rebrand and publish as 1.0.0alpha! < Asareon Raam > < Asareon AUF (Agents Universal Framework)> **
+**- Rebrand and publish as Asareon Raam 1.0.0alpha **
 
 **- Clean up deprecated code and unneeded migration/resolve notes (atleast agent feature)**
 
