@@ -34,10 +34,6 @@ Holon Knowledge Graphs for structured long-term memory. NVRAM for cognitive stat
 
 Centralized AI routing behind a single permission gate. Ships with Gemini, OpenAI, Anthropic, and Inception. Easily extendable — adding a new API provider or local LLM requires implementing one interface.
 
-### Absolute Decoupling
-
-Features never import each other. All communication is string-named actions with JSON payloads on the bus. Action schemas, authorization rules, and permissions are declared in JSON manifests and compiled into a validated registry at build time.
-
 ---
 
 ## Agent Capabilities
@@ -67,6 +63,15 @@ The next milestone adds an ensemble architecture where sub-agents — Critic, Ti
 | `02-Unit-testing.md` | Five-tier testing strategy, test infrastructure, assertion patterns |
 | `03-Identities-and-permissions.md` | Identity tree, permission system, resolution, management UI |
 | `MultiAgent_Consciousness_Architecture.md` | Fractal cognitive architecture vision and implementation roadmap |
+
+## Codebase
+
+Over 700k tokens worth of highly structured and architecturally beautiful code optimized for agent assisted workflow.
+
+### Absolute Decoupling
+
+Features never import each other. All communication is string-named actions with JSON payloads on the bus. Action schemas, authorization rules, and permissions are declared in JSON manifests and compiled into a validated registry at build time.
+
 
 ## Tech Stack
 
