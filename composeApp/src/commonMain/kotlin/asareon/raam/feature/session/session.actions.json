@@ -469,7 +469,7 @@
     },
     {
       "action_name": "session.CLEAR",
-      "summary": "Removes all messages from a session's ledger that are neither locked nor marked doNotClear. Protected messages are preserved.",
+      "summary": "Removes all messages from a session's ledger that are not locked (marked [\uD83D\uDD12]).",
       "public": true,
       "broadcast": true,
       "targeted": false,
