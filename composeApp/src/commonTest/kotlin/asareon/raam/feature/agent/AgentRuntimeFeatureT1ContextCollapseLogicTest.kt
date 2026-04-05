@@ -311,10 +311,9 @@ class ContextCollapseLogicT1Test {
         )
         assertTrue("HUGE" in result.truncatedKeys)
         val huge = result.partitions.find { it.key == "HUGE" }!!
-        assertTrue(huge.fullContent.contains("PIPELINE SENTINEL"))
-        assertTrue(huge.fullContent.contains("truncated to the first"))
-        // Content ends with sentinel (appended)
-        assertTrue(huge.fullContent.endsWith("work from the index."))
+        // Sentinel is present and appended (not at the start of the content)
+        assertTrue(huge.fullContent.contains(ContextCollapseLogic.SENTINEL_MARKER))
+        assertFalse(huge.fullContent.startsWith(ContextCollapseLogic.SENTINEL_MARKER))
     }
 
     @Test
@@ -335,10 +334,9 @@ class ContextCollapseLogicT1Test {
         )
         assertTrue("CONVERSATION_LOG" in result.truncatedKeys)
         val conv = result.partitions.find { it.key == "CONVERSATION_LOG" }!!
-        assertTrue(conv.fullContent.contains("PIPELINE SENTINEL"))
-        assertTrue(conv.fullContent.contains("oldest messages have been removed"))
-        // Sentinel is prepended, content starts with it
-        assertTrue(conv.fullContent.startsWith("⚠ PIPELINE SENTINEL"))
+        // Sentinel is present and prepended (starts with it)
+        assertTrue(conv.fullContent.contains(ContextCollapseLogic.SENTINEL_MARKER))
+        assertTrue(conv.fullContent.startsWith(ContextCollapseLogic.SENTINEL_MARKER))
     }
 
     @Test

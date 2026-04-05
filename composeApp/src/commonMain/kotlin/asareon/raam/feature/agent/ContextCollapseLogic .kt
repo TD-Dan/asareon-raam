@@ -14,6 +14,9 @@ object ContextCollapseLogic {
 
     private const val LOG_TAG = "ContextCollapseLogic"
 
+    /** Shared marker present in every truncation sentinel. */
+    internal const val SENTINEL_MARKER = "⚠ PIPELINE SENTINEL"
+
     /**
      * A single partition of the agent's context window.
      *
@@ -346,17 +349,15 @@ object ContextCollapseLogic {
                 val newContent = if (partition.truncateFromStart) {
                     // START truncation: keep the LAST maxPartialChars, prepend sentinel
                     val kept = partition.fullContent.takeLast(maxPartialChars)
-                    val sentinel = "⚠ PIPELINE SENTINEL: This content partial is very large (~$originalTokens tokens). " +
+                    "${SENTINEL_MARKER}: This content partial is very large (~$originalTokens tokens). " +
                             "The starting part has been removed, keeping the most recent ~$truncatedTokens tokens. " +
-                            "Use uncollapse commands to manage visibility.\n\n"
-                    sentinel + kept
+                            "Use uncollapse commands to manage visibility.\n\n" + kept
                 } else {
                     // END truncation (default): keep the FIRST maxPartialChars, append sentinel
                     val kept = partition.fullContent.take(maxPartialChars)
-                    val sentinel = "\n\n⚠ PIPELINE SENTINEL: This content partial is very large (~$originalTokens tokens) and " +
+                    kept + ("\n\n${SENTINEL_MARKER}: This content partial is very large (~$originalTokens tokens) and " +
                             "has been truncated to the first ~$truncatedTokens tokens. " +
-                            "Use uncollapse commands to manage visibility.\n\n"
-                    kept + sentinel
+                            "Use uncollapse commands to manage visibility.\n\n")
                 }
 
                 partitions[i] = partition.copy(
