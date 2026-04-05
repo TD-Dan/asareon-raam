@@ -1,0 +1,35 @@
+{
+  "feature_name": "system",
+  "summary": "Defines the global, cross-cutting actions that orchestrate the application's startup and shutdown sequences. These actions are typically dispatched only by the main application entry point.",
+  "permissions": [],
+  "actions": [
+    {
+      "action_name": "system.INITIALIZING",
+      "summary": "The first action dispatched at startup. Its purpose is to trigger the synchronous, pre-runtime setup phase. Features MUST use this signal to register their settings definitions. Long-running or asynchronous tasks are strictly forbidden during this phase.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false
+    },
+    {
+      "action_name": "system.RUNNING",
+      "summary": "The second action dispatched at startup, after INITIALIZING is complete. This signals that all settings have been registered and loaded, and the application is fully hydrated. Features use this signal to begin their main runtime logic (e.g., navigating to a default view, starting timers).",
+      "public": false,
+      "broadcast": true,
+      "targeted": false
+    },
+    {
+      "action_name": "system.CLOSING",
+      "summary": "Dispatched when the user requests to close the application. The lifecycle transitions to CLOSING, which still permits normal action dispatch. Features MUST use this signal to flush any unsaved transient state (e.g., debounced writes, dirty caches) via deferredDispatch. All deferred actions will drain before the host dispatches SHUTDOWN.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false
+    },
+    {
+      "action_name": "system.SHUTDOWN",
+      "summary": "The final action dispatched at shutdown, after CLOSING has fully drained. Transitions the lifecycle to SHUTDOWN which is a hard lockdown — no further actions are accepted. The host MUST dispatch this only after the CLOSING dispatch has returned (ensuring all cleanup actions have been processed).",
+      "public": false,
+      "broadcast": true,
+      "targeted": false
+    }
+  ]
+}

@@ -1,0 +1,1534 @@
+{
+  "feature_name": "agent",
+  "summary": "Hosts and manages the lifecycle of autonomous, HKG-driven AI agents.",
+  "permissions": [
+    {
+      "key": "agent:manage",
+      "description": "Create, delete, and configure agents",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "agent:execute",
+      "description": "Initiate and control agent turns",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "agent:cognition",
+      "description": "Cognitive self-operations (NVRAM writes, phase transitions). Sandbox-enforced: targets only the caller's own agent unless agent:manage is also held.",
+      "dangerLevel": "LOW"
+    }
+  ],
+  "actions": [
+    {
+      "action_name": "agent.CREATE",
+      "summary": "Creates a new agent instance with the specified configuration.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "strategyConfig": {
+            "type": "object",
+            "description": "Strategy-specific operator configuration (e.g., knowledgeGraphId for Sovereign). Stored as-is; the runtime does not inspect contents."
+          },
+          "modelProvider": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "cognitiveStrategyId": {
+            "type": "string",
+            "description": "Handle of the cognitive strategy to use (e.g. 'agent.strategy.vanilla')."
+          },
+          "subscribedSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of session UUIDs this agent observes. UUIDs are immutable and survive session renames."
+          },
+          "automaticMode": {
+            "type": "boolean",
+            "default": false
+          },
+          "autoWaitTimeSeconds": {
+            "type": "integer"
+          },
+          "autoMaxWaitTimeSeconds": {
+            "type": "integer"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.CLONE",
+      "summary": "Creates a new agent instance by cloning an existing one.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.UPDATE_CONFIG",
+      "summary": "Updates the configuration of an existing agent instance. All payload properties are optional.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "name": {
+            "type": "string"
+          },
+          "strategyConfig": {
+            "type": "object",
+            "description": "Strategy-specific operator configuration. Replaces the full object if provided."
+          },
+          "outputSessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session UUID for the agent's primary output session. Null to clear."
+          },
+          "modelProvider": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "cognitiveStrategyId": {
+            "type": "string"
+          },
+          "subscribedSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of session UUIDs this agent observes."
+          },
+          "automaticMode": {
+            "type": "boolean"
+          },
+          "autoWaitTimeSeconds": {
+            "type": "integer"
+          },
+          "autoMaxWaitTimeSeconds": {
+            "type": "integer"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.DELETE",
+      "summary": "Deletes an agent instance.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.TOGGLE_AUTOMATIC_MODE",
+      "summary": "Toggles the automatic processing mode for a specific agent.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.TOGGLE_ACTIVE",
+      "summary": "Toggles the master active/paused state for a specific agent.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
+    },
+    {
+      "action_name": "agent.INITIATE_TURN",
+      "summary": "A unified action to start an agent's turn, either directly or by first entering a preview mode.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "preview": {
+            "type": "boolean",
+            "default": false
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
+    },
+    {
+      "action_name": "agent.EXECUTE_MANAGED_TURN",
+      "summary": "Executes the turn that was previously staged for managed context.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
+    },
+    {
+      "action_name": "agent.DISCARD_MANAGED_CONTEXT",
+      "summary": "Discards a turn that was staged for managed context and navigates back.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
+    },
+    {
+      "action_name": "agent.CANCEL_TURN",
+      "summary": "Cancels an agent's currently in-flight, processing turn.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": [
+        "agent:execute"
+      ]
+    },
+    {
+      "action_name": "agent.SAVE_RESOURCE",
+      "summary": "Saves changes to a system resource.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "resourceId",
+          "content"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.CREATE_RESOURCE",
+      "summary": "Creates a new user-defined system resource.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "initialContent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.RENAME_RESOURCE",
+      "summary": "Renames a user-defined system resource.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "newName": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "resourceId",
+          "newName"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.DELETE_RESOURCE",
+      "summary": "Deletes a user-defined system resource.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "resourceId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.UPDATE_NVRAM",
+      "summary": "Updates the agent's cognitive state (NVRAM). Updates are merged into existing state. Self-targeting by default; cross-agent targeting requires agent:manage permission and is rejected with an error if missing.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+          },
+          "updates": {
+            "type": "object",
+            "description": "Key-value pairs to merge into the agent's cognitive state JSON. Keys are validated against the strategy's NVRAM schema."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "updates"
+        ]
+      },
+      "required_permissions": [
+        "agent:cognition"
+      ]
+    },
+    {
+      "action_name": "agent.ACTION_RESULT",
+      "summary": "Broadcast notification published after a command-dispatchable agent action completes. Carries a lightweight summary for session feedback via CommandBot. Other observers (logging plugins, usage monitors) may also subscribe.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the domain action's payload. Null if not command-originated."
+          },
+          "requestAction": {
+            "type": "string",
+            "description": "The domain action name that produced this result, e.g. 'agent.CREATE'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable description of what happened."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable error message. Present when success is false."
+          }
+        },
+        "required": [
+          "requestAction",
+          "success"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.AGENT_DELETED",
+      "summary": "Broadcasts that an agent has been deleted, so other features can clean up their state.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.AGENT_LOADED",
+      "summary": "[INTERNAL] Dispatched after an agent's configuration has been read from its sandbox.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "action_name": "agent.AGENTS_LOADED",
+      "summary": "[INTERNAL] Dispatched after all agent configurations have been read from disk.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "agent.RESOURCE_LOADED",
+      "summary": "[INTERNAL] Dispatched after a user-defined resource has been read from disk.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "action_name": "agent.SET_EDITING",
+      "summary": "[INTERNAL] Sets which agent is currently being edited in the UI.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "agent.SELECT_RESOURCE",
+      "summary": "[INTERNAL] Selects a system resource for viewing/editing.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "agent.SET_MANAGER_TAB",
+      "summary": "Switches the active tab in the Agent Manager View.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "tabIndex": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tabIndex"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.VALIDATE_SOVEREIGN_STATE",
+      "summary": "[INTERNAL] Triggers the validation of sovereign agent requirements on startup.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "agent.CHECK_AUTOMATIC_TRIGGERS",
+      "summary": "[INTERNAL] Dispatched by a timer to check if any automatic agents should start their cognitive cycle.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "agent.UPDATE_AUTO_TRIGGER_INDEX",
+      "summary": "[INTERNAL] Updates the index for the round-robin automatic trigger.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.STAGE_TURN_CONTEXT",
+      "summary": "[INTERNAL] Caches the ledger messages while the HKG context is being fetched.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentId",
+          "messages"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_MANAGED_CONTEXT",
+      "summary": "[INTERNAL] Saves the complete managed context data.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "agnosticRequest": {
+            "type": "object"
+          },
+          "rawRequestJson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "agnosticRequest",
+          "rawRequestJson"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.CONFIRM_DELETE",
+      "summary": "[INTERNAL] Dispatched after cleanup side effects are complete.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_STATUS",
+      "summary": "[INTERNAL] Updates the transient status and optional error message.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "status"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_PROCESSING_STEP",
+      "summary": "[INTERNAL] Updates the human-readable description of the agent's current processing activity.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_HKG_CONTEXT",
+      "summary": "[INTERNAL] Caches the fetched HKG context.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "agentId",
+          "context"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.AVATAR_MOVED",
+      "summary": "[INTERNAL] Updates the feature state to reflect that an avatar card has been moved.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session UUID (immutable identifier)."
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId",
+          "messageId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.NVRAM_LOADED",
+      "summary": "[INTERNAL] Dispatched after NVRAM has been loaded from disk during startup.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "agentId",
+          "state"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_CONTEXT_GATHERING_STARTED",
+      "summary": "[INTERNAL] Records the timestamp when parallel context gathering began. Used for timeout validation.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "startedAt"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.CONTEXT_GATHERING_TIMEOUT",
+      "summary": "[INTERNAL] Fired by a delayed dispatch after 10s. Carries the startedAt timestamp for stale-timeout validation.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "startedAt"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.REGISTER_PENDING_COMMAND",
+      "summary": "[INTERNAL] Records a correlationId \u2192 session mapping when AgentRuntimeFeature dispatches a domain action on behalf of an agent command. Used to route targeted RETURN_* data back to the session via commandbot.DELIVER_TO_SESSION.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session UUID (immutable identifier)."
+          },
+          "actionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correlationId",
+          "agentId",
+          "agentName",
+          "sessionId",
+          "actionName"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.CLEAR_PENDING_COMMAND",
+      "summary": "[INTERNAL] Removes a pending command entry after the result has been forwarded to the session, or on TTL expiry.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correlationId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.ADD_SESSION_SUBSCRIPTION",
+      "summary": "Adds a session to an agent's subscribed session list. Delta operation \u2014 callers do not need to know the current subscription list.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session UUID to add to the agent's subscribed sessions."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.REMOVE_SESSION_SUBSCRIPTION",
+      "summary": "Removes a session from an agent's subscribed session list. Delta operation \u2014 callers do not need to know the current subscription list.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session UUID to remove from the agent's subscribed sessions."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
+            "default": null
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId"
+        ]
+      },
+      "required_permissions": [
+        "agent:manage"
+      ]
+    },
+    {
+      "action_name": "agent.AGENT_NAMES_UPDATED",
+      "summary": "Broadcasts the current snapshot of all agents with their display names and subscribed session UUIDs. Fired on startup after agents load, and whenever agent subscriptions change. Other features use this to discover agents without cross-feature imports.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "description": "Array of agent snapshots.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string",
+                  "description": "Immutable agent UUID."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name."
+                },
+                "subscribedSessionIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of session UUIDs this agent observes."
+                }
+              },
+              "required": [
+                "uuid",
+                "name",
+                "subscribedSessionIds"
+              ]
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.CONTEXT_UNCOLLAPSE",
+      "summary": "Expands a context partition, holon file, or workspace entry so the agent can see its full content in the next turn.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+          },
+          "partitionKey": {
+            "type": "string",
+            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file (e.g., 'ws:src/', 'ws:src/main.kt'), or a bare partition name (e.g., 'AVAILABLE_ACTIONS')."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "full",
+              "subtree",
+              "single"
+            ],
+            "default": "single",
+            "description": "'single': one item. 'subtree': for HKG holons, reveal children in INDEX; for workspace directories, expand the directory and all nested sub-directories (but not files). 'full': entire partition."
+          }
+        },
+        "required": [
+          "partitionKey"
+        ]
+      },
+      "required_permissions": [
+        "agent:cognition"
+      ]
+    },
+    {
+      "action_name": "agent.CONTEXT_COLLAPSE",
+      "summary": "Collapses a context partition, holon file, or workspace entry so it shows only a summary in the next turn.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+          },
+          "partitionKey": {
+            "type": "string",
+            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file, or a bare partition name."
+          }
+        },
+        "required": [
+          "partitionKey"
+        ]
+      },
+      "required_permissions": [
+        "agent:cognition"
+      ]
+    },
+    {
+      "action_name": "agent.CONTEXT_STATE_LOADED",
+      "summary": "[INTERNAL] Dispatched after context.json has been loaded from disk during startup. Populates the agent's collapse overrides.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "overrides": {
+            "type": "object",
+            "description": "Map of partition key to CollapseState name (EXPANDED or COLLAPSED)."
+          }
+        },
+        "required": [
+          "agentId",
+          "overrides"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_PENDING_PRIVATE_SESSION",
+      "summary": "[INTERNAL] Sets or clears the pending private session creation flag. Prevents duplicate SESSION_CREATE dispatches on rapid heartbeat ticks.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "pending"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_PENDING_LEDGER_SESSIONS",
+      "summary": "[INTERNAL] Initializes multi-session ledger accumulation. Sets which session UUIDs are expected and clears any stale accumulated data. Dispatched by startCognitiveCycle before requesting ledgers.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of session UUIDs whose ledger responses are expected."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionIds"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.ACCUMULATE_SESSION_LEDGER",
+      "summary": "[INTERNAL] Stores one session's enriched ledger messages and removes the session from the pending set. When all pending sessions have been accumulated, the side-effect handler triggers evaluateTurnContext.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID whose ledger was received."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Enriched GatewayMessage objects for this session."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId",
+          "messages"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.SET_WORKSPACE_LISTING",
+      "summary": "[INTERNAL] Stores the raw workspace directory listing (JsonArray) from filesystem.RETURN_LIST on the agent status for INDEX tree building.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "listing": {
+            "type": "array",
+            "description": "Raw listing entries from filesystem.RETURN_LIST."
+          }
+        },
+        "required": [
+          "agentId",
+          "listing"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_PENDING_WORKSPACE_FILES",
+      "summary": "[INTERNAL] Sets or clears the pending workspace file reads flag. True when a READ_MULTIPLE request for expanded workspace files is in-flight.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "pending"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_WORKSPACE_FILE_CONTENTS",
+      "summary": "[INTERNAL] Stores the fetched contents of expanded workspace files and clears the pending flag. Received after a filesystem.READ_MULTIPLE response.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of workspace-relative path to file content string."
+          }
+        },
+        "required": [
+          "agentId",
+          "contents"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.MERGE_WORKSPACE_FILE_CONTENT",
+      "summary": "[INTERNAL] Merges fetched workspace file content into the agent's transient workspace file contents map without replacing existing entries. Used for on-demand file loading triggered by CONTEXT_UNCOLLAPSE.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of workspace-relative file paths to their string content.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "agentId",
+          "contents"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_MANAGED_PARTITIONS",
+      "summary": "Stores fast-path partition data for Context Management Tab 0.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "partitions": {
+            "type": "object",
+            "description": "Serialized PartitionAssemblyResult"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.UPDATE_MANAGED_PREVIEW",
+      "summary": "Stores rawRequestJson + estimatedInputTokens from debounced gateway preview.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "rawRequestJson": {
+            "type": "string"
+          },
+          "estimatedInputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "required_permissions": []
+    },
+    {
+      "action_name": "agent.SET_PENDING_SESSION_FILE_LISTINGS",
+      "summary": "[INTERNAL] Initializes the set of session UUIDs whose workspace file listings are being requested. Clears stale transient session file data from the previous turn.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Session UUIDs whose workspace files are being requested."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionIds"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.STORE_SESSION_FILES",
+      "summary": "[INTERNAL] Stores the workspace file listing and expanded file contents for one session. Removes the session from the pending set.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID this data belongs to."
+          },
+          "listing": {
+            "type": "array",
+            "description": "Raw listing entries from session.RETURN_WORKSPACE_FILES."
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of relative path to file content for expanded files."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name": "agent.MERGE_SESSION_FILE_CONTENT",
+      "summary": "[INTERNAL] Merges on-demand session file content into the agent's transient session file contents map. Used by CONTEXT_UNCOLLAPSE when an sf: file is expanded outside the turn-initiation pipeline.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID this content belongs to."
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of relative path to file content to merge."
+          }
+        },
+        "required": [
+          "agentId",
+          "sessionId",
+          "contents"
+        ]
+      }
+    }
+  ]
+}

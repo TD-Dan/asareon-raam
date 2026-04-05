@@ -18,3 +18,6 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 /composeApp/framework/
 /composeApp/holons/
+*.*-autosave.kra
+/composeApp/sessions/
+_backups

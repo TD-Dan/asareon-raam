@@ -1,0 +1,280 @@
+{
+  "feature_name": "backup",
+  "summary": "Manages automatic and manual backup creation, restoration, and retention of application data. Creates protective snapshots during preInit() before any other feature can modify data on disk.",
+  "permissions": [
+    {
+      "key": "backup:manage",
+      "description": "Create, prune, and browse backup snapshots",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "backup:delete",
+      "description": "Permanently delete individual backup files",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "backup:restore",
+      "description": "Restore from a backup, replacing all current application data",
+      "dangerLevel": "DANGER"
+    }
+  ],
+  "actions": [
+    {
+      "action_name": "backup.CREATE",
+      "summary": "Creates a manual on-demand backup of the current application data.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Optional human-readable label for the backup (e.g., 'before-migration')."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
+            "default": null
+          }
+        }
+      },
+      "required_permissions": [
+        "backup:manage"
+      ]
+    },
+    {
+      "action_name": "backup.RESTORE",
+      "summary": "Initiates the restore workflow. Dispatches a CoreFeature confirmation dialog before proceeding. The payload must contain the filename of the backup to restore.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "The filename of the backup zip to restore (e.g., 'raam-backup-20260404T150000Z.zip')."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
+            "default": null
+          }
+        },
+        "required": [
+          "filename"
+        ]
+      },
+      "required_permissions": [
+        "backup:restore"
+      ]
+    },
+    {
+      "action_name": "backup.EXECUTE_RESTORE",
+      "summary": "[INTERNAL] Executes the actual restore after user confirmation. Creates a safety backup, writes skip marker, extracts the backup, and triggers app restart.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename"
+        ]
+      }
+    },
+    {
+      "action_name": "backup.DELETE",
+      "summary": "Deletes a specific backup file.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "The filename of the backup to delete."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
+            "default": null
+          }
+        },
+        "required": [
+          "filename"
+        ]
+      },
+      "required_permissions": [
+        "backup:delete"
+      ]
+    },
+    {
+      "action_name": "backup.PRUNE",
+      "summary": "Manually triggers retention pruning. Deletes the oldest backups beyond the maxBackups threshold.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "required_permissions": [
+        "backup:manage"
+      ],
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "action_name": "backup.OPEN_FOLDER",
+      "summary": "Opens the _backups directory in the native OS file explorer.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "required_permissions": [
+        "backup:manage"
+      ],
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "action_name": "backup.REFRESH",
+      "summary": "[INTERNAL] Re-scans the backup directory and updates the inventory state.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "backup.INVENTORY_UPDATED",
+      "summary": "[INTERNAL] Dispatched after scanning the backup directory. Carries the updated list of backup entries.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "backups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "filename": {
+                  "type": "string"
+                },
+                "sizeBytes": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "integer",
+                  "description": "Epoch millis"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "backups"
+        ]
+      }
+    },
+    {
+      "action_name": "backup.OPERATION_RESULT",
+      "summary": "[INTERNAL] Dispatched after a create, delete, or prune operation completes. Used to update UI state (loading indicators, toast messages).",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "The operation that completed: 'create', 'delete', 'prune', 'restore'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable result message."
+          }
+        },
+        "required": [
+          "operation",
+          "success"
+        ]
+      }
+    },
+    {
+      "action_name": "backup.ACTION_RESULT",
+      "summary": "[INTERNAL] Broadcast notification published after every public command-action completes. Follows the standardised ACTION_RESULT contract for cross-feature observability.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "requestAction": {
+            "type": "string",
+            "description": "The action name that triggered this result."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Human-readable summary on success."
+          },
+          "error": {
+            "type": "string",
+            "description": "Human-readable error description on failure."
+          },
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
+            "default": null
+          }
+        },
+        "required": [
+          "requestAction",
+          "success"
+        ]
+      }
+    }
+  ]
+}
