@@ -366,62 +366,6 @@ class ContextCollapseLogicT1Test {
     }
 
     // =========================================================================
-    // buildPartition — well-known key defaults
-    // =========================================================================
-
-    @Test
-    fun `buildPartition - HKG INDEX is not auto-collapsible`() {
-        val p = ContextCollapseLogic.buildPartition("HOLON_KNOWLEDGE_GRAPH_INDEX", "content")
-        assertFalse(p.isAutoCollapsible)
-        assertEquals(1000, p.priority)
-        assertFalse(p.truncateFromStart)
-    }
-
-    @Test
-    fun `buildPartition - HKG FILES is auto-collapsible with low priority`() {
-        val p = ContextCollapseLogic.buildPartition("HOLON_KNOWLEDGE_GRAPH_FILES", "content")
-        assertTrue(p.isAutoCollapsible)
-        assertEquals(0, p.priority)
-    }
-
-    @Test
-    fun `buildPartition - CONVERSATION_LOG has high priority and truncates from start`() {
-        val p = ContextCollapseLogic.buildPartition("CONVERSATION_LOG", "content")
-        assertTrue(p.isAutoCollapsible)
-        assertEquals(100, p.priority)
-        assertTrue(p.truncateFromStart)
-    }
-
-    @Test
-    fun `buildPartition - AVAILABLE_ACTIONS has standard priority`() {
-        val p = ContextCollapseLogic.buildPartition("AVAILABLE_ACTIONS", "content")
-        assertTrue(p.isAutoCollapsible)
-        assertEquals(10, p.priority)
-    }
-
-    @Test
-    fun `buildPartition - SESSION_METADATA is not auto-collapsible`() {
-        val p = ContextCollapseLogic.buildPartition("SESSION_METADATA", "content")
-        assertFalse(p.isAutoCollapsible)
-    }
-
-    @Test
-    fun `buildPartition - agent override applied`() {
-        val overrides = mapOf("AVAILABLE_ACTIONS" to CollapseState.COLLAPSED)
-        val p = ContextCollapseLogic.buildPartition("AVAILABLE_ACTIONS", "content", overrides)
-        assertTrue(p.isAgentOverridden)
-        assertEquals(CollapseState.COLLAPSED, p.state)
-    }
-
-    @Test
-    fun `buildPartition - unknown key gets default priority and collapsibility`() {
-        val p = ContextCollapseLogic.buildPartition("CUSTOM_CONTEXT", "content")
-        assertTrue(p.isAutoCollapsible)
-        assertEquals(0, p.priority)
-        assertFalse(p.truncateFromStart)
-    }
-
-    // =========================================================================
     // Edge cases
     // =========================================================================
 

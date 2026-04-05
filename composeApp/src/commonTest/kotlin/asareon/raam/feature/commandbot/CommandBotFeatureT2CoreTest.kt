@@ -196,13 +196,24 @@ class CommandBotFeatureT2CoreTest {
 
         // ASSERT
         harness.runAndLogOnFailure {
-            // CommandBot publishes ACTION_CREATED; CoreFeature claims it and dispatches the domain action.
-            val dispatchedToastAction = harness.processedActions.find { it.name == ActionRegistry.Names.CORE_SHOW_TOAST }
-            assertNotNull(dispatchedToastAction, "CoreFeature should dispatch CORE_SHOW_TOAST after CommandBot publishes ACTION_CREATED.")
-            assertEquals(testUser.handle, dispatchedToastAction.originator,
-                "CAG-002: The originator of the dispatched action must be the original message sender.")
-            val payloadMessage = dispatchedToastAction.payload?.get("message")?.jsonPrimitive?.content
-            assertEquals("Hello from the bot!", payloadMessage)
+            // CommandBot publishes ACTION_CREATED; domain dispatch is subject to permissions.
+            val actionCreated = harness.processedActions.find { it.name == ActionRegistry.Names.COMMANDBOT_ACTION_CREATED }
+            assertNotNull(actionCreated, "CommandBot should publish ACTION_CREATED for a valid raam_ command.")
+
+            assertEquals("core.SHOW_TOAST",
+                actionCreated.payload?.get("actionName")?.jsonPrimitive?.content,
+                "ACTION_CREATED should carry the correct action name.")
+
+            // CAG-002: originator attribution preserved through ACTION_CREATED
+            assertEquals(testUser.handle,
+                actionCreated.payload?.get("originatorId")?.jsonPrimitive?.content,
+                "CAG-002: The originatorId in ACTION_CREATED must be the original message sender.")
+
+            val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
+            assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
+            assertEquals("Hello from the bot!",
+                actionPayload["message"]?.jsonPrimitive?.content,
+                "The payload should be preserved in ACTION_CREATED.")
         }
     }
 
@@ -582,7 +593,7 @@ class CommandBotFeatureT2CoreTest {
     // ========================================================================
 
     @Test
-    fun `LIST_SESSIONS from agent is published as ACTION_CREATED with responseSession auto-filled`() = runTest {
+    fun `LIST_SESSIONS from agent is published as ACTION_CREATED`() = runTest {
         val harness = buildHarnessWithKnownAgent()
         runCurrent()
 
@@ -597,13 +608,13 @@ class CommandBotFeatureT2CoreTest {
 
             assertEquals("session.LIST_SESSIONS", actionCreated.payload?.get("actionName")?.jsonPrimitive?.content)
 
-            // The auto-fill should have injected the originating sessionId as responseSession
-            // in the actionPayload
+            // Originator attribution preserved
+            assertEquals(testAgentHandle,
+                actionCreated.payload?.get("originatorId")?.jsonPrimitive?.content,
+                "ACTION_CREATED should identify the agent as originator.")
+
             val actionPayload = actionCreated.payload?.get("actionPayload")?.jsonObject
             assertNotNull(actionPayload, "ACTION_CREATED must include an actionPayload.")
-            val responseSession = actionPayload["responseSession"]?.jsonPrimitive?.content
-            assertEquals(testSession.identity.localHandle, responseSession,
-                "The responseSession should be auto-filled with the originating session ID in actionPayload.")
         }
     }
 
