@@ -1,0 +1,1357 @@
+{
+  "feature_name": "session",
+  "summary": "Acts as a pure, passive data manager for multiple, concurrent session transcripts (the 'Public Ledger').",
+  "permissions": [
+    {
+      "key": "session:read",
+      "description": "Read session list, transcripts and message content",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "session:write",
+      "description": "Post messages in sessions",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "session:manage",
+      "description": "Create, delete, clone, and configure sessions. Modify and delete all messages.",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "session:read-files",
+      "description": "List and read workspace files in sessions the requester is subscribed to",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "session:write-files",
+      "description": "Write, edit, and delete workspace files in sessions",
+      "dangerLevel": "CAUTION"
+    }
+  ],
+  "actions": [
+    {
+      "action_name": "session.CREATE",
+      "summary": "Creates a new, empty session transcript. If the name exists, a numeric suffix will be added.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "An optional user-friendly name for the new session."
+          },
+          "isHidden": {
+            "type": "boolean",
+            "description": "If true, the session is created in a hidden state. Defaults to false."
+          },
+          "isPrivateTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "If non-null, the identity handle of the owner. The session is private to that identity. Defaults to null."
+          }
+        }
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.CLONE",
+      "summary": "Creates a new session by cloning an existing one, including its entire ledger. The clone is always non-hidden regardless of source.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to clone"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.UPDATE_CONFIG",
+      "summary": "Updates the configuration of an existing session.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to update."
+          },
+          "name": {
+            "type": "string",
+            "description": "The new name for the session. Will be de-duplicated if necessary."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.DELETE",
+      "summary": "Deletes an entire session transcript. Targets the session via the 'session' property (ID or name).",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to delete."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.POST",
+      "summary": "Posts a new entry to a specific session's ledger.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "senderId": {
+            "type": "string",
+            "description": "The identity handle of the message sender. If omitted, defaults to the action's originator (the dispatching identity)."
+          },
+          "message": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string",
+            "description": "An optional, pre-generated ID for the message. If not provided, one will be created."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "An optional, generic metadata object."
+          },
+          "afterMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end."
+          },
+          "doNotClear": {
+            "type": "boolean",
+            "description": "If true, this entry will survive a SESSION_CLEAR action even when not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
+            "default": false
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:write"
+      ]
+    },
+    {
+      "action_name": "session.UPDATE_MESSAGE",
+      "summary": "Updates the raw content and metadata of an existing message. Blocked if the target message is locked.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's uuid, localHandle, full handle, or display name."
+          },
+          "messageId": {
+            "type": "string",
+            "description": "The messages's uuid or poster+timestamp"
+          },
+          "newContent": {
+            "type": "string"
+          },
+          "newMetadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "session",
+          "messageId"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.DELETE_MESSAGE",
+      "summary": "Deletes a single message from a session's ledger. Blocked if the target message is locked.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name of the session to delete."
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "messageId"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.REQUEST_LEDGER_CONTENT",
+      "summary": "Requests the formatted full ledger content for a specific session.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "correlationId"
+        ]
+      },
+      "required_permissions": [
+        "session:read"
+      ]
+    },
+    {
+      "action_name": "session.SET_ACTIVE_TAB",
+      "summary": "[INTERNAL] Sets the currently visible session in the main tabbed view.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to make active."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SET_EDITING_SESSION_NAME",
+      "summary": "[INTERNAL] Sets which session name is currently being edited in the UI.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "session.SET_EDITING_MESSAGE",
+      "summary": "[INTERNAL] Sets which message is currently being edited in the UI and pre-loads its content. Blocked if the target message is locked.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
+      "summary": "Toggles the collapsed/expanded state for a single message, or all messages in the session when messageId is omitted. Bulk toggle collapses all if any message is expanded, otherwise expands all.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The ID of the message to toggle. If omitted or null, toggles all messages in the session."
+          },
+          "targetCollapsed": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "If provided, sets the collapsed state directly instead of toggling. true = collapse, false = expand. When omitted, the action toggles: single messages flip their state; bulk (no messageId) collapses all if any is expanded, otherwise expands all."
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.TOGGLE_MESSAGE_RAW_VIEW",
+      "summary": "Toggles the raw/parsed view for a single message.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "messageId"
+        ]
+      }
+    },
+    {
+      "action_name": "session.REORDER",
+      "summary": "Moves a session to a new position in the canonical display ordering. Updates the session's persistent orderIndex and persists affected sessions to disk.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session's localHandle."
+          },
+          "toIndex": {
+            "type": "integer",
+            "description": "The target index in the ordering list. Clamped to valid bounds."
+          }
+        },
+        "required": [
+          "sessionId",
+          "toIndex"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SET_ORDER",
+      "summary": "Replaces the canonical session display ordering with the provided list. Assigns contiguous orderIndex values (0, 1, 2, \u2026) and persists all sessions whose orderIndex changed. Sessions present in the existing order but absent from the provided list are appended at the end (e.g., hidden sessions filtered out of the drag-reorder view).",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The new ordered list of session IDs."
+          }
+        },
+        "required": [
+          "order"
+        ]
+      }
+    },
+    {
+      "action_name": "session.TOGGLE_SESSION_HIDDEN",
+      "summary": "Toggles the isHidden flag on a specific session.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to toggle."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.TOGGLE_MESSAGE_LOCKED",
+      "summary": "Toggles the isLocked flag on a specific ledger entry. A locked message cannot be edited, deleted, or cleared.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "messageId"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.CLEAR",
+      "summary": "Removes all messages from a session's ledger that are not locked (marked [\uD83D\uDD12]).",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to clear."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:manage"
+      ]
+    },
+    {
+      "action_name": "session.LIST_SESSIONS",
+      "summary": "Lists all non-hidden sessions. The result is posted as a message to the responseSession specified in the payload.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "responseSession": {
+            "type": "string",
+            "description": "The session ID where the listing should be posted."
+          }
+        }
+      },
+      "required_permissions": [
+        "session:read"
+      ]
+    },
+    {
+      "action_name": "session.LOCK_MESSAGE",
+      "summary": "Locks a message to prevent editing, deletion, or clearing. Targets by senderId + ISO 8601 timestamp.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "senderId": {
+            "type": "string",
+            "description": "The display name or ID of the message sender."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
+          }
+        },
+        "required": [
+          "session",
+          "senderId",
+          "timestamp"
+        ]
+      },
+      "required_permissions": [
+        "session:write"
+      ]
+    },
+    {
+      "action_name": "session.UNLOCK_MESSAGE",
+      "summary": "Unlocks a previously locked message. Targets by senderId + ISO 8601 timestamp.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "senderId": {
+            "type": "string",
+            "description": "The display name or ID of the message sender."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
+          }
+        },
+        "required": [
+          "session",
+          "senderId",
+          "timestamp"
+        ]
+      },
+      "required_permissions": [
+        "session:write"
+      ]
+    },
+    {
+      "action_name": "session.MESSAGE_POSTED",
+      "summary": "Broadcasts that a new message has been successfully posted to a session.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session localHandle (legacy)."
+          },
+          "entry": {
+            "type": "object",
+            "description": "The full LedgerEntry object that was added.",
+            "$ref": "#/definitions/LedgerEntry"
+          },
+          "sessionUUID": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session UUID (preferred for matching)."
+          }
+        },
+        "required": [
+          "sessionId",
+          "entry"
+        ]
+      }
+    },
+    {
+      "action_name": "session.MESSAGE_DELETED",
+      "summary": "Broadcasts that a message has been successfully deleted from a session.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session localHandle (legacy)."
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "sessionUUID": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Session UUID (preferred for matching)."
+          }
+        },
+        "required": [
+          "sessionId",
+          "messageId"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SESSION_UPDATED",
+      "summary": "Broadcasts that a session has been updated (e.g., a new message was posted).",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SESSION_DELETED",
+      "summary": "Broadcasts that a session has been deleted, so other features can clean up their state.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The localHandle of the deleted session (legacy)."
+          },
+          "sessionUUID": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The immutable UUID of the deleted session (preferred for matching)."
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SESSION_NAMES_UPDATED",
+      "summary": "Broadcasts the full identity snapshot of all subscribable (non-private) sessions. Listeners can detect renames by matching on UUID.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "description": "Array of session identity snapshots. Each entry contains uuid, handle, localHandle, and name.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string",
+                  "description": "Immutable session UUID."
+                },
+                "handle": {
+                  "type": "string",
+                  "description": "Full bus handle (e.g. session.chat1). May change on rename."
+                },
+                "localHandle": {
+                  "type": "string",
+                  "description": "Leaf handle (e.g. chat1). May change on rename."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name."
+                }
+              },
+              "required": [
+                "uuid",
+                "handle",
+                "localHandle",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SESSION_FEATURE_READY",
+      "summary": "Broadcast once when all pending session identity registrations have completed and the sessions map is stable. Fired at startup after the last file-loaded session finishes identity approval, and at runtime after any session creation completes. Other features should use this - not SESSION_NAMES_UPDATED - as the signal that sessions are available for cross-feature operations like avatar posting.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionCount": {
+            "type": "integer",
+            "description": "The number of sessions now available in the sessions map."
+          }
+        },
+        "required": [
+          "sessionCount"
+        ]
+      }
+    },
+    {
+      "action_name": "session.INPUT_DRAFT_CHANGED",
+      "summary": "Signals that the user has modified the message input field. Updates the transient draft in state and starts a 5-second debounce before writing {uuid}/input.json to disk.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The localHandle of the session whose draft changed."
+          },
+          "draft": {
+            "type": "string",
+            "description": "The current full draft text."
+          }
+        },
+        "required": [
+          "sessionId",
+          "draft"
+        ]
+      }
+    },
+    {
+      "action_name": "session.HISTORY_NAVIGATE",
+      "summary": "Navigates the per-session sent-message history. UP moves toward older entries (first UP saves the in-progress draft); DOWN moves toward newer entries (DOWN at the newest restores the pre-navigation draft). No-op when history is empty (UP) or when not navigating (DOWN).",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The localHandle of the session to navigate."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "UP",
+              "DOWN"
+            ],
+            "description": "'UP' moves toward older history entries; 'DOWN' moves toward newer entries / restores the pre-navigation draft."
+          }
+        },
+        "required": [
+          "sessionId",
+          "direction"
+        ]
+      }
+    },
+    {
+      "action_name": "session.INPUT_HISTORIES_LOADED",
+      "summary": "Dispatched after SessionFeature reads a {uuid}/input.json. Carries the restored draft and history so the reducer can populate draftInputs and inputHistories.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "The UUID of the session this input state belongs to."
+          },
+          "draft": {
+            "type": "string",
+            "description": "The restored draft text."
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The restored sent-message history, newest-first."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      }
+    },
+    {
+      "action_name": "session.TOGGLE_WORKSPACE_PANE",
+      "summary": "[INTERNAL] Toggles the workspace file pane visibility in SessionView. Clears file selection and preview content when closing.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false
+    },
+    {
+      "action_name": "session.REFRESH_WORKSPACE",
+      "summary": "[INTERNAL] Requests a fresh file listing of the specified session's workspace folder. Dispatches FILESYSTEM_LIST and routes the response through WORKSPACE_FILES_LOADED.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "required_permissions": [
+        "session:read"
+      ]
+    },
+    {
+      "action_name": "session.SELECT_WORKSPACE_FILE",
+      "summary": "[INTERNAL] Selects a workspace file for preview. Omit fileName to deselect and return to the file list. Triggers FILESYSTEM_READ for the selected file.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The file to select for preview. Omit or null to deselect."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      }
+    },
+    {
+      "action_name": "session.DELETE_WORKSPACE_FILE",
+      "summary": "[INTERNAL] Deletes a file from the session's workspace folder. Performs optimistic removal from the cached file list and dispatches FILESYSTEM_DELETE_FILE.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "The session's localHandle, full handle, or display name."
+          },
+          "fileName": {
+            "type": "string",
+            "description": "The name of the file to delete."
+          }
+        },
+        "required": [
+          "session",
+          "fileName"
+        ]
+      }
+    },
+    {
+      "action_name": "session.WORKSPACE_FILES_LOADED",
+      "summary": "[INTERNAL] Dispatched after a workspace folder listing has been received from FileSystemFeature. Populates the workspaceFiles cache in state.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionLocalHandle": {
+            "type": "string",
+            "description": "The localHandle of the session whose workspace was listed."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/FileEntry"
+            },
+            "description": "The list of files in the workspace folder."
+          }
+        },
+        "required": [
+          "sessionLocalHandle",
+          "files"
+        ]
+      }
+    },
+    {
+      "action_name": "session.WORKSPACE_FILE_CONTENT_LOADED",
+      "summary": "[INTERNAL] Dispatched after a workspace file's text content has been read from disk. Populates the preview panel if the file is still selected.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "fileName": {
+            "type": "string",
+            "description": "The file name that was read."
+          },
+          "content": {
+            "type": "string",
+            "description": "The text content of the file."
+          }
+        },
+        "required": [
+          "fileName",
+          "content"
+        ]
+      }
+    },
+    {
+      "action_name": "session.LOADED",
+      "summary": "Dispatched after all session transcripts have been loaded from disk.",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "description": "A map of session IDs to Session objects."
+      }
+    },
+    {
+      "action_name": "session.RETURN_LEDGER",
+      "summary": "The response envelope containing the formatted ledger content for an agent's cognitive cycle.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "senderId": {
+                  "type": "string"
+                },
+                "senderName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "content",
+                "senderId",
+                "senderName"
+              ]
+            }
+          }
+        },
+        "required": [
+          "correlationId",
+          "messages"
+        ]
+      }
+    },
+    {
+      "action_name": "session.ACTION_RESULT",
+      "summary": "Broadcast notification published after a command-dispatchable session action completes. Carries a lightweight summary for session feedback via CommandBot. CommandBot matches via correlationId to post feedback to the originating session.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the domain action's payload. Null if not command-originated."
+          },
+          "requestAction": {
+            "type": "string",
+            "description": "The domain action name that produced this result, e.g. 'session.POST'."
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable description of what happened."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable error message on failure."
+          }
+        },
+        "required": [
+          "requestAction",
+          "success"
+        ]
+      }
+    },
+    {
+      "action_name": "session.SESSION_CREATED",
+      "summary": "Broadcast when a new session is fully created and registered. Agents listen for this to detect their private cognition session via the isPrivateTo field.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "The session's immutable UUID."
+          },
+          "name": {
+            "type": "string",
+            "description": "The session's display name."
+          },
+          "handle": {
+            "type": "string",
+            "description": "The session's full identity handle."
+          },
+          "localHandle": {
+            "type": "string",
+            "description": "The session's local handle (map key in SessionState)."
+          },
+          "isHidden": {
+            "type": "boolean",
+            "description": "Whether the session is hidden from the session list."
+          },
+          "isPrivateTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Identity handle of the owner if private, null otherwise."
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "handle",
+          "localHandle"
+        ]
+      }
+    },
+    {
+      "action_name": "session.REQUEST_WORKSPACE_FILES",
+      "summary": "Requests the workspace file listing and expanded file contents for a specific session. The session feature validates access, performs filesystem I/O within its own sandbox, and returns the data via a targeted RETURN_WORKSPACE_FILES response.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID to request files from."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Correlation ID for response matching (format: sf:{agentUUID}:{sessionUUID})."
+          },
+          "requesterId": {
+            "type": "string",
+            "description": "The identity handle of the requester (for access validation)."
+          },
+          "expandedFilePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Relative file paths to pre-read. Session cross-references against actual listing and drops invalid paths."
+          }
+        },
+        "required": [
+          "sessionId",
+          "correlationId",
+          "requesterId"
+        ]
+      },
+      "required_permissions": [
+        "session:read-files"
+      ]
+    },
+    {
+      "action_name": "session.RETURN_WORKSPACE_FILES",
+      "summary": "Targeted response containing workspace file listing and expanded file contents for a session delegation request.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "listing": {
+            "type": "array",
+            "description": "Raw workspace listing entries."
+          },
+          "contents": {
+            "type": "object",
+            "description": "Map of relative path to file content for requested expanded files."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if the request failed. Null on success."
+          }
+        },
+        "required": [
+          "correlationId",
+          "sessionId"
+        ]
+      }
+    },
+    {
+      "action_name": "session.READ_WORKSPACE_FILE",
+      "summary": "On-demand request to read a single workspace file from a session. Used when an agent expands a session file via CONTEXT_UNCOLLAPSE outside the turn-init pipeline.",
+      "public": true,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session UUID."
+          },
+          "path": {
+            "type": "string",
+            "description": "Relative path of the file to read."
+          },
+          "requesterId": {
+            "type": "string",
+            "description": "The identity handle of the requester."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Correlation ID (format: sfod:{agentUUID}:{sessionUUID})."
+          }
+        },
+        "required": [
+          "sessionId",
+          "path",
+          "requesterId",
+          "correlationId"
+        ]
+      },
+      "required_permissions": [
+        "session:read-files"
+      ]
+    },
+    {
+      "action_name": "session.RETURN_WORKSPACE_FILE",
+      "summary": "Targeted response containing a single workspace file's content for an on-demand read request.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "description": "File content. Null if the file was not found."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if the request failed."
+          }
+        },
+        "required": [
+          "correlationId",
+          "sessionId",
+          "path"
+        ]
+      }
+    }
+  ],
+  "definitions": {
+    "LedgerEntry": {
+      "type": "object",
+      "description": "Represents a single, immutable entry in a session's ledger.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this entry."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Unix epoch milliseconds when the entry was created."
+        },
+        "senderId": {
+          "type": "string",
+          "description": "The identifier of the originator (e.g., 'user', an agent ID, 'commandbot', 'system')."
+        },
+        "rawContent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The original, unmodified string content of the message. Null for UI-only entries."
+        },
+        "content": {
+          "type": "array",
+          "description": "The structured, pre-parsed representation of rawContent as a list of ContentBlock objects.",
+          "items": {
+            "$ref": "#/definitions/ContentBlock"
+          }
+        },
+        "metadata": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "A generic metadata object for UI hints or embedding components from other features."
+        },
+        "isLocked": {
+          "type": "boolean",
+          "description": "When true, this entry cannot be edited, deleted, or cleared. Defaults to false.",
+          "default": false
+        },
+        "doNotClear": {
+          "type": "boolean",
+          "description": "When true, this entry survives a SESSION_CLEAR even if not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
+          "default": false
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "senderId"
+      ]
+    },
+    "ContentBlock": {
+      "type": "object",
+      "description": "A single block of structured content within a message. This is a sealed/discriminated union using the 'type' field.",
+      "discriminator": "type",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/ContentBlock.Text"
+        },
+        {
+          "$ref": "#/definitions/ContentBlock.CodeBlock"
+        }
+      ]
+    },
+    "ContentBlock.Text": {
+      "type": "object",
+      "description": "A block of plain or markdown text.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "asareon.raam.feature.session.ContentBlock.Text",
+          "description": "Discriminator value for kotlinx.serialization sealed interface."
+        },
+        "text": {
+          "type": "string",
+          "description": "The text content."
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ]
+    },
+    "ContentBlock.CodeBlock": {
+      "type": "object",
+      "description": "A fenced code block with a language tag. CommandBot watches for code blocks whose language starts with 'raam_' and dispatches the body as an action payload.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "asareon.raam.feature.session.ContentBlock.CodeBlock",
+          "description": "Discriminator value for kotlinx.serialization sealed interface."
+        },
+        "language": {
+          "type": "string",
+          "description": "The language tag from the fenced code block (e.g., 'kotlin', 'raam_filesystem.WRITE')."
+        },
+        "code": {
+          "type": "string",
+          "description": "The content of the code block."
+        }
+      },
+      "required": [
+        "type",
+        "language",
+        "code"
+      ]
+    }
+  }
+}

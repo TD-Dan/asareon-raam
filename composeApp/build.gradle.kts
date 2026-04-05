@@ -28,27 +28,18 @@ plugins {
 
 
 // ============================================================================
-// Phase 1 — New generateActionRegistry Gradle task
+// generateActionRegistry Gradle task
 // ============================================================================
-// Drop-in replacement for the old task in build.gradle.kts (lines 29–346).
-//
-// Reads the unified *.actions.json format (actions[] with public/broadcast/targeted)
-// and generates two files:
-//   1. ActionRegistry.kt — the unified registry (single source of truth)
-//   2. ActionNames.kt — typealias + old→new name compat shim
-//
-// IMPORTANT: No data classes inside doLast{} — Gradle script closures don't
-// support them reliably. Uses plain Map<String, Any> throughout, matching the
-// pattern of the original working task.
+// Reads the unified *.actions.json format and generates ActionRegistry.kt.
 // ============================================================================
 
 tasks.register("generateActionRegistry") {
     description = "Generates ActionRegistry.kt (unified action catalog) and ActionNames.kt (compat shim) from *.actions.json manifests."
-    group = "auf"
+    group = "raam"
 
     // --- Configuration ---
-    val inputDir = file("src/commonMain/kotlin/app/auf")
-    val generatedDir = layout.buildDirectory.dir("generated/kotlin/app/auf/core/generated")
+    val inputDir = file("src/commonMain/kotlin/asareon/raam")
+    val generatedDir = layout.buildDirectory.dir("generated/kotlin/asareon/raam/core/generated")
     val actionRegistryOutputFile = generatedDir.map { it.file("ActionRegistry.kt") }
     val actionNamesOutputFile = generatedDir.map { it.file("ActionNames.kt") }
 
@@ -61,9 +52,16 @@ tasks.register("generateActionRegistry") {
     doLast {
         val json = Json { ignoreUnknownKeys = true }
 
+        // Valid dangerLevel values
+        val validDangerLevels = setOf("LOW", "CAUTION", "DANGER")
+
         // Plain-map collections only — no data classes in Gradle doLast blocks!
-        // featureMap: featureName → { "name", "summary", "permissions", "actions": List<Map> }
+        // featureMap: featureName → { "name", "summary", "permissionDeclarations", "actions": List<Map> }
         val featureMap = mutableMapOf<String, MutableMap<String, Any>>()
+
+        // Collect all declared permission keys across all features for cross-referencing
+        // Map: permissionKey → { key, description, dangerLevel, featureName }
+        val allDeclaredPermissions = mutableMapOf<String, Map<String, String>>()
 
         // Helper to escape strings for Kotlin source
         fun String.escKt() = this
@@ -86,14 +84,77 @@ tasks.register("generateActionRegistry") {
                     val featureName = manifest["feature_name"]?.jsonPrimitive?.content
                         ?: throw GradleException("Missing feature_name in ${manifestFile.path}")
                     val featureSummary = manifest["summary"]?.jsonPrimitive?.content ?: ""
-                    val permissions = (manifest["permissions"] as? JsonArray)
-                        ?.map { it.jsonPrimitive.content } ?: emptyList<String>()
+
+                    // ====== Parse permissions declarations ======
+
+                    val permissionsArray = manifest["permissions"] as? JsonArray
+                    val permissionDeclarations = mutableListOf<Map<String, String>>()
+
+                    if (permissionsArray != null) {
+                        for (permEl in permissionsArray) {
+                            if (permEl is JsonObject) {
+                                // New format: { key, description, dangerLevel }
+                                val key = permEl["key"]?.jsonPrimitive?.content
+                                    ?: throw GradleException("Permission declaration missing 'key' in ${manifestFile.path}")
+                                val description = permEl["description"]?.jsonPrimitive?.content ?: ""
+                                val dangerLevel = permEl["dangerLevel"]?.jsonPrimitive?.content ?: "LOW"
+
+                                // Validate dangerLevel
+                                if (dangerLevel !in validDangerLevels) {
+                                    throw GradleException(
+                                        "Invalid dangerLevel '$dangerLevel' for permission '$key' in ${manifestFile.path}. " +
+                                                "Must be one of: ${validDangerLevels.joinToString(", ")}"
+                                    )
+                                }
+
+                                // Validate colon format: exactly one colon
+                                val colonCount = key.count { it == ':' }
+                                if (colonCount != 1) {
+                                    throw GradleException(
+                                        "Permission key '$key' in ${manifestFile.path} must contain exactly one colon. " +
+                                                "Format: '<domain>:<capability>'. Found $colonCount colon(s)."
+                                    )
+                                }
+
+                                // Validate key length
+                                if (key.length > 64) {
+                                    throw GradleException(
+                                        "Permission key '$key' in ${manifestFile.path} exceeds 64 characters (${key.length})."
+                                    )
+                                }
+
+                                val decl = mapOf(
+                                    "key" to key,
+                                    "description" to description,
+                                    "dangerLevel" to dangerLevel,
+                                    "featureName" to featureName
+                                )
+                                permissionDeclarations.add(decl)
+                                allDeclaredPermissions[key] = decl
+                            } else if (permEl is JsonPrimitive) {
+                                // Legacy format: plain string — backward compat, no dangerLevel
+                                val key = permEl.content
+                                val decl = mapOf(
+                                    "key" to key,
+                                    "description" to "",
+                                    "dangerLevel" to "LOW",
+                                    "featureName" to featureName
+                                )
+                                permissionDeclarations.add(decl)
+                                allDeclaredPermissions[key] = decl
+                            }
+                        }
+                    }
+
+                    // Legacy permissions list (simple strings) for backward compat
+                    val legacyPermissions = permissionDeclarations.map { it["key"]!! }
 
                     val featureData = featureMap.getOrPut(featureName) {
                         mutableMapOf(
                             "name" to featureName,
                             "summary" to featureSummary,
-                            "permissions" to permissions,
+                            "permissions" to legacyPermissions,
+                            "permissionDeclarations" to permissionDeclarations,
                             "actions" to mutableListOf<Map<String, Any?>>()
                         )
                     }
@@ -110,11 +171,20 @@ tasks.register("generateActionRegistry") {
                         val publicFlag = obj["public"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val broadcastFlag = obj["broadcast"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val targetedFlag = obj["targeted"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                        val hiddenFlag = obj["hidden"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
                         // Validate: targeted + broadcast is forbidden
                         if (targetedFlag && broadcastFlag) {
                             throw GradleException(
                                 "Action '$actionName' in ${manifestFile.path} has both targeted=true and broadcast=true. These are mutually exclusive."
+                            )
+                        }
+
+                        // Validate: hidden is only meaningful on public actions
+                        if (hiddenFlag && !publicFlag) {
+                            throw GradleException(
+                                "Action '$actionName' in ${manifestFile.path} has hidden=true but public=false. " +
+                                        "Hidden is only meaningful on public actions (non-public actions are already feature-restricted)."
                             )
                         }
 
@@ -158,43 +228,7 @@ tasks.register("generateActionRegistry") {
                             }
                         }
 
-                        // Parse agent_exposure → Map<String, Any>?
-                        val agentExposureObj = obj["agent_exposure"] as? JsonObject
-                        val agentExposure: Map<String, Any>? = if (agentExposureObj != null) {
-                            val aeMap = mutableMapOf<String, Any>()
-                            aeMap["requiresApproval"] = agentExposureObj["requires_approval"]?.jsonPrimitive?.content?.toBoolean() ?: false
-
-                            val autoFillObj = agentExposureObj["auto_fill_rules"] as? JsonObject
-                            if (autoFillObj != null) {
-                                val fills = mutableMapOf<String, String>()
-                                for (key in autoFillObj.keys) {
-                                    fills[key] = autoFillObj[key]!!.jsonPrimitive.content
-                                }
-                                aeMap["autoFillRules"] = fills
-                            } else {
-                                aeMap["autoFillRules"] = emptyMap<String, String>()
-                            }
-
-                            val sandboxObj = agentExposureObj["sandbox_rule"] as? JsonObject
-                            if (sandboxObj != null) {
-                                val srMap = mutableMapOf<String, Any>()
-                                srMap["strategy"] = sandboxObj["strategy"]?.jsonPrimitive?.content ?: ""
-                                srMap["pathPrefixTemplate"] = sandboxObj["path_prefix_template"]?.jsonPrimitive?.content ?: ""
-                                val rewriteObj = sandboxObj["payload_rewrites"] as? JsonObject
-                                val rewrites = mutableMapOf<String, String>()
-                                if (rewriteObj != null) {
-                                    for (key in rewriteObj.keys) {
-                                        rewrites[key] = rewriteObj[key]!!.jsonPrimitive.content
-                                    }
-                                }
-                                srMap["payloadRewrites"] = rewrites
-                                aeMap["sandboxRule"] = srMap
-                            }
-
-                            aeMap
-                        } else null
-
-                        // Parse required_permissions (future hook)
+                        // Parse required_permissions
                         val reqPerms = (obj["required_permissions"] as? JsonArray)
                             ?.map { it.jsonPrimitive.content }
 
@@ -206,9 +240,9 @@ tasks.register("generateActionRegistry") {
                             "public" to publicFlag,
                             "broadcast" to broadcastFlag,
                             "targeted" to targetedFlag,
+                            "hidden" to hiddenFlag,
                             "payloadFields" to payloadFields,
                             "requiredFields" to requiredFields,
-                            "agentExposure" to agentExposure,
                             "requiredPermissions" to reqPerms
                         ))
                     }
@@ -219,17 +253,48 @@ tasks.register("generateActionRegistry") {
             }
         }
 
-        // ====== Collect all actions sorted ======
+        // ====== Cross-reference validation: required_permissions vs declared keys ======
         val allActions = featureMap.values.flatMap { feature ->
             @Suppress("UNCHECKED_CAST")
             feature["actions"] as List<Map<String, Any?>>
         }.sortedBy { it["fullName"] as String }
 
+        for (action in allActions) {
+            @Suppress("UNCHECKED_CAST")
+            val reqPerms = action["requiredPermissions"] as? List<String> ?: continue
+            for (permKey in reqPerms) {
+                if (permKey !in allDeclaredPermissions) {
+                    throw GradleException(
+                        "Action '${action["fullName"]}' requires permission '$permKey' which is not declared " +
+                                "in any feature's 'permissions' array. Declare it in the appropriate *.actions.json manifest."
+                    )
+                }
+            }
+        }
+
+        // ====== Enforce required_permissions on public actions ======
+        // Public actions MUST declare required_permissions explicitly because any originator
+        // (including non-trusted user/agent identities) can dispatch them. Non-public actions
+        // are restricted to the owning feature (Step 2 authorization), and feature identities
+        // are trusted (uuid == null, skip permission check) — so requiring the field on them
+        // would be pointless ceremony.
+        for (action in allActions) {
+            val isPublic = action["public"] as Boolean
+            val reqPerms = action["requiredPermissions"]
+            if (isPublic && reqPerms == null) {
+                throw GradleException(
+                    "Public action '${action["fullName"]}' is missing 'required_permissions' field. " +
+                            "All public actions must declare required_permissions explicitly. " +
+                            "Use \"required_permissions\": [] for actions that require no permissions."
+                )
+            }
+        }
+
         // ============================================================
         // Generate ActionRegistry.kt
         // ============================================================
 
-        // Section 1: Name constants
+        // Section: Name constants
         val nameConstants = allActions.joinToString("\n") { action ->
             val constName = toConstName(action["fullName"] as String)
             "        const val $constName = \"${action["fullName"]}\""
@@ -240,7 +305,7 @@ tasks.register("generateActionRegistry") {
             "            $constName"
         }
 
-        // Section 3: Feature descriptors
+        // Section: Feature descriptors
         val sortedFeatures = featureMap.values.sortedBy { it["name"] as String }
         val featureEntries = sortedFeatures.joinToString(",\n") { feature ->
             @Suppress("UNCHECKED_CAST")
@@ -266,32 +331,16 @@ tasks.register("generateActionRegistry") {
                 val reqFieldsStr = if (reqFields.isEmpty()) "emptyList()"
                 else "listOf(${reqFields.joinToString(", ") { "\"$it\"" }})"
 
-                // AgentExposure
+                // autoFillRules as top-level field
                 @Suppress("UNCHECKED_CAST")
-                val ae = action["agentExposure"] as? Map<String, Any>
-                val agentStr = if (ae == null) "null"
-                else {
-                    @Suppress("UNCHECKED_CAST")
-                    val autoFills = ae["autoFillRules"] as? Map<String, String> ?: emptyMap()
-                    val autoFillStr = if (autoFills.isEmpty()) "emptyMap()"
-                    else "mapOf(${autoFills.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-
-                    @Suppress("UNCHECKED_CAST")
-                    val sr = ae["sandboxRule"] as? Map<String, Any>
-                    val sandboxStr = if (sr == null) "null"
-                    else {
-                        @Suppress("UNCHECKED_CAST")
-                        val rw = sr["payloadRewrites"] as? Map<String, String> ?: emptyMap()
-                        val rwStr = if (rw.isEmpty()) "emptyMap()"
-                        else "mapOf(${rw.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
-                        "SandboxRule(\n                        strategy = \"${sr["strategy"]}\",\n                        pathPrefixTemplate = \"${sr["pathPrefixTemplate"]}\",\n                        payloadRewrites = $rwStr\n                    )"
-                    }
-                    "AgentExposure(\n                    requiresApproval = ${ae["requiresApproval"]},\n                    autoFillRules = $autoFillStr,\n                    sandboxRule = $sandboxStr\n                )"
-                }
+                val autoFills = action["autoFillRules"] as? Map<String, String> ?: emptyMap()
+                val autoFillStr = if (autoFills.isEmpty()) "emptyMap()"
+                else "mapOf(${autoFills.entries.joinToString(", ") { "\"${it.key}\" to \"${it.value}\"" }})"
 
                 @Suppress("UNCHECKED_CAST")
                 val reqPerms = action["requiredPermissions"] as? List<String>
                 val reqPermsStr = if (reqPerms == null) "null"
+                else if (reqPerms.isEmpty()) "emptyList()"
                 else "listOf(${reqPerms.joinToString(", ") { "\"$it\"" }})"
 
                 """                "${action["suffix"]}" to ActionDescriptor(
@@ -302,9 +351,10 @@ tasks.register("generateActionRegistry") {
                 |                    public = ${action["public"]},
                 |                    broadcast = ${action["broadcast"]},
                 |                    targeted = ${action["targeted"]},
+                |                    hidden = ${action["hidden"]},
                 |                    payloadFields = $fieldsStr,
                 |                    requiredFields = $reqFieldsStr,
-                |                    agentExposure = $agentStr,
+                |                    autoFillRules = $autoFillStr,
                 |                    requiredPermissions = $reqPermsStr
                 |                )""".trimMargin()
             }
@@ -324,8 +374,17 @@ tasks.register("generateActionRegistry") {
             |        )""".trimMargin()
         }
 
+        // Section: Permission declarations map
+        val permDeclEntries = allDeclaredPermissions.entries.sortedBy { it.key }.joinToString(",\n") { (key, decl) ->
+            """        "$key" to PermissionDeclaration(
+            |            key = "$key",
+            |            description = "${decl["description"]!!.escKt()}",
+            |            dangerLevel = asareon.raam.core.DangerLevel.${decl["dangerLevel"]!!}
+            |        )""".trimMargin()
+        }
+
         val actionRegistryContent = """
-            |package app.auf.core.generated
+            |package asareon.raam.core.generated
             |
             |/**
             | * THIS IS A GENERATED FILE. DO NOT EDIT.
@@ -357,18 +416,6 @@ tasks.register("generateActionRegistry") {
             |        val default: String? = null
             |    )
             |
-            |    data class SandboxRule(
-            |        val strategy: String,
-            |        val pathPrefixTemplate: String,
-            |        val payloadRewrites: Map<String, String> = emptyMap()
-            |    )
-            |
-            |    data class AgentExposure(
-            |        val requiresApproval: Boolean = false,
-            |        val autoFillRules: Map<String, String> = emptyMap(),
-            |        val sandboxRule: SandboxRule? = null
-            |    )
-            |
             |    data class ActionDescriptor(
             |        val fullName: String,
             |        val featureName: String,
@@ -377,9 +424,10 @@ tasks.register("generateActionRegistry") {
             |        val public: Boolean,
             |        val broadcast: Boolean,
             |        val targeted: Boolean,
+            |        val hidden: Boolean = false,
             |        val payloadFields: List<PayloadField>,
             |        val requiredFields: List<String>,
-            |        val agentExposure: AgentExposure?,
+            |        val autoFillRules: Map<String, String> = emptyMap(),
             |        val requiredPermissions: List<String>? = null
             |    ) {
             |        /** A Command is any action public to all originators. */
@@ -390,6 +438,8 @@ tasks.register("generateActionRegistry") {
             |        val isInternal: Boolean get() = !public && !broadcast && !targeted
             |        /** A Response is a restricted-origin targeted delivery (reply to a requester). */
             |        val isResponse: Boolean get() = !public && targeted
+            |        /** A hidden action is public but not discoverable by users or agents. Feature-to-feature only. */
+            |        val isHiddenCommand: Boolean get() = public && hidden
             |    }
             |
             |    data class FeatureDescriptor(
@@ -397,6 +447,16 @@ tasks.register("generateActionRegistry") {
             |        val summary: String,
             |        val permissions: List<String>,
             |        val actions: Map<String, ActionDescriptor>
+            |    )
+            |
+            |    /**
+            |     * A declared permission key with its description and danger level.
+            |     * Generated from the "permissions" arrays in *.actions.json manifests.
+            |     */
+            |    data class PermissionDeclaration(
+            |        val key: String,
+            |        val description: String,
+            |        val dangerLevel: asareon.raam.core.DangerLevel
             |    )
             |
             |    // ================================================================
@@ -414,22 +474,24 @@ tasks.register("generateActionRegistry") {
             |    val byActionName: Map<String, ActionDescriptor> = features.values
             |        .flatMap { it.actions.values }.associateBy { it.fullName }
             |
-            |    /** Action names that agents are permitted to invoke. */
-            |    val agentAllowedNames: Set<String> = byActionName.values
-            |        .filter { it.agentExposure != null }.map { it.fullName }.toSet()
-            |
-            |    /** Actions that require human approval before agent execution. */
-            |    val agentRequiresApproval: Set<String> = byActionName.values
-            |        .filter { it.agentExposure?.requiresApproval == true }.map { it.fullName }.toSet()
+            |    /** Actions visible to users and agents (excludes hidden actions). */
+            |    val visibleActions: Map<String, ActionDescriptor> = byActionName.values
+            |        .filter { !it.hidden }
+            |        .associateBy { it.fullName }
             |
             |    /** Auto-fill rules for agent actions (field name → template). */
             |    val agentAutoFillRules: Map<String, Map<String, String>> = byActionName.values
-            |        .filter { it.agentExposure?.autoFillRules?.isNotEmpty() == true }
-            |        .associate { it.fullName to it.agentExposure!!.autoFillRules }
+            |        .filter { it.autoFillRules.isNotEmpty() }
+            |        .associate { it.fullName to it.autoFillRules }
             |
-            |    /** Sandbox rules for agent actions. */
-            |    val agentSandboxRules: Map<String, SandboxRule> = byActionName.values
-            |        .mapNotNull { d -> d.agentExposure?.sandboxRule?.let { d.fullName to it } }.toMap()
+            |    // ================================================================
+            |    // Section 5: Permission Declarations (Phase 1)
+            |    // ================================================================
+            |
+            |    /** All declared permission keys with their descriptions and danger levels. */
+            |    val permissionDeclarations: Map<String, PermissionDeclaration> = mapOf(
+            |$permDeclEntries
+            |    )
             |}
         """.trimMargin()
 
@@ -438,7 +500,7 @@ tasks.register("generateActionRegistry") {
         registryOut.writeText(actionRegistryContent)
 
         // Summary
-        println("Generated ActionRegistry.kt with ${allActions.size} actions across ${featureMap.size} features.")
+        println("Generated ActionRegistry.kt with ${allActions.size} actions across ${featureMap.size} features, ${allDeclaredPermissions.size} permission declarations.")
     }
 }
 
@@ -582,11 +644,11 @@ tasks.withType<Test> {
 }
 
 android {
-    namespace = "app.auf"
+    namespace = "asareon.raam"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "app.auf"
+        applicationId = "asareon.raam"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
@@ -616,11 +678,11 @@ android {
 
 compose.desktop {
     application {
-        mainClass = "app.auf.MainKt"
+        mainClass = "asareon.raam.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "app.auf"
+            packageName = "asareon.raam"
             packageVersion = "1.0.0"
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/icon.ico"))

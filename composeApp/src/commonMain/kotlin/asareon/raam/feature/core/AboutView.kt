@@ -1,0 +1,182 @@
+package asareon.raam.feature.core
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import asareon.raam.core.*
+import asareon.raam.core.generated.ActionRegistry
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+@Composable
+fun AboutView(store: Store) {
+    val appState by store.state.collectAsState()
+    val loadedFeatures = appState.featureStates.keys.sorted()
+
+    // Pre-compute per-feature stats from app-level registries
+    val actionDescriptors = appState.actionDescriptors
+    val identityRegistry = appState.identityRegistry
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+    ) {
+        // --- Header ---
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+        ) {
+            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
+            IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Spacer(Modifier.width(16.dp))
+            Text("About", style = MaterialTheme.typography.headlineSmall)
+        }
+
+        // --- Content ---
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Version Info
+            item {
+                Text(
+                    text = "Version Information",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                SelectionContainer {
+                    Text("${Version.APP_NAME}, version ${Version.APP_VERSION}")
+                }
+            }
+
+            // Loaded Features
+            item {
+                Text(
+                    text = "Loaded Features",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                )
+                HorizontalDivider()
+            }
+            items(loadedFeatures) { featureHandle ->
+                // Look up the feature's identity for display name
+                val featureIdentity = identityRegistry[featureHandle]
+                val displayName = featureIdentity?.name ?: featureHandle
+
+                // Count actions owned by this feature (action names prefixed with "featureHandle.")
+                val actionCount = actionDescriptors.keys.count { actionName ->
+                    actionName.startsWith("$featureHandle.", ignoreCase = true)
+                }
+
+                // Count sub-identities registered under this feature
+                val subIdentityCount = identityRegistry.values.count { identity ->
+                    identity.parentHandle == featureHandle
+                }
+
+                SelectionContainer {
+                    Column(modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Handle: $featureHandle",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Actions: $actionCount · Sub-identities: $subIdentityCount",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Copyright and Links
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Copyright & Links",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                SelectionContainer {
+                    Text("${Version.APP_NAME} copyright 2025 Daniel Herkert")
+                }
+                Spacer(Modifier.height(8.dp))
+                ClickableLink(
+                    text = "Application Repository",
+                    url = "https://github.com/TD-Dan/AsareonRaam"
+                )
+            }
+
+            // Diagnostic Tools
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Diagnostic Tools",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { store.dispatch("core", Action(ActionRegistry.Names.FILESYSTEM_OPEN_SYSTEM_FOLDER, buildJsonObject { put("path", "app:logs/") })) }
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("Open Logs Folder")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Composable that renders a styled, clickable hyperlink using the modern LinkAnnotation API.
+ * The underlying Text composable handles opening the URL in the system's default browser.
+ */
+@Composable
+private fun ClickableLink(text: String, url: String) {
+    val annotatedString = buildAnnotatedString {
+        withStyle(
+            style = SpanStyle(
+                color = MaterialTheme.colorScheme.primary,
+                textDecoration = TextDecoration.Underline
+            )
+        ) {
+            withLink(link = LinkAnnotation.Url(url)) {
+                append(text)
+            }
+        }
+    }
+    Text(text = annotatedString)
+}
