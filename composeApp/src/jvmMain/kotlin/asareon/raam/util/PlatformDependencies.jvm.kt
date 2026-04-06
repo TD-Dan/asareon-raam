@@ -149,12 +149,27 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
     actual open fun createZipArchive(
         sourceDirectoryPath: String,
         destinationZipPath: String,
-        excludeDirectoryName: String
+        excludeDirectoryName: String,
+        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
     ) {
         val sourceDir = File(sourceDirectoryPath)
         val sourcePath = sourceDir.toPath()
         val zipFile = File(destinationZipPath)
         zipFile.parentFile?.mkdirs()
+
+        // Pre-calculate total size for progress reporting (only if callback provided)
+        var totalBytes = -1L
+        if (onProgress != null) {
+            totalBytes = sourceDir.walkTopDown()
+                .onEnter { dir ->
+                    !(excludeDirectoryName != null
+                            && dir.name == excludeDirectoryName
+                            && dir.absolutePath != sourceDir.absolutePath)
+                }
+                .filter { it.isFile }
+                .sumOf { it.length() }
+        }
+        var bytesProcessed = 0L
 
         ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
             sourceDir.walkTopDown()
@@ -171,11 +186,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
                 .forEach { file ->
                     if (file.absolutePath == sourceDir.absolutePath) return@forEach
 
-                    // Use Path.relativize() — NOT URI.relativize()
-                    // URI.relativize() percent-encodes special chars (%20 for spaces)
-                    // which breaks Windows Explorer's zip parser.
                     val relativePath = sourcePath.relativize(file.toPath())
-                    // Normalize to forward slashes (zip spec requirement)
                     var entryName = relativePath.toString().replace('\\', '/')
 
                     if (file.isDirectory) {
@@ -189,6 +200,7 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
                         zos.putNextEntry(dirEntry)
                         zos.closeEntry()
                     } else {
+                        val fileSize = file.length()
                         val fileEntry = ZipEntry(entryName)
                         fileEntry.time = file.lastModified()
                         zos.putNextEntry(fileEntry)
@@ -196,6 +208,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
                             bis.copyTo(zos)
                         }
                         zos.closeEntry()
+                        bytesProcessed += fileSize
+                        onProgress?.invoke(bytesProcessed, totalBytes)
                     }
                 }
         }
@@ -211,12 +225,26 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
 
     // --- NEW: extractZipArchive ---
 
-    actual open fun extractZipArchive(zipPath: String, targetDirectoryPath: String) {
+    actual open fun extractZipArchive(
+        zipPath: String,
+        targetDirectoryPath: String,
+        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
+    ) {
         val targetDir = File(targetDirectoryPath)
         targetDir.mkdirs()
+        val zipFileObj = File(zipPath)
+
+        // Pre-read total uncompressed size from zip central directory (cheap)
+        var totalBytes = -1L
+        if (onProgress != null) {
+            totalBytes = java.util.zip.ZipFile(zipFileObj).use { zf ->
+                zf.entries().asSequence().sumOf { it.size.coerceAtLeast(0) }
+            }
+        }
+        var bytesProcessed = 0L
 
         ZipInputStream(
-            BufferedInputStream(FileInputStream(File(zipPath)))
+            BufferedInputStream(FileInputStream(zipFileObj))
         ).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
@@ -239,6 +267,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
                     BufferedOutputStream(FileOutputStream(outFile)).use { fos ->
                         zis.copyTo(fos)
                     }
+                    bytesProcessed += entry.size.coerceAtLeast(0)
+                    onProgress?.invoke(bytesProcessed, totalBytes)
                 }
                 zis.closeEntry()
                 entry = zis.nextEntry

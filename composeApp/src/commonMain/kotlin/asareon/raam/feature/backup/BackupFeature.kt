@@ -6,7 +6,6 @@ import asareon.raam.util.BasePath
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
-import kotlin.text.compareTo
 import kotlin.text.get
 import kotlin.toString
 
@@ -87,7 +86,8 @@ class BackupFeature(
             platformDependencies.createZipArchive(
                 sourceDirectoryPath = appZonePath,
                 destinationZipPath = destinationPath,
-                excludeDirectoryName = "_backups"
+                excludeDirectoryName = "_backups",
+                onProgress = progressLoggingCallback("Startup backup")
             )
             platformDependencies.log(LogLevel.INFO, tag,
                 "Startup backup created successfully: $filename")
@@ -331,7 +331,8 @@ class BackupFeature(
             platformDependencies.createZipArchive(
                 sourceDirectoryPath = appZonePath,
                 destinationZipPath = path,
-                excludeDirectoryName = "_backups"
+                excludeDirectoryName = "_backups",
+                onProgress = progressLoggingCallback("Creating backup")
             )
             dispatchResult(store, "create", true, "Backup created: $filename")
             publishActionResult(store, correlationId, requestAction, success = true,
@@ -365,7 +366,8 @@ class BackupFeature(
             platformDependencies.createZipArchive(
                 sourceDirectoryPath = appZonePath,
                 destinationZipPath = safetyPath,
-                excludeDirectoryName = "_backups"
+                excludeDirectoryName = "_backups",
+                onProgress = progressLoggingCallback("Safety backup")
             )
             platformDependencies.log(LogLevel.INFO, tag, "Safety backup created: $safetyFilename")
 
@@ -386,7 +388,8 @@ class BackupFeature(
             // 4. Extract backup over APP_ZONE
             platformDependencies.extractZipArchive(
                 zipPath = backupPath,
-                targetDirectoryPath = appZonePath
+                targetDirectoryPath = appZonePath,
+                onProgress = progressLoggingCallback("Restoring backup")
             )
             platformDependencies.log(LogLevel.INFO, tag, "Restore complete. Restarting application.")
 
@@ -453,6 +456,43 @@ class BackupFeature(
                 put("message", message)
             }
         ))
+    }
+
+    /**
+     * Creates a [ProgressCallback] that logs progress at most once per [intervalMs].
+     * Each log line shows percentage (when total is known) and throughput.
+     */
+    private fun progressLoggingCallback(
+        operationLabel: String,
+        intervalMs: Long = 1_000L
+    ): (processed: Long, total: Long) -> Unit {
+        val startTime = platformDependencies.currentTimeMillis()
+        var lastLogTime = startTime
+        return { processed, total ->
+            val now = platformDependencies.currentTimeMillis()
+            if (now - lastLogTime >= intervalMs) {
+                lastLogTime = now
+                val elapsed = (now - startTime) / 1_000.0
+                val progress = if (total > 0) {
+                    val pct = (processed * 100.0 / total).coerceAtMost(100.0)
+                    String.format("%.1f%%", pct)
+                } else {
+                    formatBytes(processed)
+                }
+                val throughput = if (elapsed > 0) formatBytes((processed / elapsed).toLong()) + "/s" else ""
+                platformDependencies.log(
+                    LogLevel.INFO, tag,
+                    "$operationLabel — $progress ($throughput, ${String.format("%.1f", elapsed)}s elapsed)"
+                )
+            }
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes >= 1_073_741_824 -> String.format("%.1f GB", bytes / 1_073_741_824.0)
+        bytes >= 1_048_576     -> String.format("%.1f MB", bytes / 1_048_576.0)
+        bytes >= 1_024         -> String.format("%.1f KB", bytes / 1_024.0)
+        else                   -> "$bytes B"
     }
 
     /**
