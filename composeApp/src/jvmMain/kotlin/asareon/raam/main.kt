@@ -17,6 +17,8 @@ import asareon.raam.feature.core.CoreState
 import asareon.raam.ui.App
 import asareon.raam.ui.AppTheme
 import asareon.raam.ui.CustomTitleBar
+import asareonraam.composeapp.generated.resources.Res
+import asareonraam.composeapp.generated.resources.icon
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.FlowPreview
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
+import org.jetbrains.compose.resources.painterResource
 
 /**
  * ## Mandate
@@ -87,6 +90,7 @@ fun main() {
                 exitApplication()
             },
             title = Version.APP_NAME,
+            icon = painterResource(Res.drawable.icon),
             state = windowState,
             undecorated = true,
         ) {
