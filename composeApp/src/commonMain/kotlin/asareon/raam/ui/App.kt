@@ -1,5 +1,7 @@
 package asareon.raam.ui
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -8,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.core.resolveDisplayColor
+import asareon.raam.feature.core.BootLogEntry
 import asareon.raam.feature.core.ConfirmationDialog
 import asareon.raam.feature.core.CoreState
 import kotlinx.serialization.json.buildJsonObject
@@ -17,6 +20,7 @@ import kotlinx.serialization.json.put
 fun App(
     store: Store,
     features: List<Feature>,
+    bootLog: List<BootLogEntry>,
     titleBar: @Composable () -> Unit = {}
 ) {
     val appState by store.state.collectAsState()
@@ -44,7 +48,16 @@ fun App(
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                MainAppContent(store, features, titleBar)
+                Crossfade(targetState = coreState?.booting != false, animationSpec = tween(2000)) { isBooting ->
+                    if (isBooting) {
+                        if (coreState?.showBootConsole == true) {
+                            BootConsoleView(bootLog)
+                        }
+                        // else: blank screen while booting (still defers MainAppContent to fix window-size race)
+                    } else {
+                        MainAppContent(store, features, titleBar)
+                    }
+                }
 
                 // --- GLOBAL DIALOGS ---
                 coreState?.confirmationRequest?.let { request ->

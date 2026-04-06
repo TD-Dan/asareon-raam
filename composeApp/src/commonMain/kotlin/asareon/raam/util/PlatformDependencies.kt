@@ -104,18 +104,20 @@ expect open class PlatformDependencies(appVersion: String) {
      * Creates a zip archive from a source directory, optionally excluding a named
      * subdirectory (matched by name, not path).
      *
-     * NOTE: This is a SIGNATURE CHANGE to the existing createZipArchive method.
-     * The new parameter has a default value for backward compatibility.
-     *
      * @param sourceDirectoryPath The directory to archive.
      * @param destinationZipPath The output zip file path.
      * @param excludeDirectoryName Optional directory name to exclude (e.g., "_backups").
      *        When non-null, any directory with this exact name at any depth is skipped.
+     * @param onProgress Optional callback invoked after each entry is written.
+     *        Receives (bytesProcessed, totalBytes). totalBytes is estimated from source
+     *        directory size — compression means the zip will be smaller, but the ratio
+     *        is useful for progress display.
      */
     open fun createZipArchive(
         sourceDirectoryPath: String,
         destinationZipPath: String,
-        excludeDirectoryName: String
+        excludeDirectoryName: String,
+        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)? = null
     )
 
     /**
@@ -123,8 +125,15 @@ expect open class PlatformDependencies(appVersion: String) {
      *
      * @param zipPath Path to the zip file to extract.
      * @param targetDirectoryPath The directory to extract into.
+     * @param onProgress Optional callback invoked after each entry is extracted.
+     *        Receives (bytesProcessed, totalBytes) where totalBytes is the sum of
+     *        uncompressed entry sizes read from the zip central directory.
      */
-    open fun extractZipArchive(zipPath: String, targetDirectoryPath: String)
+    open fun extractZipArchive(
+        zipPath: String,
+        targetDirectoryPath: String,
+        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)? = null
+    )
 
     /**
      * Returns the size of a file in bytes.
@@ -196,4 +205,11 @@ expect open class PlatformDependencies(appVersion: String) {
      * @param throwable An optional exception whose stack trace will be automatically appended.
      */
     open fun log(level: LogLevel, tag: String, message: String, throwable: Throwable? = null)
+
+    /**
+     * Optional callback invoked on every log() call. Used by the boot console
+     * to capture log output before the action bus is operational.
+     * Set to null to detach.
+     */
+    open var logListener: ((LogLevel, String, String) -> Unit)?
 }
