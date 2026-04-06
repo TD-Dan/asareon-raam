@@ -52,6 +52,8 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
 
     actual open val pathSeparator: Char = File.separatorChar
 
+    actual open var logListener: ((LogLevel, String, String) -> Unit)? = null
+
     // --- File & Directory I/O ---
 
     actual open fun readFileContent(path: String): String = File(path).readText()
@@ -389,6 +391,9 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
         } catch (e: Exception) {
             System.err.println("!!! FAILED TO WRITE TO LOG FILE: ${e.message} !!!")
         }
+
+        // Notify boot console listener (if attached)
+        logListener?.invoke(level, tag, fullMessage)
     }
 }
 

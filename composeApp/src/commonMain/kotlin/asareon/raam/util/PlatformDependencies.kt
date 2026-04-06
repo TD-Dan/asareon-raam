@@ -196,4 +196,11 @@ expect open class PlatformDependencies(appVersion: String) {
      * @param throwable An optional exception whose stack trace will be automatically appended.
      */
     open fun log(level: LogLevel, tag: String, message: String, throwable: Throwable? = null)
+
+    /**
+     * Optional callback invoked on every log() call. Used by the boot console
+     * to capture log output before the action bus is operational.
+     * Set to null to detach.
+     */
+    open var logListener: ((LogLevel, String, String) -> Unit)?
 }

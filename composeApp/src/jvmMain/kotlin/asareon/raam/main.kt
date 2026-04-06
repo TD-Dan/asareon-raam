@@ -14,6 +14,7 @@ import androidx.compose.ui.window.rememberWindowState
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
+import asareon.raam.feature.core.BootLogEntry
 import asareon.raam.ui.App
 import asareon.raam.ui.AppTheme
 import asareon.raam.ui.CustomTitleBar
@@ -69,6 +70,9 @@ fun main() {
         val coroutineScope = rememberCoroutineScope()
         val dependencies = remember { platformDependencies }
 
+        val bootLog = remember { mutableStateListOf<BootLogEntry>() }
+        val bootLogId = remember { intArrayOf(0) }
+
         val container = remember(dependencies, coroutineScope) {
             AppContainer(dependencies, coroutineScope).also {
                 it.store.initFeatureLifecycles()
@@ -96,6 +100,14 @@ fun main() {
         ) {
             LaunchedEffect(Unit) {
                 dependencies.applyNativeWindowDecorations(window)
+
+                // Wire boot console log listener before dispatching init actions.
+                dependencies.logListener = { level, tag, message ->
+                    if (level >= LogLevel.INFO && !message.startsWith("Deferring:")) {
+                        bootLog.add(BootLogEntry(id = bootLogId[0]++, level = level, tag = tag, message = message))
+                    }
+                }
+
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
             }
@@ -109,7 +121,8 @@ fun main() {
                 }
             }
 
-            LaunchedEffect(windowState) {
+            LaunchedEffect(windowState, coreState?.booting) {
+                if (coreState?.booting != false) return@LaunchedEffect
                 snapshotFlow { windowState.size }
                     .debounce(500L)
                     .distinctUntilChanged()
@@ -139,6 +152,7 @@ fun main() {
                     App(
                         store = container.store,
                         features = container.features,
+                        bootLog = bootLog,
                         titleBar = { CustomTitleBar(window) }
                     )
                 }

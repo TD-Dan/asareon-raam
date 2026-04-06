@@ -46,12 +46,18 @@ data class PendingCommand(
     val createdAt: Long
 )
 
+/**
+ * A single entry in the boot console log, displayed during startup.
+ */
+data class BootLogEntry(val id: Int, val level: asareon.raam.util.LogLevel, val tag: String, val message: String)
+
 @Serializable
 data class CoreState(
     val toastMessage: String? = null,
     val activeViewKey: String = "feature.session.main",
     val defaultViewKey: String = "feature.session.main",
     val lifecycle: AppLifecycle = AppLifecycle.BOOTING,
+    val booting: Boolean = true,
     // Add window dimensions to the state with sensible defaults.
     val windowWidth: Int = 1200,
     val windowHeight: Int = 800,
