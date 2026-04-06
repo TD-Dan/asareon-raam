@@ -35,6 +35,7 @@ import asareon.raam.feature.agent.CognitiveStrategyRegistry
 import asareon.raam.feature.agent.StrategyConfigField
 import asareon.raam.feature.agent.StrategyConfigFieldType
 import asareon.raam.ui.components.CodeEditor
+import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.ui.components.ColorPicker
 import asareon.raam.ui.components.IconRegistry
 import asareon.raam.ui.components.colorToHex
@@ -811,6 +812,10 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
             value = content,
             onValueChange = { content = it },
             readOnly = resource.isBuiltIn,
+            syntax = when (resource.type) {
+                AgentResourceType.SYSTEM_INSTRUCTION -> SyntaxMode.MARKDOWN
+                else -> SyntaxMode.NONE
+            },
             modifier = Modifier.weight(1f)
         )
     }

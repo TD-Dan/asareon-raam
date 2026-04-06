@@ -16,12 +16,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import asareon.raam.core.Action
 import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.CodeEditor
+import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -381,10 +382,12 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
         }
     ) { paddingValues ->
         SelectionContainer(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Text(
-                text = holon.rawContent,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
+            CodeEditor(
+                value = holon.rawContent,
+                onValueChange = {},
+                readOnly = true,
+                syntax = SyntaxMode.JSON,
+                modifier = Modifier.fillMaxSize().padding(16.dp)
             )
         }
     }
@@ -454,25 +457,25 @@ private fun HolonEditView(
         HorizontalDivider()
 
         Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-            OutlinedTextField(
+            Text("Payload", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(4.dp))
+            CodeEditor(
                 value = payloadText,
                 onValueChange = { payloadText = it; isPayloadValid = true },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                label = { Text("Payload") },
-                isError = !isPayloadValid
+                syntax = SyntaxMode.JSON,
+                modifier = Modifier.fillMaxWidth().weight(1f)
             )
             if (!isPayloadValid) {
                 Text("Invalid JSON format in payload.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
             }
             Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
+            Text("Execute (optional)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(4.dp))
+            CodeEditor(
                 value = executeText,
                 onValueChange = { executeText = it; isExecuteValid = true },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                label = { Text("Execute (optional)") },
-                isError = !isExecuteValid
+                syntax = SyntaxMode.JSON,
+                modifier = Modifier.fillMaxWidth().weight(1f)
             )
             if (!isExecuteValid) {
                 Text("Invalid JSON format in execute.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
