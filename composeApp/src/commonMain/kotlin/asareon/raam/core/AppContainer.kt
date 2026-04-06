@@ -10,6 +10,7 @@ import asareon.raam.feature.gateway.gemini.GeminiProvider
 import asareon.raam.feature.gateway.openai.OpenAIProvider
 import asareon.raam.feature.gateway.anthropic.AnthropicProvider
 import asareon.raam.feature.gateway.inception.InceptionProvider
+import asareon.raam.feature.gateway.minimax.MiniMaxProvider
 import asareon.raam.feature.knowledgegraph.KnowledgeGraphFeature
 import asareon.raam.feature.settings.SettingsFeature
 import asareon.raam.feature.session.SessionFeature
@@ -52,7 +53,8 @@ class AppContainer(
                 GeminiProvider(platformDependencies),
                 OpenAIProvider(platformDependencies),
                 AnthropicProvider(platformDependencies),
-                InceptionProvider(platformDependencies)
+                InceptionProvider(platformDependencies),
+                MiniMaxProvider(platformDependencies)
             )
         )
 
