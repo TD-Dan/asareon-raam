@@ -66,7 +66,7 @@ The next milestone adds an ensemble architecture where sub-agents — Critic, Ti
 
 ## Codebase
 
-Over 700k tokens worth of highly structured and architecturally beautiful code optimized for agent assisted workflow.
+Over 52k lines of kt (of which nearly half is unit tests), 6k lines of manifest JSON (the secure action definitions) and 700k tokens worth of highly structured and architecturally beautiful code optimized for agent assisted workflow.
 
 ### Absolute Decoupling
 
