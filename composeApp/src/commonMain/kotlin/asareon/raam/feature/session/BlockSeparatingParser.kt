@@ -10,9 +10,10 @@ package asareon.raam.feature.session
  * inline fences, and newline preservation as per the established contract.
  *
  * Additionally, it recognises XML-wrapped blocks (e.g. `<think>...</think>`,
- * `<reasoning>...</reasoning>`) and emits them as [ContentBlock.XmlTagBlock] instances.
- * This allows the UI to render provider-emitted structured sections (thinking traces,
- * reflections, artifacts, etc.) as collapsible, visually distinct blocks.
+ * `<reasoning>...</reasoning>`) and emits them as [ContentBlock.CodeBlock] instances
+ * with `language = "xml"` and the full tagged content (including opening and closing
+ * tags) as the code body. This allows the UI to render these as collapsible blocks
+ * by detecting the `"xml"` language and extracting the tag name from the content.
  *
  * Nesting rule: A ``` followed immediately by a letter, digit, or underscore (e.g. ```kotlin)
  * is treated as an **opening** fence that increments nesting depth. A ``` followed by whitespace,
@@ -86,9 +87,8 @@ class BlockSeparatingParser {
             } else {
                 // --- XML TAG comes first ---
                 val (tagStart, tagName) = xmlMatch!!
-                val openTagEnd = tagStart + tagName.length + 2 // past the '>'
                 val closingTag = "</$tagName>"
-                val closingPos = rawText.indexOf(closingTag, openTagEnd)
+                val closingPos = rawText.indexOf(closingTag, tagStart)
 
                 if (closingPos == -1) {
                     // Unterminated XML tag — treat from here to end as text (not a tag block).
@@ -96,15 +96,22 @@ class BlockSeparatingParser {
                     break
                 }
 
-                // Add text before the XML tag.
-                val textBefore = rawText.substring(currentIndex, tagStart)
+                // Add text before the XML tag, trimming one trailing newline
+                // to prevent double-spacing between the text and the collapsible block.
+                val textBefore = rawText.substring(currentIndex, tagStart).removeSuffix("\n")
                 if (textBefore.isNotEmpty()) {
                     blocks.add(ContentBlock.Text(textBefore))
                 }
 
-                val innerContent = rawText.substring(openTagEnd, closingPos)
-                blocks.add(ContentBlock.CodeBlock("xml:$tagName", innerContent.trim()))
+                // Capture the full tagged content including opening and closing tags.
+                val fullTaggedContent = rawText.substring(tagStart, closingPos + closingTag.length)
+                blocks.add(ContentBlock.CodeBlock("xml", fullTaggedContent))
                 currentIndex = closingPos + closingTag.length
+
+                // Skip one leading newline after the closing tag to prevent double-spacing.
+                if (currentIndex < rawText.length && rawText[currentIndex] == '\n') {
+                    currentIndex++
+                }
             }
         }
         return blocks

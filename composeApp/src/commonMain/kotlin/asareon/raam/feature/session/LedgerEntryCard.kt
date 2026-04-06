@@ -81,17 +81,15 @@ fun LedgerEntryCard(
             }
             is ContentBlock.CodeBlock -> if (firstBlock.language.startsWith(Version.APP_TOOL_PREFIX)) {
                 "Action '${firstBlock.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
+            } else if (firstBlock.language == "xml") {
+                val tagName = extractXmlTagName(firstBlock.code)
+                val label = tagName?.replaceFirstChar { it.uppercase() } ?: "Xml"
+                "[$label]"
             } else {
                 val firstLine = firstBlock.code.lineSequence().firstOrNull() ?: ""
                 val hasMoreLines = firstBlock.code.contains('\n')
                 val truncated = firstLine.length > 80 || hasMoreLines || hasMultipleBlocks
                 firstLine.take(80) + if (truncated) "…" else ""
-            }
-            is ContentBlock.XmlTagBlock -> {
-                val label = firstBlock.tag.replaceFirstChar { it.uppercase() }
-                val firstLine = firstBlock.content.lineSequence().firstOrNull() ?: ""
-                val truncated = firstLine.length > 60 || hasMultipleBlocks
-                "[$label] ${firstLine.take(60)}" + if (truncated) "…" else ""
             }
             null -> {
                 val raw = entry.rawContent ?: ""
@@ -438,65 +436,68 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                         style = MaterialTheme.typography.bodyLarge
                     )
                     is ContentBlock.CodeBlock -> {
-                        val isAufAction = block.language.startsWith(Version.APP_TOOL_PREFIX)
-                        val headerLabel = if (isAufAction) {
-                            "Action '${block.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
+                        if (block.language == "xml") {
+                            XmlCodeBlockView(block)
                         } else {
-                            block.language
-                        }
-                        val clipboardText = if (isAufAction) {
-                            "```${block.language}\n${block.code}\n```"
-                        } else {
-                            block.code
-                        }
+                            val isAufAction = block.language.startsWith(Version.APP_TOOL_PREFIX)
+                            val headerLabel = if (isAufAction) {
+                                "Action '${block.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
+                            } else {
+                                block.language
+                            }
+                            val clipboardText = if (isAufAction) {
+                                "```${block.language}\n${block.code}\n```"
+                            } else {
+                                block.code
+                            }
 
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.surfaceDim,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                if (headerLabel.isNotBlank()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = headerLabel,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                        IconButton(
-                                            onClick = {
-                                                store.dispatch("session", Action(
-                                                    ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD,
-                                                    buildJsonObject { put("text", clipboardText) }
-                                                ))
-                                            },
-                                            modifier = Modifier.size(32.dp)
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.surfaceDim,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                shape = MaterialTheme.shapes.medium
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    if (headerLabel.isNotBlank()) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.ContentCopy,
-                                                contentDescription = "Copy Code Block",
-                                                modifier = Modifier.size(16.dp),
-                                                tint = MaterialTheme.colorScheme.outline
+                                            Text(
+                                                text = headerLabel,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.outline
                                             )
+                                            IconButton(
+                                                onClick = {
+                                                    store.dispatch("session", Action(
+                                                        ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD,
+                                                        buildJsonObject { put("text", clipboardText) }
+                                                    ))
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.ContentCopy,
+                                                    contentDescription = "Copy Code Block",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.outline
+                                                )
+                                            }
                                         }
+                                        Spacer(Modifier.height(4.dp))
                                     }
-                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = block.code,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
-                                Text(
-                                    text = block.code,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontFamily = FontFamily.Monospace
-                                )
                             }
                         }
                     }
-                    is ContentBlock.XmlTagBlock -> XmlTagBlockView(block)
                 }
             }
         }
@@ -504,23 +505,32 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// XML Tag Block View (e.g. <think>, <reasoning>, <reflection>)
+// XML Code Block View (e.g. <think>, <reasoning>, <cognitive_state>)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Renders an XML-wrapped content block as a collapsible section.
+ * Extracts the root XML tag name from a code block's content.
+ * Looks for `<tagname>` at the start of the string (after optional whitespace).
+ * Returns null if no valid opening tag is found.
+ */
+private val XML_TAG_NAME_REGEX = Regex("""^\s*<([a-z_][a-z0-9_-]*)>""")
+
+private fun extractXmlTagName(code: String): String? =
+    XML_TAG_NAME_REGEX.find(code)?.groupValues?.get(1)
+
+/**
+ * Renders a [ContentBlock.CodeBlock] with `language = "xml"` as a collapsible section.
  * Starts collapsed by default — the user clicks the header to expand.
+ * The tag name is extracted from the content for the header label.
  *
- * Inner content is recursively parsed, so code blocks inside thinking
- * traces are rendered (and executed by CommandBot) normally.
- *
- * Visually distinct from code blocks: uses [surfaceContainerHigh] background
- * to signal "internal model output".
+ * Visually distinct from regular code blocks: uses [surfaceContainerHigh] background
+ * to signal "internal model output / metadata".
  */
 @Composable
-private fun XmlTagBlockView(block: ContentBlock.XmlTagBlock) {
+private fun XmlCodeBlockView(block: ContentBlock.CodeBlock) {
     var isExpanded by remember { mutableStateOf(false) }
-    val displayLabel = block.tag.replaceFirstChar { it.uppercase() }
+    val tagName = remember(block.code) { extractXmlTagName(block.code) }
+    val displayLabel = tagName?.replaceFirstChar { it.uppercase() } ?: "Xml"
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -550,25 +560,12 @@ private fun XmlTagBlockView(block: ContentBlock.XmlTagBlock) {
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (!isExpanded) {
-                    val preview = block.content.lineSequence().firstOrNull()?.take(80) ?: ""
-                    if (preview.isNotBlank()) {
-                        Text(
-                            text = preview,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                    }
-                }
             }
 
             // ── Expandable content ────────────────────────────────────
             AnimatedVisibility(visible = isExpanded) {
                 Text(
-                    text = block.content,
+                    text = block.code,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                     modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
