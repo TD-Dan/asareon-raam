@@ -10,8 +10,6 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.core.resolveDisplayColor
 import asareon.raam.feature.core.ConfirmationDialog
 import asareon.raam.feature.core.CoreState
-import asareon.raam.ui.components.colorToHsl
-import asareon.raam.ui.components.hslToColor
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -32,31 +30,15 @@ fun App(store: Store, features: List<Feature>) {
     }
 
     // ── Identity-based theme override ────────────────────────────────
-    // When the setting is enabled, derive primary + secondary from the
-    // active user's displayColor. Secondary is hue-30°, S×0.75, L×0.75.
-    val primaryOverride: Color?
-    val secondaryOverride: Color?
-
-    if (coreState?.useIdentityColorAsPrimary == true) {
+    // When the setting is enabled, pass the active user's displayColor
+    // as primaryOverride. Theme.kt derives secondary (−30° hue) and
+    // tertiary (+60° hue) automatically.
+    val primaryOverride: Color? = if (coreState?.useIdentityColorAsPrimary == true) {
         val activeIdentity = coreState.activeUserId?.let { appState.identityRegistry[it] }
-        val identityColor = activeIdentity?.resolveDisplayColor()
-        if (identityColor != null) {
-            primaryOverride = identityColor
-            val hsl = colorToHsl(identityColor)
-            val secHue = (hsl[0] + 20f + 360f) % 360f
-            val secSat = (hsl[1] * 0.75f).coerceIn(0f, 1f)
-            val secLit = (hsl[2] * 0.75f).coerceIn(0f, 1f)
-            secondaryOverride = hslToColor(secHue, secSat, secLit)
-        } else {
-            primaryOverride = null
-            secondaryOverride = null
-        }
-    } else {
-        primaryOverride = null
-        secondaryOverride = null
-    }
+        activeIdentity?.resolveDisplayColor()
+    } else null
 
-    AppTheme(primaryOverride = primaryOverride, secondaryOverride = secondaryOverride) {
+    AppTheme(primaryOverride = primaryOverride) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { paddingValues ->

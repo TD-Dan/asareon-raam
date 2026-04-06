@@ -4,14 +4,12 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 
 /**
  * Extended semantic colors not covered by the Material 3 core color scheme.
@@ -162,23 +160,27 @@ fun AppTheme(
 
     val colorScheme = if (primaryOverride != null) {
         // Compute onPrimary: white for dark colors, black for light.
-        // Simple luminance threshold avoids a full contrast-ratio computation.
-        val primaryLuminance = primaryOverride.red * 0.2126f +
-                primaryOverride.green * 0.7152f +
-                primaryOverride.blue * 0.0722f
-        val onPrimary = if (primaryLuminance > 0.5f) Color.Black else Color.White
+        val onPrimary = contrastingOnColor(primaryOverride)
 
         // For containers, lighten in dark theme and darken in light theme.
         val primaryContainer = if (darkTheme)
-            primaryOverride.copy(alpha = 1f)  // use as-is in dark
+            primaryOverride.copy(alpha = 1f)
         else
             primaryOverride.copy(alpha = 1f)
 
-        val resolvedSecondary = secondaryOverride ?: baseScheme.secondary
-        val secondaryLuminance = resolvedSecondary.red * 0.2126f +
-                resolvedSecondary.green * 0.7152f +
-                resolvedSecondary.blue * 0.0722f
-        val onSecondary = if (secondaryLuminance > 0.5f) Color.Black else Color.White
+        // ── Derive secondary: hue−30°, saturation×0.75, lightness×0.75 ──
+        val resolvedSecondary = secondaryOverride ?: run {
+            val (h, s, l) = colorToHsl(primaryOverride)
+            hslToColor((h - 30f + 360f) % 360f, s * 0.75f, l * 0.75f)
+        }
+        val onSecondary = contrastingOnColor(resolvedSecondary)
+
+        // ── Derive tertiary: hue+60°, saturation×0.85 ──────────────────
+        val resolvedTertiary = run {
+            val (h, s, l) = colorToHsl(primaryOverride)
+            hslToColor((h + 60f) % 360f, s * 0.85f, l)
+        }
+        val onTertiary = contrastingOnColor(resolvedTertiary)
 
         baseScheme.copy(
             primary = primaryOverride,
@@ -189,7 +191,11 @@ fun AppTheme(
             secondary = resolvedSecondary,
             onSecondary = onSecondary,
             secondaryContainer = blendColor(resolvedSecondary, baseScheme.surface, 0.3f),
-            onSecondaryContainer = resolvedSecondary
+            onSecondaryContainer = resolvedSecondary,
+            tertiary = resolvedTertiary,
+            onTertiary = onTertiary,
+            tertiaryContainer = blendColor(resolvedTertiary, baseScheme.surface, 0.3f),
+            onTertiaryContainer = resolvedTertiary
         )
     } else {
         baseScheme
@@ -223,4 +229,73 @@ private fun blendColor(foreground: Color, background: Color, ratio: Float): Colo
         green = foreground.green * r + background.green * (1f - r),
         blue = foreground.blue * r + background.blue * (1f - r)
     )
+}
+
+/**
+ * Returns [Color.White] for dark colors and [Color.Black] for light colors.
+ * Uses BT.709 luminance coefficients with a 0.5 threshold.
+ */
+private fun contrastingOnColor(color: Color): Color {
+    val luminance = color.red * 0.2126f + color.green * 0.7152f + color.blue * 0.0722f
+    return if (luminance > 0.5f) Color.Black else Color.White
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HSL ↔ Compose Color conversion
+// ═══════════════════════════════════════════════════════════════════════════
+// Compose Multiplatform does not include HSL utilities, so we provide a
+// minimal implementation for hue-rotating the primary identity color into
+// harmonious secondary (−30°) and tertiary (+60°) colors.
+
+/** HSL triple: hue 0–360, saturation 0–1, lightness 0–1. */
+private data class Hsl(val h: Float, val s: Float, val l: Float)
+
+/** Converts a Compose [Color] (sRGB) to HSL. */
+private fun colorToHsl(color: Color): Hsl {
+    val r = color.red
+    val g = color.green
+    val b = color.blue
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val l = (max + min) / 2f
+    if (max == min) return Hsl(0f, 0f, l) // achromatic
+
+    val d = max - min
+    val s = if (l > 0.5f) d / (2f - max - min) else d / (max + min)
+    val h = when (max) {
+        r -> ((g - b) / d + (if (g < b) 6f else 0f)) * 60f
+        g -> ((b - r) / d + 2f) * 60f
+        else -> ((r - g) / d + 4f) * 60f
+    }
+    return Hsl(h % 360f, s.coerceIn(0f, 1f), l.coerceIn(0f, 1f))
+}
+
+/** Converts HSL back to a Compose [Color]. */
+private fun hslToColor(h: Float, s: Float, l: Float): Color {
+    val sClamped = s.coerceIn(0f, 1f)
+    val lClamped = l.coerceIn(0f, 1f)
+    if (sClamped == 0f) return Color(lClamped, lClamped, lClamped)
+
+    val q = if (lClamped < 0.5f) lClamped * (1f + sClamped) else lClamped + sClamped - lClamped * sClamped
+    val p = 2f * lClamped - q
+    val hNorm = h / 360f
+    return Color(
+        red = hueToRgb(p, q, hNorm + 1f / 3f),
+        green = hueToRgb(p, q, hNorm),
+        blue = hueToRgb(p, q, hNorm - 1f / 3f)
+    )
+}
+
+private fun hueToRgb(p: Float, q: Float, tIn: Float): Float {
+    val t = when {
+        tIn < 0f -> tIn + 1f
+        tIn > 1f -> tIn - 1f
+        else -> tIn
+    }
+    return when {
+        t < 1f / 6f -> p + (q - p) * 6f * t
+        t < 1f / 2f -> q
+        t < 2f / 3f -> p + (q - p) * (2f / 3f - t) * 6f
+        else -> p
+    }
 }

@@ -1,4 +1,4 @@
-rootProject.name = "AUFApp"
+rootProject.name = "AsareonRaam"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {

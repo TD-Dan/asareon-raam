@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.sp
  * unordered lists (`-`/`*`/`+` with nesting), ordered lists (`1.`), and
  * horizontal rules (`---`/`***`/`___`).
  *
- * **Inline** — bold (`**`), italic (`*`), bold-italic (`***`), inline code
- * (`` ` ``), links (`[text](url)`), and strikethrough (`~~`).
+ * **Inline** — bold (`**`/`__`), italic (`*`/`_`), bold-italic (`***`/`___`),
+ * inline code (`` ` ``), links (`[text](url)`), and strikethrough (`~~`).
  *
  * Code fences are **not** handled here — the upstream [BlockSeparatingParser]
  * already extracts them into [ContentBlock.CodeBlock] before this composable
@@ -57,7 +57,7 @@ fun MarkdownText(
     val linkColor = MaterialTheme.colorScheme.primary
     val bodyStyle = MaterialTheme.typography.bodyLarge
 
-    // Heading typography scale: h1 → titleLarge … h6 → labelMedium
+    // Heading typography scale: h1 → headlineSmall … h6 → labelMedium
     val headingStyles = listOf(
         MaterialTheme.typography.headlineSmall,    // h1
         MaterialTheme.typography.titleLarge,        // h2
@@ -104,9 +104,13 @@ fun MarkdownText(
                 }
 
                 is MdBlock.BlockQuote -> {
+                    // IntrinsicSize.Min ensures the Row is only as tall as the text content,
+                    // so fillMaxHeight on the accent bar fills exactly that height — not the
+                    // remaining Column space (which would push all subsequent blocks off-screen).
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
                             .background(
                                 quoteBackground,
                                 MaterialTheme.shapes.small
@@ -116,7 +120,6 @@ fun MarkdownText(
                         Box(
                             modifier = Modifier
                                 .width(3.dp)
-                                .defaultMinSize(minHeight = 24.dp)
                                 .fillMaxHeight()
                                 .background(quoteBarColor)
                         )
@@ -196,7 +199,11 @@ fun MarkdownText(
 // Block Parser
 // ═══════════════════════════════════════════════════════════════════════════
 
-private sealed interface MdBlock {
+/**
+ * A single parsed block of markdown content.
+ * Internal for testing — production code consumes these only inside [MarkdownText].
+ */
+internal sealed interface MdBlock {
     data class Heading(val level: Int, val content: String) : MdBlock
     data class Paragraph(val content: String) : MdBlock
     data class BlockQuote(val content: String) : MdBlock
@@ -211,8 +218,10 @@ private sealed interface MdBlock {
  * Consecutive non-special lines are accumulated into a single paragraph.
  * Blank lines flush the accumulator. Consecutive block-quote lines are
  * merged into one quote block.
+ *
+ * Internal for testing.
  */
-private fun parseBlocks(text: String): List<MdBlock> {
+internal fun parseBlocks(text: String): List<MdBlock> {
     val blocks = mutableListOf<MdBlock>()
     val lines = text.lines()
     val paraAccum = StringBuilder()
@@ -243,8 +252,8 @@ private fun parseBlocks(text: String): List<MdBlock> {
         }
 
         // ── Horizontal rule ──────────────────────────────────────
-        val stripped = trimmed.replace(" ", "")
-        if (stripped.length >= 3 && (stripped.all { it == '-' } || stripped.all { it == '*' } || stripped.all { it == '_' })) {
+        // Must be 3+ of the same char (-, *, _) with optional spaces, nothing else.
+        if (isHorizontalRule(trimmed)) {
             flushParagraph()
             flushQuote()
             blocks.add(MdBlock.HorizontalRule)
@@ -306,6 +315,18 @@ private fun parseBlocks(text: String): List<MdBlock> {
     return blocks
 }
 
+/**
+ * Returns true if the line is a horizontal rule: 3 or more of the same character
+ * (`-`, `*`, or `_`), optionally separated by spaces, with nothing else on the line.
+ */
+private fun isHorizontalRule(line: String): Boolean {
+    val stripped = line.replace(" ", "")
+    if (stripped.length < 3) return false
+    val ch = stripped[0]
+    if (ch != '-' && ch != '*' && ch != '_') return false
+    return stripped.all { it == ch }
+}
+
 private val HEADING_REGEX = Regex("""^(#{1,6})\s+(.+)$""")
 private val UL_REGEX = Regex("""^(\s*)[-*+]\s+(.+)$""")
 private val OL_REGEX = Regex("""^(\s*)(\d{1,4})\.\s+(.+)$""")
@@ -316,8 +337,9 @@ private val OL_REGEX = Regex("""^(\s*)(\d{1,4})\.\s+(.+)$""")
 
 /**
  * Colors used by the inline parser, bundled to keep the remember key simple.
+ * Internal for testing.
  */
-private data class InlineColors(
+internal data class InlineColors(
     val codeBackground: Color,
     val codeColor: Color,
     val linkColor: Color,
@@ -337,8 +359,10 @@ private data class InlineColors(
  *
  * The parser processes the input left-to-right, consuming the highest-priority
  * match at each position. Unmatched markers are emitted as literal text.
+ *
+ * Internal for testing.
  */
-private fun parseInline(text: String, colors: InlineColors): AnnotatedString {
+internal fun parseInline(text: String, colors: InlineColors): AnnotatedString {
     return buildAnnotatedString {
         var i = 0
         while (i < text.length) {
@@ -355,7 +379,7 @@ private fun parseInline(text: String, colors: InlineColors): AnnotatedString {
                             fontSize = 13.sp,
                             letterSpacing = 0.sp
                         ))
-                        append(" $code ")
+                        append("\u00A0$code\u00A0")
                         pop()
                         i = closeIdx + 1
                     } else {
@@ -375,7 +399,6 @@ private fun parseInline(text: String, colors: InlineColors): AnnotatedString {
                                 color = colors.linkColor,
                                 textDecoration = TextDecoration.Underline
                             ))
-                            // Recursively parse inline formatting within link text
                             append(linkText)
                             pop()
                             i = closeParen + 1
@@ -417,6 +440,20 @@ private fun parseInline(text: String, colors: InlineColors): AnnotatedString {
                     }
                 }
 
+                // ── Bold-italic: ___text___ ──────────────────────
+                text.startsWith("___", i) -> {
+                    val closeIdx = text.indexOf("___", i + 3)
+                    if (closeIdx != -1) {
+                        pushStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic))
+                        appendInlineRecursive(text.substring(i + 3, closeIdx), colors)
+                        pop()
+                        i = closeIdx + 3
+                    } else {
+                        append("___")
+                        i += 3
+                    }
+                }
+
                 // ── Bold: **text** ───────────────────────────────
                 text.startsWith("**", i) -> {
                     val closeIdx = text.indexOf("**", i + 2)
@@ -431,6 +468,20 @@ private fun parseInline(text: String, colors: InlineColors): AnnotatedString {
                     }
                 }
 
+                // ── Bold: __text__ ───────────────────────────────
+                text.startsWith("__", i) -> {
+                    val closeIdx = text.indexOf("__", i + 2)
+                    if (closeIdx != -1) {
+                        pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                        appendInlineRecursive(text.substring(i + 2, closeIdx), colors)
+                        pop()
+                        i = closeIdx + 2
+                    } else {
+                        append("__")
+                        i += 2
+                    }
+                }
+
                 // ── Italic: *text* (not followed by space) ───────
                 text[i] == '*' && i + 1 < text.length && text[i + 1] != ' ' -> {
                     val closeIdx = text.indexOf('*', i + 1)
@@ -441,6 +492,20 @@ private fun parseInline(text: String, colors: InlineColors): AnnotatedString {
                         i = closeIdx + 1
                     } else {
                         append('*')
+                        i++
+                    }
+                }
+
+                // ── Italic: _text_ (not followed by space) ──────
+                text[i] == '_' && i + 1 < text.length && text[i + 1] != ' ' -> {
+                    val closeIdx = text.indexOf('_', i + 1)
+                    if (closeIdx != -1 && text[closeIdx - 1] != ' ') {
+                        pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                        appendInlineRecursive(text.substring(i + 1, closeIdx), colors)
+                        pop()
+                        i = closeIdx + 1
+                    } else {
+                        append('_')
                         i++
                     }
                 }
@@ -473,7 +538,7 @@ private fun AnnotatedString.Builder.appendInlineRecursive(text: String, colors: 
                         color = colors.codeColor,
                         fontSize = 13.sp
                     ))
-                    append(" $code ")
+                    append("\u00A0$code\u00A0")
                     pop()
                     i = closeIdx + 1
                 } else {
@@ -500,6 +565,17 @@ private fun AnnotatedString.Builder.appendInlineRecursive(text: String, colors: 
                     i = closeIdx + 1
                 } else {
                     append('*'); i++
+                }
+            }
+            text[i] == '_' && i + 1 < text.length && text[i + 1] != ' ' -> {
+                val closeIdx = text.indexOf('_', i + 1)
+                if (closeIdx != -1 && text[closeIdx - 1] != ' ') {
+                    pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                    append(text.substring(i + 1, closeIdx))
+                    pop()
+                    i = closeIdx + 1
+                } else {
+                    append('_'); i++
                 }
             }
             else -> {

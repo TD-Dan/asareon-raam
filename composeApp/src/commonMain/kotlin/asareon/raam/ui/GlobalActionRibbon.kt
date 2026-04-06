@@ -27,8 +27,8 @@ import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
-import aufapp.composeapp.generated.resources.Res
-import aufapp.composeapp.generated.resources.icon
+import asareonraam.composeapp.generated.resources.Res
+import asareonraam.composeapp.generated.resources.icon
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jetbrains.compose.resources.painterResource
