@@ -58,20 +58,17 @@ fun CodeEditor(
     val outlineColor = MaterialTheme.colorScheme.outline
     val outlineVariantColor = MaterialTheme.colorScheme.outlineVariant
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val secondaryColor = MaterialTheme.colorScheme.secondary
-    val errorColor = MaterialTheme.colorScheme.error
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     val transformation = remember(
         syntax, depthColors, outlineColor, outlineVariantColor,
-        tertiaryColor, primaryColor, secondaryColor, errorColor, onSurfaceVariantColor
+        tertiaryColor, onSurfaceVariantColor
     ) {
         when (syntax) {
             SyntaxMode.NONE -> VisualTransformation.None
             SyntaxMode.XML -> XmlHighlightTransformation(depthColors, outlineColor, tertiaryColor, outlineVariantColor)
-            SyntaxMode.JSON -> JsonHighlightTransformation(primaryColor, tertiaryColor, secondaryColor, outlineColor, errorColor)
-            SyntaxMode.MARKDOWN -> MarkdownHighlightTransformation(primaryColor, secondaryColor, tertiaryColor, outlineColor, onSurfaceVariantColor)
+            SyntaxMode.JSON -> JsonHighlightTransformation(depthColors, outlineColor)
+            SyntaxMode.MARKDOWN -> MarkdownHighlightTransformation(depthColors, outlineColor, onSurfaceVariantColor)
         }
     }
 
@@ -216,19 +213,14 @@ private class XmlHighlightTransformation(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Single-pass JSON tokenizer.
- * - **Object keys** (quoted strings before `:`): [keyColor]
- * - **String values**: [stringColor]
- * - **Numbers**: [numberColor]
- * - **Booleans & null**: [keywordColor]
- * - **Structural chars** (`{}[]:,`): [bracketColor]
+ * Single-pass JSON tokenizer with depth-based coloring.
+ * - **Object keys**: colored by nesting depth, cycling through [depthColors].
+ * - **Structural chars** (`{}[]:,`): colored by current depth.
+ * - **All values** (strings, numbers, booleans, null): [valueColor].
  */
 private class JsonHighlightTransformation(
-    private val keyColor: Color,
-    private val stringColor: Color,
-    private val numberColor: Color,
-    private val bracketColor: Color,
-    private val keywordColor: Color
+    private val depthColors: List<Color>,
+    private val valueColor: Color
 ) : VisualTransformation {
 
     override fun filter(text: AnnotatedString): TransformedText {
@@ -237,10 +229,24 @@ private class JsonHighlightTransformation(
 
         val builder = AnnotatedString.Builder(src)
         var i = 0
+        var depth = 0
 
         while (i < src.length) {
             when {
                 src[i].isWhitespace() -> i++
+
+                src[i] == '{' || src[i] == '[' -> {
+                    builder.addStyle(SpanStyle(color = colorForDepth(depth)), i, i + 1)
+                    depth++; i++
+                }
+                src[i] == '}' || src[i] == ']' -> {
+                    depth = (depth - 1).coerceAtLeast(0)
+                    builder.addStyle(SpanStyle(color = colorForDepth(depth)), i, i + 1)
+                    i++
+                }
+                src[i] == ':' || src[i] == ',' -> {
+                    builder.addStyle(SpanStyle(color = colorForDepth(depth)), i, i + 1); i++
+                }
 
                 src[i] == '"' -> {
                     val start = i; i++
@@ -251,7 +257,7 @@ private class JsonHighlightTransformation(
                     // Peek ahead past whitespace for ':' to distinguish key from value
                     var peek = i
                     while (peek < src.length && src[peek].isWhitespace()) peek++
-                    val color = if (peek < src.length && src[peek] == ':') keyColor else stringColor
+                    val color = if (peek < src.length && src[peek] == ':') colorForDepth(depth) else valueColor
                     builder.addStyle(SpanStyle(color = color), start, i)
                 }
 
@@ -265,30 +271,29 @@ private class JsonHighlightTransformation(
                         if (i < src.length && (src[i] == '+' || src[i] == '-')) i++
                         while (i < src.length && src[i].isDigit()) i++
                     }
-                    builder.addStyle(SpanStyle(color = numberColor), start, i)
+                    builder.addStyle(SpanStyle(color = valueColor), start, i)
                 }
 
                 src.startsWith("true", i) && (i + 4 >= src.length || !src[i + 4].isLetterOrDigit()) -> {
-                    builder.addStyle(SpanStyle(color = keywordColor, fontWeight = FontWeight.Bold), i, i + 4); i += 4
+                    builder.addStyle(SpanStyle(color = valueColor, fontWeight = FontWeight.Bold), i, i + 4); i += 4
                 }
                 src.startsWith("false", i) && (i + 5 >= src.length || !src[i + 5].isLetterOrDigit()) -> {
-                    builder.addStyle(SpanStyle(color = keywordColor, fontWeight = FontWeight.Bold), i, i + 5); i += 5
+                    builder.addStyle(SpanStyle(color = valueColor, fontWeight = FontWeight.Bold), i, i + 5); i += 5
                 }
                 src.startsWith("null", i) && (i + 4 >= src.length || !src[i + 4].isLetterOrDigit()) -> {
-                    builder.addStyle(SpanStyle(color = keywordColor, fontStyle = FontStyle.Italic), i, i + 4); i += 4
-                }
-
-                src[i] in "{}[]" -> {
-                    builder.addStyle(SpanStyle(color = bracketColor), i, i + 1); i++
-                }
-                src[i] == ':' || src[i] == ',' -> {
-                    builder.addStyle(SpanStyle(color = bracketColor), i, i + 1); i++
+                    builder.addStyle(SpanStyle(color = valueColor, fontStyle = FontStyle.Italic), i, i + 4); i += 4
                 }
 
                 else -> i++
             }
         }
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
+
+    private fun colorForDepth(depth: Int): Color {
+        val base = depthColors[depth % depthColors.size]
+        val cycle = depth / depthColors.size
+        return if (cycle == 0) base else base.copy(alpha = (0.85f - (cycle - 1) * 0.15f).coerceAtLeast(0.4f))
     }
 }
 
@@ -298,19 +303,17 @@ private class JsonHighlightTransformation(
 
 /**
  * Line-oriented markdown tokenizer. Processes each line for:
- * - **Headings** (`# ` … `###### `): [headingColor], bold, size unaffected (monospace editor).
- * - **Bold** (`**…**` / `__…__`): [boldColor], bold weight.
- * - **Italic** (`*…*` / `_…_`, single): [italicColor], italic style.
- * - **Inline code** (`` `…` ``): [codeColor], no additional styling (already monospace).
+ * - **Headings** (`# ` … `###### `): depth-based coloring via [depthColors], bold.
+ * - **Bold** (`**…**` / `__…__`): bold weight only, no color change.
+ * - **Italic** (`*…*` / `_…_`, single): italic style only, no color change.
+ * - **Inline code** (`` `…` ``): [codeColor].
  * - **Block quotes** (`> `): [mutedColor].
- * - **List markers** (`- `, `* `, `1. `): [headingColor].
- * - **Links** (`[text](url)`): text in [headingColor], url underlined in [mutedColor].
+ * - **List markers** (`- `, `* `, `1. `): depth 0 color from [depthColors].
+ * - **Links** (`[text](url)`): text in depth 0 color, url underlined in [mutedColor].
  * - **Horizontal rules** (`---`, `***`, `___`): [mutedColor].
  */
 private class MarkdownHighlightTransformation(
-    private val headingColor: Color,
-    private val boldColor: Color,
-    private val italicColor: Color,
+    private val depthColors: List<Color>,
     private val codeColor: Color,
     private val mutedColor: Color
 ) : VisualTransformation {
@@ -333,7 +336,8 @@ private class MarkdownHighlightTransformation(
                         line.startsWith("##") || line.startsWith("#") -> {
                     val hashEnd = line.indexOfFirst { it != '#' }
                     if (hashEnd > 0 && hashEnd <= 6 && (hashEnd >= line.length || line[hashEnd] == ' ')) {
-                        builder.addStyle(SpanStyle(color = headingColor, fontWeight = FontWeight.Bold), lineStart, lineEnd)
+                        val headingDepth = (hashEnd - 1).coerceAtLeast(0) // # = 0, ## = 1, ...
+                        builder.addStyle(SpanStyle(color = colorForDepth(headingDepth), fontWeight = FontWeight.Bold), lineStart, lineEnd)
                     } else {
                         highlightInline(builder, src, lineStart, lineEnd)
                     }
@@ -349,7 +353,7 @@ private class MarkdownHighlightTransformation(
                 // Unordered list marker
                 line.trimStart().let { it.startsWith("- ") || it.startsWith("* ") || it.startsWith("+ ") } -> {
                     val markerOffset = line.length - line.trimStart().length
-                    builder.addStyle(SpanStyle(color = headingColor, fontWeight = FontWeight.Bold), lineStart + markerOffset, lineStart + markerOffset + 2)
+                    builder.addStyle(SpanStyle(color = colorForDepth(0), fontWeight = FontWeight.Bold), lineStart + markerOffset, lineStart + markerOffset + 2)
                     highlightInline(builder, src, lineStart + markerOffset + 2, lineEnd)
                 }
                 // Ordered list marker
@@ -357,7 +361,7 @@ private class MarkdownHighlightTransformation(
                     val markerOffset = line.length - line.trimStart().length
                     val dotSpace = line.indexOf(". ", markerOffset)
                     if (dotSpace != -1) {
-                        builder.addStyle(SpanStyle(color = headingColor, fontWeight = FontWeight.Bold), lineStart + markerOffset, lineStart + dotSpace + 2)
+                        builder.addStyle(SpanStyle(color = colorForDepth(0), fontWeight = FontWeight.Bold), lineStart + markerOffset, lineStart + dotSpace + 2)
                         highlightInline(builder, src, lineStart + dotSpace + 2, lineEnd)
                     } else {
                         highlightInline(builder, src, lineStart, lineEnd)
@@ -390,17 +394,16 @@ private class MarkdownHighlightTransformation(
                     val contentStart = i; i += 2
                     val closeIdx = src.indexOf(marker, i)
                     if (closeIdx != -1 && closeIdx < end) {
-                        builder.addStyle(SpanStyle(color = boldColor, fontWeight = FontWeight.Bold), contentStart, closeIdx + 2)
+                        builder.addStyle(SpanStyle(fontWeight = FontWeight.Bold), contentStart, closeIdx + 2)
                         i = closeIdx + 2
                     }
-                    // else: unmatched, leave unstyled, i already advanced past **
                 }
                 // Italic (*…* or _…_) — single marker, must not be followed by space
                 (src[i] == '*' || src[i] == '_') && i + 1 < end && src[i + 1] != ' ' -> {
                     val marker = src[i]
                     val contentStart = i; i++
                     while (i < end && src[i] != marker) i++
-                    if (i < end) { i++; builder.addStyle(SpanStyle(color = italicColor, fontStyle = FontStyle.Italic), contentStart, i) }
+                    if (i < end) { i++; builder.addStyle(SpanStyle(fontStyle = FontStyle.Italic), contentStart, i) }
                 }
                 // Link: [text](url)
                 src[i] == '[' -> {
@@ -409,9 +412,7 @@ private class MarkdownHighlightTransformation(
                     if (closeBracket != -1 && closeBracket < end && closeBracket + 1 < end && src[closeBracket + 1] == '(') {
                         val closeParen = src.indexOf(')', closeBracket + 2)
                         if (closeParen != -1 && closeParen <= end) {
-                            // [text]
-                            builder.addStyle(SpanStyle(color = headingColor), bracketStart, closeBracket + 1)
-                            // (url)
+                            builder.addStyle(SpanStyle(color = colorForDepth(0)), bracketStart, closeBracket + 1)
                             builder.addStyle(SpanStyle(color = mutedColor, textDecoration = TextDecoration.Underline), closeBracket + 1, closeParen + 1)
                             i = closeParen + 1
                         } else i = bracketStart + 1
@@ -420,5 +421,11 @@ private class MarkdownHighlightTransformation(
                 else -> i++
             }
         }
+    }
+
+    private fun colorForDepth(depth: Int): Color {
+        val base = depthColors[depth % depthColors.size]
+        val cycle = depth / depthColors.size
+        return if (cycle == 0) base else base.copy(alpha = (0.85f - (cycle - 1) * 0.15f).coerceAtLeast(0.4f))
     }
 }
