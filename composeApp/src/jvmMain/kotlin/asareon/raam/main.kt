@@ -87,8 +87,8 @@ fun main() {
         val coreState = appState.featureStates["core"] as? CoreState
 
         val windowState = rememberWindowState(
-            width = (bootSize?.width ?: coreState?.windowWidth ?: 600).dp,
-            height = (bootSize?.height ?: coreState?.windowHeight ?: 480).dp
+            width = (bootSize?.width ?: coreState?.windowWidth ?: 1100).dp,
+            height = (bootSize?.height ?: coreState?.windowHeight ?: 800).dp
         )
 
         Window(

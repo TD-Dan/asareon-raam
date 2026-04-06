@@ -227,12 +227,12 @@ class CoreFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWidth); put("type", "NUMERIC_LONG"); put("label", "Window Width")
                     put("description", "The width of the application window in pixels.")
-                    put("section", "Appearance"); put("defaultValue", "600")
+                    put("section", "Appearance"); put("defaultValue", "1100")
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyHeight); put("type", "NUMERIC_LONG"); put("label", "Window Height")
                     put("description", "The height of the application window in pixels.")
-                    put("section", "Appearance"); put("defaultValue", "480")
+                    put("section", "Appearance"); put("defaultValue", "800")
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyUseIdentityColor); put("type", "BOOLEAN"); put("label", "Use Identity Color as App Theme")

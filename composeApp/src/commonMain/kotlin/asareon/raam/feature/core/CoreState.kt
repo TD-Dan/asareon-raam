@@ -65,8 +65,8 @@ data class CoreState(
     @Transient
     val showBootConsole: Boolean = false,
     // Add window dimensions to the state with sensible defaults.
-    val windowWidth: Int = 600,
-    val windowHeight: Int = 480,
+    val windowWidth: Int = 1100,
+    val windowHeight: Int = 800,
 
     // Active user identity handle — resolved from the identity registry.
     val activeUserId: String? = null,
