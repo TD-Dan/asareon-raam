@@ -22,13 +22,13 @@ import java.awt.Point
 import java.awt.Window
 import java.awt.event.WindowEvent
 
-/** Title bar height — must match the value used in the Row below. */
+/** Title bar height — must match the Row height below. */
 private val TITLE_BAR_HEIGHT = 36.dp
 
 /** Width of each window control button (min / max / close). */
 private val BUTTON_WIDTH = 36.dp
 
-/** Width of the left ribbon (must match GlobalActionRibbon + divider). */
+/** Width of the left ribbon + divider (must match GlobalActionRibbon). */
 private val RIBBON_WIDTH = 51.dp  // 50.dp ribbon + 1.dp divider
 
 /**
@@ -55,7 +55,7 @@ fun CustomTitleBar(window: Window) {
         }
     }
 
-    // Fallback drag handler for non-Windows (or if snap helper fails)
+    // Fallback drag handler for non-Windows (or if snap helper fails to install)
     var dragStartMousePos by remember { mutableStateOf(Point(0, 0)) }
     var dragStartWindowPos by remember { mutableStateOf(Point(0, 0)) }
     val useComposeDrag = !WindowsSnapHelper.isInstalled

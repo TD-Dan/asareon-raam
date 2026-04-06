@@ -2,7 +2,6 @@ package asareon.raam
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -32,7 +31,7 @@ import javax.swing.SwingUtilities
  * ## Mandate
  * The pure, logic-less entry point for the application.
  *
- * @version 2.7
+ * @version 2.8
  */
 @OptIn(FlowPreview::class)
 fun main() {
@@ -90,7 +89,6 @@ fun main() {
             title = Version.APP_NAME,
             state = windowState,
             undecorated = true,
-            transparent = true,
         ) {
             LaunchedEffect(Unit) {
                 dependencies.applyNativeWindowDecorations(window)
@@ -126,11 +124,11 @@ fun main() {
                     }
             }
 
-            // The window ref is captured by the lambda closure — no CompositionLocal needed.
+            // DWM handles rounded corners on Windows 11 via WindowsSnapHelper.
+            // The window ref flows through the lambda closure to CustomTitleBar.
             AppTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {

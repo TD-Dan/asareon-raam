@@ -49,8 +49,8 @@ fun GlobalActionRibbon(
         modifier = Modifier
             .fillMaxHeight()
             .width(50.dp)
-            .padding(vertical = 8.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer) // background FIRST
+            .padding(vertical = 8.dp),                              // then padding
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
