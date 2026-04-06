@@ -141,7 +141,7 @@ class BlockSeparatingParser {
         return null
     }
 
-    // ----- code fence helpers (unchanged) --------------------------------------------------------
+    // ----- code fence helpers --------------------------------------------------------
 
     /**
      * Starting from [searchFrom] (the index immediately after the opening ```), scans forward for
