@@ -35,7 +35,15 @@ private data class Choice(
 @Serializable
 private data class MiniMaxMessage(
     val role: String? = null,
-    val content: String? = null
+    val content: String? = null,
+    /**
+     * MiniMax M2.7's internal reasoning trace, populated when the model performs
+     * chain-of-thought reasoning. Separate from [content] which holds the final answer.
+     * May also appear inline in [content] wrapped in `<think>` tags — the parser
+     * handles deduplication.
+     */
+    @kotlinx.serialization.SerialName("reasoning_content")
+    val reasoningContent: String? = null
 )
 
 @Serializable
@@ -128,7 +136,8 @@ class MiniMaxProvider(
         val inputTokens = response.usage?.promptTokens
         val outputTokens = response.usage?.completionTokens
 
-        val rawText = response.choices?.firstOrNull()?.message?.content
+        val message = response.choices?.firstOrNull()?.message
+        val rawText = message?.content
         if (rawText != null) {
             if (inputTokens == null && outputTokens == null) {
                 platformDependencies.log(
@@ -137,7 +146,19 @@ class MiniMaxProvider(
                             "This may indicate an API change or deserialization issue."
                 )
             }
-            return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
+
+            // MiniMax M2.7 may return reasoning in a separate `reasoning_content` field
+            // instead of (or in addition to) inline <think> tags in `content`.
+            // If the structured field is present and content doesn't already contain
+            // a <think> block, prepend it so the BlockSeparatingParser picks it up.
+            val assembledContent = if (!message.reasoningContent.isNullOrBlank()
+                && !rawText.contains("<think>")) {
+                "<think>\n${message.reasoningContent}\n</think>\n$rawText"
+            } else {
+                rawText
+            }
+
+            return GatewayResponse(assembledContent, null, correlationId, inputTokens, outputTokens)
         }
 
         platformDependencies.log(

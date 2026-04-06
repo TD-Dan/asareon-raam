@@ -87,6 +87,13 @@ fun LedgerEntryCard(
                 val truncated = firstLine.length > 80 || hasMoreLines || hasMultipleBlocks
                 firstLine.take(80) + if (truncated) "…" else ""
             }
+            is ContentBlock.XmlTagBlock -> {
+                val label = firstBlock.tag.replaceFirstChar { it.uppercase() }
+                val firstText = firstBlock.children.filterIsInstance<ContentBlock.Text>()
+                    .firstOrNull()?.text?.lineSequence()?.firstOrNull() ?: ""
+                val truncated = firstText.length > 60 || hasMultipleBlocks
+                "[$label] ${firstText.take(60)}" + if (truncated) "…" else ""
+            }
             null -> {
                 val raw = entry.rawContent ?: ""
                 val firstLine = raw.lineSequence().firstOrNull() ?: ""
@@ -490,6 +497,82 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                             }
                         }
                     }
+                    is ContentBlock.XmlTagBlock -> XmlTagBlockView(store, block)
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// XML Tag Block View (e.g. <think>, <reasoning>, <reflection>)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Renders an XML-wrapped content block as a collapsible section.
+ * Starts collapsed by default — the user clicks the header to expand.
+ *
+ * Inner content is recursively parsed, so code blocks inside thinking
+ * traces are rendered (and executed by CommandBot) normally.
+ *
+ * Visually distinct from code blocks: uses [surfaceContainerHigh] background
+ * to signal "internal model output".
+ */
+@Composable
+private fun XmlTagBlockView(store: Store, block: ContentBlock.XmlTagBlock) {
+    var isExpanded by remember { mutableStateOf(false) }
+    val displayLabel = block.tag.replaceFirstChar { it.uppercase() }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column {
+            // ── Clickable header ──────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = displayLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!isExpanded) {
+                    // Show a faded preview from the first text child when collapsed
+                    val preview = block.children
+                        .filterIsInstance<ContentBlock.Text>()
+                        .firstOrNull()?.text?.lineSequence()?.firstOrNull()?.take(80) ?: ""
+                    if (preview.isNotBlank()) {
+                        Text(
+                            text = preview,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                }
+            }
+
+            // ── Expandable content — reuses ParsedContentView rendering ──
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                    ParsedContentView(store, block.children, rawContent = null)
                 }
             }
         }

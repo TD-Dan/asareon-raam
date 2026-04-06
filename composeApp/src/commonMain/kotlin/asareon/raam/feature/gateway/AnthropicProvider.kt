@@ -36,7 +36,8 @@ private data class AnthropicResponse(
 @Serializable
 private data class ContentBlock(
     val type: String,
-    val text: String? = null
+    val text: String? = null,
+    val thinking: String? = null
 )
 
 @Serializable
@@ -161,16 +162,39 @@ class AnthropicProvider(
         val inputTokens = response.usage?.inputTokens
         val outputTokens = response.usage?.outputTokens
 
-        val rawText = response.content?.firstOrNull()?.text
-        if (rawText != null) {
-            if (inputTokens == null && outputTokens == null) {
-                platformDependencies.log(
-                    LogLevel.WARN, id,
-                    "Successful response for correlationId '$correlationId' has no token usage data. " +
-                            "This may indicate an API change or deserialization issue."
-                )
+        // Anthropic may return multiple content blocks including thinking traces.
+        // Extract thinking blocks (type = "thinking") and text blocks (type = "text")
+        // separately, then assemble into a single rawContent string with thinking
+        // wrapped in <think> tags so the BlockSeparatingParser picks them up.
+        val contentBlocks = response.content
+        if (contentBlocks != null && contentBlocks.isNotEmpty()) {
+            val thinkingParts = contentBlocks
+                .filter { it.type == "thinking" && !it.thinking.isNullOrBlank() }
+                .mapNotNull { it.thinking }
+            val textParts = contentBlocks
+                .filter { it.type == "text" && !it.text.isNullOrBlank() }
+                .mapNotNull { it.text }
+
+            if (textParts.isNotEmpty() || thinkingParts.isNotEmpty()) {
+                if (inputTokens == null && outputTokens == null) {
+                    platformDependencies.log(
+                        LogLevel.WARN, id,
+                        "Successful response for correlationId '$correlationId' has no token usage data. " +
+                                "This may indicate an API change or deserialization issue."
+                    )
+                }
+
+                val assembledContent = buildString {
+                    if (thinkingParts.isNotEmpty()) {
+                        append("<think>\n")
+                        append(thinkingParts.joinToString("\n"))
+                        append("\n</think>\n")
+                    }
+                    append(textParts.joinToString("\n"))
+                }
+
+                return GatewayResponse(assembledContent, null, correlationId, inputTokens, outputTokens)
             }
-            return GatewayResponse(rawText, null, correlationId, inputTokens, outputTokens)
         }
 
         // Empty content array with end_turn — known Anthropic API behavior where the model
