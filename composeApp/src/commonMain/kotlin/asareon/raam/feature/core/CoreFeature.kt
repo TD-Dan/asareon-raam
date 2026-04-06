@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.util.PlatformDependencies
+import asareon.raam.util.BootConfig
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -86,6 +87,7 @@ class CoreFeature(
     private val settingKeyWidth = "core.window.width"
     private val settingKeyHeight = "core.window.height"
     private val settingKeyUseIdentityColor = "core.use_identity_color"
+    private val settingKeyShowBootConsole = "core.show_boot_console"
     private val identitiesFileName = "identities.json"
 
     companion object {
@@ -225,20 +227,26 @@ class CoreFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyWidth); put("type", "NUMERIC_LONG"); put("label", "Window Width")
                     put("description", "The width of the application window in pixels.")
-                    put("section", "Appearance"); put("defaultValue", "1200")
+                    put("section", "Appearance"); put("defaultValue", "600")
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyHeight); put("type", "NUMERIC_LONG"); put("label", "Window Height")
                     put("description", "The height of the application window in pixels.")
-                    put("section", "Appearance"); put("defaultValue", "800")
+                    put("section", "Appearance"); put("defaultValue", "480")
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
                     put("key", settingKeyUseIdentityColor); put("type", "BOOLEAN"); put("label", "Use Identity Color as App Theme")
                     put("description", "When enabled, the active user identity's display color replaces the app's primary color. Secondary color is auto-derived.")
                     put("section", "Appearance"); put("defaultValue", "false")
                 }))
+                store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
+                    put("key", settingKeyShowBootConsole); put("type", "BOOLEAN"); put("label", "Show Boot Console on Startup")
+                    put("description", "When enabled, a terminal-style log view is shown during application startup.")
+                    put("section", "Appearance"); put("defaultValue", "false")
+                }))
             }
             ActionRegistry.Names.SYSTEM_RUNNING -> {
+                platformDependencies.logListener = null
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject { put("path", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {
@@ -257,6 +265,7 @@ class CoreFeature(
             }
             ActionRegistry.Names.CORE_UPDATE_WINDOW_SIZE -> {
                 latestCoreState?.let {
+                    BootConfig.writeWindowSize(platformDependencies, it.windowWidth, it.windowHeight)
                     store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
                         put("key", settingKeyWidth); put("value", it.windowWidth.toString())
                     }))
@@ -890,7 +899,7 @@ class CoreFeature(
 
         when (action.name) {
             ActionRegistry.Names.SYSTEM_INITIALIZING -> return coreState.copy(lifecycle = AppLifecycle.INITIALIZING)
-            ActionRegistry.Names.SYSTEM_RUNNING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING)
+            ActionRegistry.Names.SYSTEM_RUNNING -> return coreState.copy(lifecycle = AppLifecycle.RUNNING, booting = false)
             ActionRegistry.Names.SYSTEM_CLOSING -> return coreState.copy(lifecycle = AppLifecycle.CLOSING)
             ActionRegistry.Names.SYSTEM_SHUTDOWN -> return coreState.copy(lifecycle = AppLifecycle.SHUTDOWN)
             ActionRegistry.Names.CORE_SET_ACTIVE_VIEW -> {
@@ -924,10 +933,12 @@ class CoreFeature(
                 val width = loadedValues?.get(settingKeyWidth)?.jsonPrimitive?.content?.toIntOrNull()
                 val height = loadedValues?.get(settingKeyHeight)?.jsonPrimitive?.content?.toIntOrNull()
                 val useIdentityColor = loadedValues?.get(settingKeyUseIdentityColor)?.jsonPrimitive?.content == "true"
+                val showBootConsole = loadedValues?.get(settingKeyShowBootConsole)?.jsonPrimitive?.content == "true"
                 return coreState.copy(
                     windowWidth = width ?: coreState.windowWidth,
                     windowHeight = height ?: coreState.windowHeight,
-                    useIdentityColorAsPrimary = useIdentityColor
+                    useIdentityColorAsPrimary = useIdentityColor,
+                    showBootConsole = showBootConsole
                 )
             }
             ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
@@ -939,6 +950,7 @@ class CoreFeature(
                     settingKeyWidth -> value?.toIntOrNull()?.let { if (it != coreState.windowWidth) newCoreState = coreState.copy(windowWidth = it) }
                     settingKeyHeight -> value?.toIntOrNull()?.let { if (it != coreState.windowHeight) newCoreState = coreState.copy(windowHeight = it) }
                     settingKeyUseIdentityColor -> newCoreState = coreState.copy(useIdentityColorAsPrimary = value == "true")
+                    settingKeyShowBootConsole -> newCoreState = coreState.copy(showBootConsole = value == "true")
                 }
                 return newCoreState
             }
