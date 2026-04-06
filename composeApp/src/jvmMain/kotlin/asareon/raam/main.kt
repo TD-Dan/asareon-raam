@@ -17,10 +17,9 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
 import asareon.raam.ui.App
 import asareon.raam.ui.AppTheme
-import asareon.raam.ui.LocalAppWindow
+import asareon.raam.ui.CustomTitleBar
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
-import asareon.raam.util.WindowsSnapHelper
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -33,7 +32,7 @@ import javax.swing.SwingUtilities
  * ## Mandate
  * The pure, logic-less entry point for the application.
  *
- * @version 2.8
+ * @version 2.7
  */
 @OptIn(FlowPreview::class)
 fun main() {
@@ -95,18 +94,6 @@ fun main() {
         ) {
             LaunchedEffect(Unit) {
                 dependencies.applyNativeWindowDecorations(window)
-
-                // Install native Windows snap layouts, drag, resize, and button handling.
-                // Pixel dimensions are computed from dp values using the display scale factor.
-                // Layout: [Ribbon 50dp] [Divider 1dp] [Title bar 36dp tall, buttons 36dp wide]
-                val scale = window.graphicsConfiguration.defaultTransform.scaleY
-                WindowsSnapHelper.install(
-                    window = window,
-                    titleBarHeightPx = (36 * scale).toInt(),
-                    buttonWidthPx = (36 * scale).toInt(),
-                    ribbonWidthPx = (51 * scale).toInt()  // 50dp ribbon + 1dp divider
-                )
-
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
             }
@@ -139,16 +126,19 @@ fun main() {
                     }
             }
 
-            CompositionLocalProvider(LocalAppWindow provides window) {
-                AppTheme {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    ) {
-                        App(container.store, container.features)
-                    }
+            // The window ref is captured by the lambda closure — no CompositionLocal needed.
+            AppTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    App(
+                        store = container.store,
+                        features = container.features,
+                        titleBar = { CustomTitleBar(window) }
+                    )
                 }
             }
         }

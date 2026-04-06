@@ -10,13 +10,16 @@ import java.awt.Window
 /**
  * Subclasses the native window proc to return correct WM_NCHITTEST values for
  * our custom title bar. This gives us:
- *  - Windows 11 Snap Layouts flyout on maximize-button hover
- *  - Native window dragging via the title bar (Aero Snap to edges)
+ *  - Windows 11 Snap Layouts flyout on maximize-button hover (HTMAXBUTTON)
+ *  - Native window dragging via the title bar (HTCAPTION) with Aero Snap to edges
  *  - Native minimize / maximize / close on button click
  *  - Resize borders on all edges and corners
  *
- * The Compose-side click/drag handlers in CustomTitleBar remain as a cross-platform fallback.
- * On Windows, the native handling takes priority and the Compose handlers are not reached.
+ * Hit-test regions are computed from fixed layout dimensions (title bar height,
+ * button width, ribbon width) passed at install time — no runtime tracking needed.
+ *
+ * The Compose-side click/drag handlers in CustomTitleBar remain as a cross-platform
+ * fallback. On Windows, the native handling takes priority.
  *
  * Dependencies: com.sun.jna.* (already present for WindowsDarkMode)
  */
@@ -42,7 +45,10 @@ internal object WindowsSnapHelper {
 
     private const val RESIZE_BORDER_PX = 6
 
-    // ── prevent GC of the callback ───────────────────────────────────
+    // ── State ──────────────────────────────────────────────────────
+    var isInstalled = false
+        private set
+
     @Volatile private var installedCallback: WndProcCallback? = null
     @Volatile private var originalWndProc: Pointer? = null
 
@@ -81,6 +87,7 @@ internal object WindowsSnapHelper {
         buttonWidthPx: Int,
         ribbonWidthPx: Int
     ) {
+        if (isInstalled) return
         try {
             val hwndPtr = Native.getComponentPointer(window)
             val hwnd = HWND(hwndPtr)
@@ -144,6 +151,7 @@ internal object WindowsSnapHelper {
 
             installedCallback = proc
             NativeUser32.INSTANCE.SetWindowLongPtrW(hwndPtr, GWL_WNDPROC, proc)
+            isInstalled = true
 
         } catch (e: Throwable) {
             println("INFO: Windows snap layout helper not available (expected on non-Windows): ${e.message}")
