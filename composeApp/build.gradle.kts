@@ -629,7 +629,7 @@ kotlin {
             //kotlin.exclude("**/feature/knowledgegraph/**")
             //kotlin.exclude("**/feature/session/**")
             //kotlin.exclude("**/feature/settings/**")
-            kotlin.exclude("**/ui/**")
+            //kotlin.exclude("**/ui/**")
         }
         named("jvmTest") {
             kotlin.exclude(

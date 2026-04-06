@@ -4,13 +4,15 @@
 
 # GENERAL
 
-**- Rebrand and publish as 1.0.0alpha! < Asareon Raam > < Asareon AUF (Agents Universal Framework)> **
+**- Rebrand and publish as Asareon Raam 1.0.0 **
 
 **- Clean up deprecated code and unneeded migration/resolve notes (atleast agent feature)**
 
 - Actions cleanup for token efficiency: Many of the actions can be consolidated into one action: f.ex. TOGGLE_MESSAGE_LOCKED / LOCK_MESSAGE / UNLOCK_MESSAGE to save tokens
 
 - self contained "USB Stick" distributions in addition to installers
+
+- Need a pre loaded state view that shows live log stream while app is loading
 
 # DOCUMENTATION
 
@@ -61,6 +63,9 @@
 
 - add ui header composable to share with features (ui consistency)
 
+- App size is not set up correctly from settings upon app launch
+
+
 
 # SETTINGS
 - API keys need to be hidden in settings. Adda sensitive flag to the setting.ADD action?
@@ -69,6 +74,7 @@
 # AGENT
 - thinking reporting: update agent current status. Upgrade status as two part status:current_task.
 - remove the boot sentinel from Sovereign and replace with Constitution sub-agent: instead of fragile one time check we get constant checks.
+- fix resource files being saved always as json files. SHould be respective xml or md files per resource type definition.
 
 BUG: gocnitivepipeline 969: should error not default
 

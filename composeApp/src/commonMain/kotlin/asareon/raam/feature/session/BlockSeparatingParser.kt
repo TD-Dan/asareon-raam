@@ -9,6 +9,12 @@ package asareon.raam.feature.session
  * This version uses a nesting-aware fence matcher to correctly handle nested code fences,
  * inline fences, and newline preservation as per the established contract.
  *
+ * Additionally, it recognises XML-wrapped blocks (e.g. `<think>...</think>`,
+ * `<reasoning>...</reasoning>`) and emits them as [ContentBlock.CodeBlock] instances
+ * with `language = "xml"` and the full tagged content (including opening and closing
+ * tags) as the code body. This allows the UI to render these as collapsible blocks
+ * by detecting the `"xml"` language and extracting the tag name from the content.
+ *
  * Nesting rule: A ``` followed immediately by a letter, digit, or underscore (e.g. ```kotlin)
  * is treated as an **opening** fence that increments nesting depth. A ``` followed by whitespace,
  * a newline, or end-of-string is treated as a **closing** fence that decrements depth. The true
@@ -24,6 +30,20 @@ package asareon.raam.feature.session
  */
 class BlockSeparatingParser {
 
+    companion object {
+        /**
+         * Pattern matching the opening of an XML tag block.
+         *
+         * Matches `<tagname>` where tagname is a lowercase identifier: `[a-z_][a-z0-9_-]*`.
+         * Only tags that appear at the very start of the remaining text or immediately after
+         * a newline are considered — this prevents matching stray `<` characters inside prose
+         * or HTML fragments.
+         *
+         * The captured group 1 is the tag name.
+         */
+        private val XML_TAG_OPEN = Regex("""<([a-z_][a-z0-9_-]*)>""")
+    }
+
     fun parse(rawText: String): List<ContentBlock> {
         if (rawText.isBlank()) return emptyList()
 
@@ -31,38 +51,97 @@ class BlockSeparatingParser {
         var currentIndex = 0
 
         while (currentIndex < rawText.length) {
-            // --- SCANNING FOR TEXT ---
+            val remaining = rawText.substring(currentIndex)
+
+            // Find the next structural boundary: code fence or XML tag opener.
             val fenceStart = rawText.indexOf("```", currentIndex)
-            if (fenceStart == -1) {
-                // No more fences found, add the rest as a text block.
-                blocks.add(ContentBlock.Text(rawText.substring(currentIndex)))
+            val xmlMatch = findNextXmlTagOpen(rawText, currentIndex)
+
+            // Determine which comes first.
+            val fencePos = if (fenceStart != -1) fenceStart else Int.MAX_VALUE
+            val xmlPos = xmlMatch?.first ?: Int.MAX_VALUE
+
+            if (fencePos == Int.MAX_VALUE && xmlPos == Int.MAX_VALUE) {
+                // No more structural elements — rest is text.
+                blocks.add(ContentBlock.Text(remaining))
                 break
             }
 
-            // Add the text before the fence.
-            val textBefore = rawText.substring(currentIndex, fenceStart)
-            if (textBefore.isNotEmpty()) {
-                blocks.add(ContentBlock.Text(textBefore))
-            }
+            if (fencePos <= xmlPos) {
+                // --- CODE FENCE comes first ---
+                val textBefore = rawText.substring(currentIndex, fenceStart)
+                if (textBefore.isNotEmpty()) {
+                    blocks.add(ContentBlock.Text(textBefore))
+                }
 
-            // --- SCANNING FOR CODE (nesting-aware) ---
-            val fenceEnd = findClosingFence(rawText, fenceStart + 3)
-            if (fenceEnd == -1) {
-                // Unterminated fence – the rest of the string is a greedy code block.
-                val innerContent = rawText.substring(fenceStart + 3)
+                val fenceEnd = findClosingFence(rawText, fenceStart + 3)
+                if (fenceEnd == -1) {
+                    val innerContent = rawText.substring(fenceStart + 3)
+                    blocks.add(parseInnerCodeBlock(innerContent))
+                    break
+                }
+
+                val innerContent = rawText.substring(fenceStart + 3, fenceEnd)
                 blocks.add(parseInnerCodeBlock(innerContent))
-                break
-            }
+                currentIndex = fenceEnd + 3
+            } else {
+                // --- XML TAG comes first ---
+                val (tagStart, tagName) = xmlMatch!!
+                val closingTag = "</$tagName>"
+                val closingPos = rawText.indexOf(closingTag, tagStart)
 
-            // Found a correctly-matched closing fence.
-            val innerContent = rawText.substring(fenceStart + 3, fenceEnd)
-            blocks.add(parseInnerCodeBlock(innerContent))
-            currentIndex = fenceEnd + 3
+                if (closingPos == -1) {
+                    // Unterminated XML tag — treat from here to end as text (not a tag block).
+                    blocks.add(ContentBlock.Text(remaining))
+                    break
+                }
+
+                // Add text before the XML tag, trimming one trailing newline
+                // to prevent double-spacing between the text and the collapsible block.
+                val textBefore = rawText.substring(currentIndex, tagStart).removeSuffix("\n")
+                if (textBefore.isNotEmpty()) {
+                    blocks.add(ContentBlock.Text(textBefore))
+                }
+
+                // Capture the full tagged content including opening and closing tags.
+                val fullTaggedContent = rawText.substring(tagStart, closingPos + closingTag.length)
+                blocks.add(ContentBlock.CodeBlock("xml", fullTaggedContent))
+                currentIndex = closingPos + closingTag.length
+
+                // Skip one leading newline after the closing tag to prevent double-spacing.
+                if (currentIndex < rawText.length && rawText[currentIndex] == '\n') {
+                    currentIndex++
+                }
+            }
         }
         return blocks
     }
 
-    // ----- private helpers -----------------------------------------------------------------------
+    // ----- XML tag helpers -----------------------------------------------------------------------
+
+    /**
+     * Finds the next XML tag opener at or after [fromIndex] that appears at a valid position:
+     * at the start of the string, or immediately after a newline (with optional whitespace).
+     *
+     * @return A pair of (position, tagName), or null if no valid XML tag opener is found.
+     */
+    private fun findNextXmlTagOpen(rawText: String, fromIndex: Int): Pair<Int, String>? {
+        var searchFrom = fromIndex
+        while (searchFrom < rawText.length) {
+            val match = XML_TAG_OPEN.find(rawText, searchFrom) ?: return null
+            val pos = match.range.first
+            val tagName = match.groupValues[1]
+
+            // Only accept tags at line-start positions to avoid matching HTML in prose.
+            if (isAtLineStart(rawText, pos)) {
+                return Pair(pos, tagName)
+            }
+            searchFrom = match.range.last + 1
+        }
+        return null
+    }
+
+    // ----- code fence helpers --------------------------------------------------------
 
     /**
      * Starting from [searchFrom] (the index immediately after the opening ```), scans forward for
@@ -82,17 +161,12 @@ class BlockSeparatingParser {
         var depth = 1
         var i = searchFrom
 
-        // The position of the first newline after the opening fence.
-        // Before this point, allow mid-line closers (single-line blocks).
-        // After this point, require line-start fences only.
         val firstNewline = rawText.indexOf('\n', searchFrom)
 
         while (i < rawText.length) {
             val nextFence = rawText.indexOf("```", i)
-            if (nextFence == -1) return -1 // No more fences at all – unterminated.
+            if (nextFence == -1) return -1
 
-            // After the first newline, skip ``` that is embedded mid-line (noise).
-            // A fence is real if it's at line-start OR at line-end. Noise has content on both sides.
             val pastFirstLine = firstNewline != -1 && nextFence > firstNewline
             if (pastFirstLine && !isAtLineStart(rawText, nextFence) && !isAtLineEnd(rawText, nextFence)) {
                 i = nextFence + 3
@@ -111,12 +185,12 @@ class BlockSeparatingParser {
     }
 
     /**
-     * Returns true if the ``` at [fencePos] is at the start of a line: either at position 0,
+     * Returns true if the position [pos] is at the start of a line: either at position 0,
      * or preceded only by whitespace back to the nearest newline or start-of-string.
      */
-    private fun isAtLineStart(rawText: String, fencePos: Int): Boolean {
-        if (fencePos == 0) return true
-        var j = fencePos - 1
+    private fun isAtLineStart(rawText: String, pos: Int): Boolean {
+        if (pos == 0) return true
+        var j = pos - 1
         while (j >= 0) {
             val ch = rawText[j]
             if (ch == '\n') return true
@@ -138,7 +212,7 @@ class BlockSeparatingParser {
             if (ch != ' ' && ch != '\t') return false
             j++
         }
-        return true // Reached EOF
+        return true
     }
 
     /**
@@ -156,19 +230,16 @@ class BlockSeparatingParser {
         val afterFence = fencePos + 3
         if (afterFence >= rawText.length) return false
 
-        // First char must be a valid identifier start.
         val firstChar = rawText[afterFence]
         if (!(firstChar.isLetterOrDigit() || firstChar == '_')) return false
 
-        // Scan forward: a valid opening fence has an identifier that ends at a newline.
         var i = afterFence
         while (i < rawText.length) {
             val ch = rawText[i]
-            if (ch == '\n') return true  // Identifier followed by newline → genuine opener.
+            if (ch == '\n') return true
             if (!(ch.isLetterOrDigit() || ch == '_' || ch == '.' || ch == '-')) return false
             i++
         }
-        // Reached EOF without a newline → this is a closer (e.g. ```here at end of string).
         return false
     }
 
@@ -183,11 +254,9 @@ class BlockSeparatingParser {
         val code: String
 
         if (firstNewline != -1) {
-            // Multi-line block: language is on the first line, code is everything after.
             language = innerContent.substring(0, firstNewline).trim()
             code = innerContent.substring(firstNewline + 1)
         } else {
-            // Single-line block (e.g. ```raam_toastMessage Hello!```).
             val parts = innerContent.trim().split(Regex("\\s+"), 2)
             language = parts.getOrNull(0) ?: ""
             code = parts.getOrNull(1) ?: ""

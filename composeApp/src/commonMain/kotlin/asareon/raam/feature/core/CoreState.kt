@@ -61,7 +61,7 @@ data class CoreState(
 
     /**
      * PERSISTED VIA SETTINGS: When true, the active user's displayColor replaces
-     * the app's primary color scheme. Secondary is derived as hue-30°, S-25%, L-25%.
+     * the app's primary color scheme.
      * Hydrated from "core.use_identity_color" via SETTINGS_LOADED / VALUE_CHANGED.
      */
     @Transient

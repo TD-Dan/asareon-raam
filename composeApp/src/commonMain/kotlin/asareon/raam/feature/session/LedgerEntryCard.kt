@@ -27,6 +27,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.CodeEditor
+import asareon.raam.ui.components.MarkdownText
+import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -74,13 +77,20 @@ fun LedgerEntryCard(
         val hasMultipleBlocks = entry.content.size > 1
         when (firstBlock) {
             is ContentBlock.Text -> {
-                val firstLine = firstBlock.text.lineSequence().firstOrNull() ?: ""
+                val firstLine = firstBlock.text.lineSequence().firstOrNull()?.let { line ->
+                    // Strip leading markdown heading markers for a cleaner preview
+                    line.replace(Regex("""^#{1,6}\s+"""), "")
+                } ?: ""
                 val hasMoreLines = firstBlock.text.contains('\n')
                 val truncated = firstLine.length > 80 || hasMoreLines || hasMultipleBlocks
                 firstLine.take(80) + if (truncated) "…" else ""
             }
             is ContentBlock.CodeBlock -> if (firstBlock.language.startsWith(Version.APP_TOOL_PREFIX)) {
                 "Action '${firstBlock.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
+            } else if (firstBlock.language == "xml") {
+                val tagName = extractXmlTagName(firstBlock.code)
+                val label = tagName?.replaceFirstChar { it.uppercase() } ?: "Xml"
+                "[$label]"
             } else {
                 val firstLine = firstBlock.code.lineSequence().firstOrNull() ?: ""
                 val hasMoreLines = firstBlock.code.contains('\n')
@@ -427,70 +437,130 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             content.forEach { block ->
                 when (block) {
-                    is ContentBlock.Text -> Text(
-                        text = block.text,
-                        style = MaterialTheme.typography.bodyLarge
+                    is ContentBlock.Text -> MarkdownText(
+                        text = block.text
                     )
                     is ContentBlock.CodeBlock -> {
-                        val isAufAction = block.language.startsWith(Version.APP_TOOL_PREFIX)
-                        val headerLabel = if (isAufAction) {
-                            "Action '${block.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
-                        } else {
-                            block.language
-                        }
-                        val clipboardText = if (isAufAction) {
-                            "```${block.language}\n${block.code}\n```"
-                        } else {
-                            block.code
-                        }
-
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.surfaceDim,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                if (headerLabel.isNotBlank()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = headerLabel,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                        IconButton(
-                                            onClick = {
-                                                store.dispatch("session", Action(
-                                                    ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD,
-                                                    buildJsonObject { put("text", clipboardText) }
-                                                ))
-                                            },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.ContentCopy,
-                                                contentDescription = "Copy Code Block",
-                                                modifier = Modifier.size(16.dp),
-                                                tint = MaterialTheme.colorScheme.outline
-                                            )
-                                        }
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                }
-                                Text(
-                                    text = block.code,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
+                        CodeBlockView(store, block)
                     }
                 }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Unified Code Block View (code fences, AUF actions, and XML tags like <think>)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Extracts the root XML tag name from a code block's content.
+ * Looks for `<tagname>` at the start of the string (after optional whitespace).
+ * Returns null if no valid opening tag is found.
+ */
+private val XML_TAG_NAME_REGEX = Regex("""^\s*<([a-z_][a-z0-9_-]*)>""")
+
+private fun extractXmlTagName(code: String): String? =
+    XML_TAG_NAME_REGEX.find(code)?.groupValues?.get(1)
+
+/**
+ * A single, unified renderer for all [ContentBlock.CodeBlock] variants.
+ *
+ * Behaviour by language:
+ * - `"xml"` — header shows the extracted tag name (e.g. "Think"), **starts collapsed**.
+ * - AUF action (`raam_*`) — header shows `Action 'name'`, copy wraps in fences.
+ * - everything else — header shows language name, starts expanded.
+ *
+ * All variants share the same visual style: [surfaceDim] background, monospace body,
+ * copy button, and a clickable header with expand/collapse chevron.
+ */
+@Composable
+private fun CodeBlockView(store: Store, block: ContentBlock.CodeBlock) {
+    val isXml = block.language == "xml"
+    val isAufAction = block.language.startsWith(Version.APP_TOOL_PREFIX)
+
+    val headerLabel = when {
+        isXml -> {
+            val tagName = extractXmlTagName(block.code)
+            tagName?.replaceFirstChar { it.uppercase() } ?: "Xml"
+        }
+        isAufAction -> "Action '${block.language.removePrefix(Version.APP_TOOL_PREFIX)}'"
+        else -> block.language
+    }
+
+    val clipboardText = when {
+        isAufAction -> "```${block.language}\n${block.code}\n```"
+        else -> block.code
+    }
+
+    // XML blocks start collapsed; everything else starts expanded.
+    var isExpanded by remember { mutableStateOf(!isXml) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceDim,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            if (headerLabel.isNotBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { isExpanded = !isExpanded },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Text(
+                            text = headerLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            store.dispatch("session", Action(
+                                ActionRegistry.Names.CORE_COPY_TO_CLIPBOARD,
+                                buildJsonObject { put("text", clipboardText) }
+                            ))
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Code Block",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                CodeEditor(
+                    value = block.code,
+                    onValueChange = {},
+                    readOnly = true,
+                    bordered = false,
+                    syntax = when {
+                        isXml -> SyntaxMode.XML
+                        block.language.contains("json", ignoreCase = true) -> SyntaxMode.JSON
+                        block.language.contains("md", ignoreCase = true) ||
+                                block.language.contains("markdown", ignoreCase = true) -> SyntaxMode.MARKDOWN
+                        else -> SyntaxMode.NONE
+                    }
+                )
             }
         }
     }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -27,8 +26,8 @@ import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
-import aufapp.composeapp.generated.resources.Res
-import aufapp.composeapp.generated.resources.icon
+import asareonraam.composeapp.generated.resources.Res
+import asareonraam.composeapp.generated.resources.icon
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jetbrains.compose.resources.painterResource
@@ -50,24 +49,22 @@ fun GlobalActionRibbon(
         modifier = Modifier
             .fillMaxHeight()
             .width(50.dp)
-            .padding(vertical = 8.dp)
-            .height(12.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer) // background FIRST
+            .padding(vertical = 8.dp),                              // then padding
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // --- CORRECTED: Master Home Button using typesafe resources ---
+        // --- Master Home Button ---
         val payload = buildJsonObject { put("key", defaultViewKey) }
         IconButton(onClick = { store.deferredDispatch("system", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, payload)) }) {
             Icon(
                 painter = painterResource(Res.drawable.icon),
                 contentDescription = "Go to Default View (Session)",
-                // Using Color.Unspecified to render the PNG with its original colors, as per your working example.
                 tint = Color.Unspecified
             )
         }
 
-        // CORRECTED: Render ribbon content from all features using the new flexible slot.
+        // Render ribbon content from all features
         features.forEach { feature ->
             feature.composableProvider?.RibbonContent(
                 store = store,
@@ -84,7 +81,6 @@ fun GlobalActionRibbon(
                 expanded = isMenuExpanded,
                 onDismissRequest = { isMenuExpanded = false }
             ) {
-                // Render menu content from all features
                 features.forEach { feature ->
                     feature.composableProvider?.MenuContent(
                         store = store,

@@ -1,6 +1,11 @@
 package asareon.raam
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -10,6 +15,10 @@ import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
 import asareon.raam.ui.App
+import asareon.raam.ui.AppTheme
+import asareon.raam.ui.CustomTitleBar
+import asareonraam.composeapp.generated.resources.Res
+import asareonraam.composeapp.generated.resources.icon
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.FlowPreview
@@ -19,29 +28,22 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
+import org.jetbrains.compose.resources.painterResource
 
 /**
  * ## Mandate
  * The pure, logic-less entry point for the application.
  *
- * @version 2.6
+ * @version 2.8
  */
 @OptIn(FlowPreview::class)
 fun main() {
-    // [FIX] Instantiate dependencies globally to enable robust logging in the exception handler.
     val platformDependencies = PlatformDependencies(Version.APP_VERSION_MAJOR)
 
-    // [FIX] Universal Exception Guard
-    // This catches ALL uncaught exceptions from ANY thread (UI, IO, etc.) that bubble up to the top.
-    // It ensures that:
-    // 1. The error is written to our durable 'app.log' file (Universal Logging).
-    // 2. The user is notified via a dialog instead of a silent crash.
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-        // 1. Log to System.err for immediate console visibility
         System.err.println("FATAL: Uncaught exception on thread '${thread.name}'")
         throwable.printStackTrace()
 
-        // 2. Log to our internal durable logger
         platformDependencies.log(
             LogLevel.FATAL,
             "UncaughtExceptionHandler",
@@ -49,8 +51,6 @@ fun main() {
             throwable
         )
 
-        // 3. Notify the user (Universal UI Feedback)
-        // We use SwingUtilities because we might be on a non-EDT thread, or the EDT might be broken.
         SwingUtilities.invokeLater {
             try {
                 JOptionPane.showMessageDialog(
@@ -60,7 +60,6 @@ fun main() {
                     JOptionPane.ERROR_MESSAGE
                 )
             } catch (e: Exception) {
-                // If even the dialog fails, we can't do much more.
                 System.err.println("Failed to show error dialog: ${e.message}")
             }
         }
@@ -68,7 +67,6 @@ fun main() {
 
     application {
         val coroutineScope = rememberCoroutineScope()
-        // reuse the global instance
         val dependencies = remember { platformDependencies }
 
         val container = remember(dependencies, coroutineScope) {
@@ -92,29 +90,16 @@ fun main() {
                 exitApplication()
             },
             title = Version.APP_NAME,
-            state = windowState
+            icon = painterResource(Res.drawable.icon),
+            state = windowState,
+            undecorated = true,
         ) {
-            /**
-             * ## Hardened Startup Lifecycle Orchestration
-             * This effect orchestrates the critical, two-phase application startup to prevent race conditions.
-             * The sequence is guaranteed to be synchronous and sequential because `store.dispatch()` is a
-             * blocking call that completes all reducer and onAction invocations before returning.
-             *
-             * @see P-SYSTEM-002: Synchronous Startup Mandate
-             */
             LaunchedEffect(Unit) {
                 dependencies.applyNativeWindowDecorations(window)
-                // Phase 1: INITIALIZING. Triggers all features to register their settings definitions.
-                // The SettingsFeature then chains the load-from-disk sequence. All features must complete
-                // their synchronous setup in this phase.
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
-
-                // Phase 2: STARTING. Signals that all setup is complete. Features can now execute
-                // their main runtime logic (e.g., navigating, starting timers).
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
             }
 
-            // Synchronizes THE WINDOW TO THE STATE.
             LaunchedEffect(coreState?.windowWidth, coreState?.windowHeight) {
                 coreState?.let {
                     val stateSize = DpSize(it.windowWidth.dp, it.windowHeight.dp)
@@ -124,7 +109,6 @@ fun main() {
                 }
             }
 
-            // Synchronizes THE STATE TO THE WINDOW (after user mouse-drags).
             LaunchedEffect(windowState) {
                 snapshotFlow { windowState.size }
                     .debounce(500L)
@@ -144,7 +128,21 @@ fun main() {
                     }
             }
 
-            App(container.store, container.features)
+            // DWM handles rounded corners on Windows 11 via WindowsSnapHelper.
+            // The window ref flows through the lambda closure to CustomTitleBar.
+            AppTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    App(
+                        store = container.store,
+                        features = container.features,
+                        titleBar = { CustomTitleBar(window) }
+                    )
+                }
+            }
         }
     }
 }

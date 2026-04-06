@@ -10,13 +10,15 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.core.resolveDisplayColor
 import asareon.raam.feature.core.ConfirmationDialog
 import asareon.raam.feature.core.CoreState
-import asareon.raam.ui.components.colorToHsl
-import asareon.raam.ui.components.hslToColor
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 @Composable
-fun App(store: Store, features: List<Feature>) {
+fun App(
+    store: Store,
+    features: List<Feature>,
+    titleBar: @Composable () -> Unit = {}
+) {
     val appState by store.state.collectAsState()
     val coreState = remember(appState.featureStates) {
         appState.featureStates["core"] as? CoreState
@@ -32,49 +34,28 @@ fun App(store: Store, features: List<Feature>) {
     }
 
     // ── Identity-based theme override ────────────────────────────────
-    // When the setting is enabled, derive primary + secondary from the
-    // active user's displayColor. Secondary is hue-30°, S×0.75, L×0.75.
-    val primaryOverride: Color?
-    val secondaryOverride: Color?
-
-    if (coreState?.useIdentityColorAsPrimary == true) {
+    val primaryOverride: Color? = if (coreState?.useIdentityColorAsPrimary == true) {
         val activeIdentity = coreState.activeUserId?.let { appState.identityRegistry[it] }
-        val identityColor = activeIdentity?.resolveDisplayColor()
-        if (identityColor != null) {
-            primaryOverride = identityColor
-            val hsl = colorToHsl(identityColor)
-            val secHue = (hsl[0] + 20f + 360f) % 360f
-            val secSat = (hsl[1] * 0.75f).coerceIn(0f, 1f)
-            val secLit = (hsl[2] * 0.75f).coerceIn(0f, 1f)
-            secondaryOverride = hslToColor(secHue, secSat, secLit)
-        } else {
-            primaryOverride = null
-            secondaryOverride = null
-        }
-    } else {
-        primaryOverride = null
-        secondaryOverride = null
-    }
+        activeIdentity?.resolveDisplayColor()
+    } else null
 
-    AppTheme(primaryOverride = primaryOverride, secondaryOverride = secondaryOverride) {
+    AppTheme(primaryOverride = primaryOverride) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { paddingValues ->
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                MainAppContent(store, features)
+                MainAppContent(store, features, titleBar)
 
                 // --- GLOBAL DIALOGS ---
                 coreState?.confirmationRequest?.let { request ->
                     ConfirmationDialog(
                         request = request,
                         onConfirm = {
-                            // THE FIX: Dispatch the secure response action.
                             store.dispatch("system", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
                                 put("confirmed", true)
                             }))
                         },
                         onDismiss = {
-                            // THE FIX: Explicitly dispatch the 'dismiss' response.
                             store.dispatch("system", Action(ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG, buildJsonObject {
                                 put("confirmed", false)
                             }))
@@ -87,7 +68,11 @@ fun App(store: Store, features: List<Feature>) {
 }
 
 @Composable
-private fun MainAppContent(store: Store, features: List<Feature>) {
+private fun MainAppContent(
+    store: Store,
+    features: List<Feature>,
+    titleBar: @Composable () -> Unit
+) {
     val appState by store.state.collectAsState()
     val activeViewKey = (appState.featureStates["core"] as? CoreState)?.activeViewKey
 
@@ -102,12 +87,15 @@ private fun MainAppContent(store: Store, features: List<Feature>) {
     Row(Modifier.fillMaxSize()) {
         GlobalActionRibbon(store, features, activeViewKey)
         VerticalDivider()
-        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            if (activeStageContent != null) {
-                // Pass the full feature list down to the active view.
-                activeStageContent(store, features)
-            } else {
-                Text("Error: No view found for key '$activeViewKey'")
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            titleBar()
+            HorizontalDivider()
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (activeStageContent != null) {
+                    activeStageContent(store, features)
+                } else {
+                    Text("Error: No view found for key '$activeViewKey'")
+                }
             }
         }
     }
