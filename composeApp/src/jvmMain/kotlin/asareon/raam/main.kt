@@ -22,6 +22,7 @@ import asareonraam.composeapp.generated.resources.Res
 import asareonraam.composeapp.generated.resources.icon
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
+import asareon.raam.util.BootConfig
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -66,6 +67,9 @@ fun main() {
         }
     }
 
+    // Pre-load window dimensions from boot.ini (synchronous, before Compose).
+    val bootSize = BootConfig.readWindowSize(platformDependencies)
+
     application {
         val coroutineScope = rememberCoroutineScope()
         val dependencies = remember { platformDependencies }
@@ -83,8 +87,8 @@ fun main() {
         val coreState = appState.featureStates["core"] as? CoreState
 
         val windowState = rememberWindowState(
-            width = (coreState?.windowWidth ?: 1200).dp,
-            height = (coreState?.windowHeight ?: 800).dp
+            width = (bootSize?.width ?: coreState?.windowWidth ?: 600).dp,
+            height = (bootSize?.height ?: coreState?.windowHeight ?: 480).dp
         )
 
         Window(

@@ -28,6 +28,8 @@ fun BootConsoleView(bootLog: List<BootLogEntry>) {
         }
     }
 
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -43,7 +45,7 @@ fun BootConsoleView(bootLog: List<BootLogEntry>) {
                     color = when (entry.level) {
                         LogLevel.ERROR, LogLevel.FATAL -> Color(0xFFFF4444)
                         LogLevel.WARN -> Color(0xFFFF9800)
-                        else -> Color.White
+                        else -> primaryColor
                     },
                     modifier = Modifier.padding(vertical = 1.dp)
                 )

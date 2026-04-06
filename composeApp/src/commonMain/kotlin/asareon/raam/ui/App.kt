@@ -50,7 +50,10 @@ fun App(
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                 Crossfade(targetState = coreState?.booting != false, animationSpec = tween(2000)) { isBooting ->
                     if (isBooting) {
-                        BootConsoleView(bootLog)
+                        if (coreState?.showBootConsole == true) {
+                            BootConsoleView(bootLog)
+                        }
+                        // else: blank screen while booting (still defers MainAppContent to fix window-size race)
                     } else {
                         MainAppContent(store, features, titleBar)
                     }
