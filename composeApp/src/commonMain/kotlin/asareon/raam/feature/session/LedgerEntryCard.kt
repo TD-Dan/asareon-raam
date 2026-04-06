@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
+import asareon.raam.ui.components.MarkdownText
 import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.booleanOrNull
@@ -76,7 +77,10 @@ fun LedgerEntryCard(
         val hasMultipleBlocks = entry.content.size > 1
         when (firstBlock) {
             is ContentBlock.Text -> {
-                val firstLine = firstBlock.text.lineSequence().firstOrNull() ?: ""
+                val firstLine = firstBlock.text.lineSequence().firstOrNull()?.let { line ->
+                    // Strip leading markdown heading markers for a cleaner preview
+                    line.replace(Regex("""^#{1,6}\s+"""), "")
+                } ?: ""
                 val hasMoreLines = firstBlock.text.contains('\n')
                 val truncated = firstLine.length > 80 || hasMoreLines || hasMultipleBlocks
                 firstLine.take(80) + if (truncated) "…" else ""
@@ -433,9 +437,8 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             content.forEach { block ->
                 when (block) {
-                    is ContentBlock.Text -> Text(
-                        text = block.text,
-                        style = MaterialTheme.typography.bodyLarge
+                    is ContentBlock.Text -> MarkdownText(
+                        text = block.text
                     )
                     is ContentBlock.CodeBlock -> {
                         CodeBlockView(store, block)
