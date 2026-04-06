@@ -168,17 +168,17 @@ fun AppTheme(
         else
             primaryOverride.copy(alpha = 1f)
 
-        // ── Derive secondary: hue−30°, saturation×0.75, lightness×0.75 ──
+        // ── Derive secondary: hue+10°, saturation×0.75, lightness×1.00 ──
         val resolvedSecondary = secondaryOverride ?: run {
             val (h, s, l) = colorToHsl(primaryOverride)
-            hslToColor((h - 30f + 360f) % 360f, s * 0.75f, l * 0.75f)
+            hslToColor((h + 10f + 360f) % 360f, s * 0.75f, l * 1.0f)
         }
         val onSecondary = contrastingOnColor(resolvedSecondary)
 
-        // ── Derive tertiary: hue+60°, saturation×0.85 ──────────────────
+        // ── Derive tertiary: hue+60°, saturation×0.85, lightness×1.00 ───
         val resolvedTertiary = run {
             val (h, s, l) = colorToHsl(primaryOverride)
-            hslToColor((h + 60f) % 360f, s * 0.85f, l)
+            hslToColor((h + 60f) % 360f, s * 0.85f, l * 1.00f)
         }
         val onTertiary = contrastingOnColor(resolvedTertiary)
 
