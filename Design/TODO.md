@@ -102,13 +102,14 @@ BUG: gocnitivepipeline 969: should error not default
 
 # GATEWAY
 - streaming support for gateways
+- add MINIMAX API
 
 
 # SESSION
 - Need to be able to edit session names and reorder from the tab bar
 - Delete session from tab right click menu
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
-- non destructive ledger deletions. Why are we permanantly deleting entries when modern storage capacity is practically unlimited for text.
+- non destructive ledger deletions and edits. Why are we permanantly deleting entries when modern storage capacity is practically unlimited for text.
 
 
 ## WorkspacePane
