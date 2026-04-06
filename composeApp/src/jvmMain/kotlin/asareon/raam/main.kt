@@ -1,6 +1,12 @@
 package asareon.raam
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -10,8 +16,11 @@ import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
 import asareon.raam.ui.App
+import asareon.raam.ui.AppTheme
+import asareon.raam.ui.LocalAppWindow
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
+import asareon.raam.util.WindowsSnapHelper
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -24,24 +33,16 @@ import javax.swing.SwingUtilities
  * ## Mandate
  * The pure, logic-less entry point for the application.
  *
- * @version 2.6
+ * @version 2.8
  */
 @OptIn(FlowPreview::class)
 fun main() {
-    // [FIX] Instantiate dependencies globally to enable robust logging in the exception handler.
     val platformDependencies = PlatformDependencies(Version.APP_VERSION_MAJOR)
 
-    // [FIX] Universal Exception Guard
-    // This catches ALL uncaught exceptions from ANY thread (UI, IO, etc.) that bubble up to the top.
-    // It ensures that:
-    // 1. The error is written to our durable 'app.log' file (Universal Logging).
-    // 2. The user is notified via a dialog instead of a silent crash.
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-        // 1. Log to System.err for immediate console visibility
         System.err.println("FATAL: Uncaught exception on thread '${thread.name}'")
         throwable.printStackTrace()
 
-        // 2. Log to our internal durable logger
         platformDependencies.log(
             LogLevel.FATAL,
             "UncaughtExceptionHandler",
@@ -49,8 +50,6 @@ fun main() {
             throwable
         )
 
-        // 3. Notify the user (Universal UI Feedback)
-        // We use SwingUtilities because we might be on a non-EDT thread, or the EDT might be broken.
         SwingUtilities.invokeLater {
             try {
                 JOptionPane.showMessageDialog(
@@ -60,7 +59,6 @@ fun main() {
                     JOptionPane.ERROR_MESSAGE
                 )
             } catch (e: Exception) {
-                // If even the dialog fails, we can't do much more.
                 System.err.println("Failed to show error dialog: ${e.message}")
             }
         }
@@ -68,7 +66,6 @@ fun main() {
 
     application {
         val coroutineScope = rememberCoroutineScope()
-        // reuse the global instance
         val dependencies = remember { platformDependencies }
 
         val container = remember(dependencies, coroutineScope) {
@@ -92,29 +89,28 @@ fun main() {
                 exitApplication()
             },
             title = Version.APP_NAME,
-            state = windowState
+            state = windowState,
+            undecorated = true,
+            transparent = true,
         ) {
-            /**
-             * ## Hardened Startup Lifecycle Orchestration
-             * This effect orchestrates the critical, two-phase application startup to prevent race conditions.
-             * The sequence is guaranteed to be synchronous and sequential because `store.dispatch()` is a
-             * blocking call that completes all reducer and onAction invocations before returning.
-             *
-             * @see P-SYSTEM-002: Synchronous Startup Mandate
-             */
             LaunchedEffect(Unit) {
                 dependencies.applyNativeWindowDecorations(window)
-                // Phase 1: INITIALIZING. Triggers all features to register their settings definitions.
-                // The SettingsFeature then chains the load-from-disk sequence. All features must complete
-                // their synchronous setup in this phase.
-                container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
 
-                // Phase 2: STARTING. Signals that all setup is complete. Features can now execute
-                // their main runtime logic (e.g., navigating, starting timers).
+                // Install native Windows snap layouts, drag, resize, and button handling.
+                // Pixel dimensions are computed from dp values using the display scale factor.
+                // Layout: [Ribbon 50dp] [Divider 1dp] [Title bar 36dp tall, buttons 36dp wide]
+                val scale = window.graphicsConfiguration.defaultTransform.scaleY
+                WindowsSnapHelper.install(
+                    window = window,
+                    titleBarHeightPx = (36 * scale).toInt(),
+                    buttonWidthPx = (36 * scale).toInt(),
+                    ribbonWidthPx = (51 * scale).toInt()  // 50dp ribbon + 1dp divider
+                )
+
+                container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_INITIALIZING))
                 container.store.dispatch("system.main", Action(ActionRegistry.Names.SYSTEM_RUNNING))
             }
 
-            // Synchronizes THE WINDOW TO THE STATE.
             LaunchedEffect(coreState?.windowWidth, coreState?.windowHeight) {
                 coreState?.let {
                     val stateSize = DpSize(it.windowWidth.dp, it.windowHeight.dp)
@@ -124,7 +120,6 @@ fun main() {
                 }
             }
 
-            // Synchronizes THE STATE TO THE WINDOW (after user mouse-drags).
             LaunchedEffect(windowState) {
                 snapshotFlow { windowState.size }
                     .debounce(500L)
@@ -144,7 +139,18 @@ fun main() {
                     }
             }
 
-            App(container.store, container.features)
+            CompositionLocalProvider(LocalAppWindow provides window) {
+                AppTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        App(container.store, container.features)
+                    }
+                }
+            }
         }
     }
 }
