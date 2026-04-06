@@ -30,7 +30,7 @@ sealed interface ContentBlock {
     @Serializable
     data class CodeBlock(val language: String, val code: String) : ContentBlock
     @Serializable
-    data class XmlTagBlock(val tag: String, val children: List<ContentBlock>) : ContentBlock
+    data class XmlTagBlock(val tag: String, val content: String) : ContentBlock
 }
 
 /**

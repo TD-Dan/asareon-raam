@@ -260,7 +260,8 @@
       },
       "required_permissions": [
         "session:read"
-      ]
+      ],
+      "hidden": true
     },
     {
       "action_name": "session.SET_ACTIVE_TAB",
@@ -469,7 +470,7 @@
     },
     {
       "action_name": "session.CLEAR",
-      "summary": "Removes all messages from a session's ledger that are not locked (marked [\uD83D\uDD12]).",
+      "summary": "Removes all messages from a session's ledger that are not locked (marked [\ud83d\udd12]).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -1134,7 +1135,8 @@
       },
       "required_permissions": [
         "session:read-files"
-      ]
+      ],
+      "hidden": true
     },
     {
       "action_name": "session.RETURN_WORKSPACE_FILES",
@@ -1205,7 +1207,8 @@
       },
       "required_permissions": [
         "session:read-files"
-      ]
+      ],
+      "hidden": true
     },
     {
       "action_name": "session.RETURN_WORKSPACE_FILE",

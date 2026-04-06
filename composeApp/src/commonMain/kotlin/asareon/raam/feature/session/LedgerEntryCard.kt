@@ -89,10 +89,9 @@ fun LedgerEntryCard(
             }
             is ContentBlock.XmlTagBlock -> {
                 val label = firstBlock.tag.replaceFirstChar { it.uppercase() }
-                val firstText = firstBlock.children.filterIsInstance<ContentBlock.Text>()
-                    .firstOrNull()?.text?.lineSequence()?.firstOrNull() ?: ""
-                val truncated = firstText.length > 60 || hasMultipleBlocks
-                "[$label] ${firstText.take(60)}" + if (truncated) "…" else ""
+                val firstLine = firstBlock.content.lineSequence().firstOrNull() ?: ""
+                val truncated = firstLine.length > 60 || hasMultipleBlocks
+                "[$label] ${firstLine.take(60)}" + if (truncated) "…" else ""
             }
             null -> {
                 val raw = entry.rawContent ?: ""
@@ -497,7 +496,7 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
                             }
                         }
                     }
-                    is ContentBlock.XmlTagBlock -> XmlTagBlockView(store, block)
+                    is ContentBlock.XmlTagBlock -> XmlTagBlockView(block)
                 }
             }
         }
@@ -519,7 +518,7 @@ private fun ParsedContentView(store: Store, content: List<ContentBlock>, rawCont
  * to signal "internal model output".
  */
 @Composable
-private fun XmlTagBlockView(store: Store, block: ContentBlock.XmlTagBlock) {
+private fun XmlTagBlockView(block: ContentBlock.XmlTagBlock) {
     var isExpanded by remember { mutableStateOf(false) }
     val displayLabel = block.tag.replaceFirstChar { it.uppercase() }
 
@@ -552,10 +551,7 @@ private fun XmlTagBlockView(store: Store, block: ContentBlock.XmlTagBlock) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (!isExpanded) {
-                    // Show a faded preview from the first text child when collapsed
-                    val preview = block.children
-                        .filterIsInstance<ContentBlock.Text>()
-                        .firstOrNull()?.text?.lineSequence()?.firstOrNull()?.take(80) ?: ""
+                    val preview = block.content.lineSequence().firstOrNull()?.take(80) ?: ""
                     if (preview.isNotBlank()) {
                         Text(
                             text = preview,
@@ -569,11 +565,14 @@ private fun XmlTagBlockView(store: Store, block: ContentBlock.XmlTagBlock) {
                 }
             }
 
-            // ── Expandable content — reuses ParsedContentView rendering ──
+            // ── Expandable content ────────────────────────────────────
             AnimatedVisibility(visible = isExpanded) {
-                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
-                    ParsedContentView(store, block.children, rawContent = null)
-                }
+                Text(
+                    text = block.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                )
             }
         }
     }

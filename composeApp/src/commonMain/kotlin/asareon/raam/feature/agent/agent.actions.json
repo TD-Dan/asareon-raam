@@ -537,7 +537,7 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
           },
           "updates": {
             "type": "object",
@@ -1137,7 +1137,7 @@
     },
     {
       "action_name": "agent.CONTEXT_UNCOLLAPSE",
-      "summary": "Expands a context partition, holon file, or workspace entry so the agent can see its full content in the next turn.",
+      "summary": "Expands a context partition so you can see its full content in your next turn. This is the primary way to browse session workspace files. Use partitionKey format \"sf:{sessionId}:{path}\" with scope \"subtree\" to expand directories. Example: {\"partitionKey\": \"sf:session.my-session:folder/subfolder/\", \"scope\": \"subtree\"}",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -1146,7 +1146,7 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
           },
           "partitionKey": {
             "type": "string",
@@ -1173,7 +1173,7 @@
     },
     {
       "action_name": "agent.CONTEXT_COLLAPSE",
-      "summary": "Collapses a context partition, holon file, or workspace entry so it shows only a summary in the next turn.",
+      "summary": "Collapses a context partition so it shows only a summary in the next turn. Use to free up context budget after you are done inspecting a file or directory.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -1182,7 +1182,7 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional — defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
           },
           "partitionKey": {
             "type": "string",

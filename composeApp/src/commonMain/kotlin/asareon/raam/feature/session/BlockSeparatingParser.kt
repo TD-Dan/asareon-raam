@@ -103,8 +103,7 @@ class BlockSeparatingParser {
                 }
 
                 val innerContent = rawText.substring(openTagEnd, closingPos)
-                val children = parse(innerContent.trim())
-                blocks.add(ContentBlock.XmlTagBlock(tagName, children))
+                blocks.add(ContentBlock.CodeBlock("xml:$tagName", innerContent.trim()))
                 currentIndex = closingPos + closingTag.length
             }
         }
