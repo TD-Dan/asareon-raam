@@ -6,6 +6,10 @@ A multi-platform runtime for hosting autonomous AI agents. Kotlin Multiplatform,
 
 ---
 
+<img width="1127" height="1184" alt="image" src="https://github.com/user-attachments/assets/7b1fd325-f6c1-4e1f-b60b-004873431141" />
+
+---
+
 ### Security First
 
 Every action passes through identity verification, authorization, and permission gating before any state change occurs. Deny-by-default. All grants, denials, and escalations are logged. A visual permission matrix gives the operator full control over what every agent, user, and session is allowed to do.
@@ -24,7 +28,7 @@ Users dispatch the same actions agents use via `/` commands in any session. Same
 
 ### Pluggable Cognition
 
-Swappable cognitive strategies define how agents think — from single-turn request/response to multi-phase cognition with constitutional alignment, private thinking sessions, persistent cognitive state, and knowledge graph integration.
+Swappable cognitive strategies define how agents think - from single-turn request/response to multi-phase cognition with constitutional alignment, private thinking sessions, persistent cognitive state, and knowledge graph integration.
 
 ### Persistent Memory
 
@@ -32,7 +36,7 @@ Holon Knowledge Graphs for structured long-term memory. NVRAM for cognitive stat
 
 ### Multi-Provider Gateway
 
-Centralized AI routing behind a single permission gate. Ships with Gemini, OpenAI, Anthropic, and Inception. Easily extendable — adding a new API provider or local LLM requires implementing one interface.
+Centralized AI routing behind a single permission gate. Ships with Gemini, OpenAI, Anthropic, and Inception. Easily extendable - adding a new API provider or local LLM requires implementing one interface.
 
 ---
 
@@ -40,9 +44,9 @@ Centralized AI routing behind a single permission gate. Ships with Gemini, OpenA
 
 Each agent is individually configurable: cognitive strategy, host LLM, custom system prompts, display icon, and color.
 
-Agents have access to a catalog of nearly 100 application actions — filesystem operations, knowledge graph queries, session management, application settings, direct gateway access, and agent lifecycle management. Agents can create, configure, and manage other agents. What you can do with the application, an agent can do too, if granted permission.
+Agents have access to a catalog of nearly 100 application actions - filesystem operations, knowledge graph queries, session management, application settings, direct gateway access, and agent lifecycle management. Agents can create, configure, and manage other agents. What you can do with the application, an agent can do too, if granted permission.
 
-Filesystem access ranges from a read-only sandboxed work folder to full OS file read/write — the operator decides per agent. Chain-of-thought reasoning runs on private cognition sessions invisible to other participants.
+Filesystem access ranges from a read-only sandboxed work folder to full OS file read/write - the operator decides per agent. Chain-of-thought reasoning runs on private cognition sessions invisible to other participants.
 
 ## More Features
 
@@ -53,7 +57,7 @@ Filesystem access ranges from a read-only sandboxed work folder to full OS file 
 
 ## Planned: Fractal Multi-Agent Cognition
 
-The next milestone adds an ensemble architecture where sub-agents — Critic, Timekeeper, Affect Monitor, Honesty Checker, Librarian, and others — are real agent instances that deliberate in parallel before the main agent responds. Sub-agents can have sub-agents. The architecture recurses without special-casing. See `MultiAgent_Consciousness_Architecture.md`.
+The next milestone adds an ensemble architecture where sub-agents - Critic, Timekeeper, Affect Monitor, Honesty Checker, Librarian, and others - are real agent instances that deliberate in parallel before the main agent responds. Sub-agents can have sub-agents. The architecture recurses without special-casing. See `MultiAgent_Consciousness_Architecture.md`.
 
 ## Documentation
 
@@ -75,7 +79,7 @@ Features never import each other. All communication is string-named actions with
 
 ## Tech Stack
 
-Multiplatform by default. Porting to a new target requires writing an entry point and providing a single `PlatformDependencies` implementation. No extra dependencies beyond the bare minimum — Kotlin Multiplatform, Compose Multiplatform (Material 3), Ktor, and kotlinx.serialization. Small dependency surface by design to minimize attack vectors. JDK 21+.
+Multiplatform by default. Porting to a new target requires writing an entry point and providing a single `PlatformDependencies` implementation. No extra dependencies beyond the bare minimum - Kotlin Multiplatform, Compose Multiplatform (Material 3), Ktor, and kotlinx.serialization. Small dependency surface by design to minimize attack vectors. JDK 21+.
 
 ## License
 
