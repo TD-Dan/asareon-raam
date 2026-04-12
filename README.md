@@ -57,8 +57,10 @@ Filesystem access ranges from a read-only sandboxed work folder to full OS file 
 ---
 
 ## Planned for 1.0: LUA scripting support for app and agents. DONE DRAFT LEVEL
+Can Run scripts on app level. Scripts are identities that can access all app according to their permisssions.
 
 ## Planned for 1.0: Token compression strategies. DONE
+Uses TOON, abbreviations, terse descriptions, compact headers, etc.
 
 ## Planned for 1.1: Fractal Multi-Agent Cognition
 
