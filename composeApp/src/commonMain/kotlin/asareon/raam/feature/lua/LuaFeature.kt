@@ -8,7 +8,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
-import asareon.raam.feature.agent.CognitiveStrategyRegistry
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
@@ -20,6 +19,10 @@ import kotlinx.serialization.json.*
  *
  * ## Layer
  * L3 (Actors) — alongside AgentRuntime and CommandBot.
+ *
+ * ## File I/O
+ * All filesystem access goes through the FileSystem feature via action dispatch.
+ * Async responses are correlated via [LuaState.pendingFileOps].
  *
  * ## Security
  * Each script is a registered identity in the "lua.*" namespace, subject to the full
@@ -35,24 +38,22 @@ class LuaFeature(
         handle = "lua",
         localHandle = "lua",
         name = "Lua Scripting",
-        displayColor = "#7C4DFF",  // Deep purple
+        displayColor = "#7C4DFF",
         displayIcon = "code"
     )
 
     private val runtime = LuaRuntime()
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
-    /** Maximum console entries per script before oldest are dropped. */
     private val maxConsoleEntries = 200
-
-    /** Re-entrancy guard: tracks scripts currently executing callbacks. */
     private val scriptsInCallback = mutableSetOf<String>()
-
-    /** Cascade depth tracker for recursive dispatch detection. */
     private var currentCascadeDepth = 0
     private val maxCascadeDepth = 3
+    private var correlationCounter = 0L
 
     private lateinit var store: Store
+
+    private fun nextCorrelationId(prefix: String): String = "lua:$prefix:${++correlationCounter}"
 
     override val composableProvider: Feature.ComposableProvider = object : Feature.ComposableProvider {
         private val viewKey = "lua.script-manager"
@@ -84,8 +85,37 @@ class LuaFeature(
         this.store = store
         runtime.setBridgeListener(createBridgeListener())
 
-        // Register the Lua cognitive strategy for agents
-        CognitiveStrategyRegistry.register(LuaStrategy(this))
+        // Register Lua as an external cognitive strategy via the action bus.
+        // No agent feature imports — pure action-based protocol.
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+            payload = buildJsonObject {
+                put("strategyId", "agent.strategy.lua")
+                put("displayName", "Lua Script")
+                put("featureHandle", identity.handle)
+                put("resourceSlots", buildJsonArray {
+                    add(buildJsonObject {
+                        put("slotId", "system_instruction")
+                        put("type", "SYSTEM_INSTRUCTION")
+                        put("displayName", "System Instructions")
+                        put("description", "Context instructions passed to the Lua script via ctx.resources.")
+                        put("isRequired", false)
+                    })
+                })
+                put("configFields", buildJsonArray {
+                    add(buildJsonObject {
+                        put("key", "outputSessionId")
+                        put("type", "OUTPUT_SESSION")
+                        put("displayName", "Output Session")
+                        put("description", "The session where the Lua agent's responses are posted.")
+                    })
+                })
+                put("initialState", buildJsonObject {
+                    put("phase", "READY")
+                    put("turnCount", 0)
+                })
+            }
+        ))
     }
 
     // ========================================================================
@@ -99,11 +129,9 @@ class LuaFeature(
             ActionRegistry.Names.LUA_LOAD_SCRIPT -> {
                 val payload = action.payload ?: return luaState
                 val scriptPath = payload["scriptPath"]?.jsonPrimitive?.contentOrNull ?: return luaState
-                val localHandle = payload["localHandle"]?.jsonPrimitive?.contentOrNull
-                    ?: scriptPath.substringAfterLast("/").substringBeforeLast(".lua")
-                        .lowercase().replace(Regex("[^a-z0-9-]"), "-")
-                        .replace(Regex("-+"), "-").trimStart('-').trimEnd('-')
-                        .ifEmpty { "unnamed" }
+                val localHandle = deriveLocalHandle(
+                    payload["localHandle"]?.jsonPrimitive?.contentOrNull, scriptPath
+                )
                 val autostart = payload["autostart"]?.jsonPrimitive?.booleanOrNull ?: false
                 val handle = "lua.$localHandle"
 
@@ -120,7 +148,8 @@ class LuaFeature(
                 )
             }
 
-            ActionRegistry.Names.LUA_UNLOAD_SCRIPT -> {
+            ActionRegistry.Names.LUA_UNLOAD_SCRIPT,
+            ActionRegistry.Names.LUA_DELETE_SCRIPT -> {
                 val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return luaState
                 luaState.copy(
                     scripts = luaState.scripts - handle,
@@ -152,6 +181,42 @@ class LuaFeature(
                 )
             }
 
+            ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> {
+                val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return luaState
+                val script = luaState.scripts[handle] ?: return luaState
+                val newStatus = if (script.status == ScriptStatus.RUNNING || script.status == ScriptStatus.LOADING) {
+                    ScriptStatus.STOPPED
+                } else {
+                    ScriptStatus.LOADING
+                }
+                luaState.copy(
+                    scripts = luaState.scripts + (handle to script.copy(status = newStatus))
+                )
+            }
+
+            ActionRegistry.Names.LUA_SCRIPT_LOADED -> {
+                val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return luaState
+                val sourceContent = action.payload?.get("sourceContent")?.jsonPrimitive?.contentOrNull
+                val script = luaState.scripts[handle] ?: return luaState
+                luaState.copy(
+                    scripts = luaState.scripts + (handle to script.copy(
+                        status = ScriptStatus.RUNNING,
+                        lastError = null,
+                        sourceContent = sourceContent ?: script.sourceContent
+                    ))
+                )
+            }
+
+            ActionRegistry.Names.LUA_SAVE_SCRIPT -> {
+                // Update sourceContent in state when saved
+                val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return luaState
+                val content = action.payload?.get("content")?.jsonPrimitive?.contentOrNull ?: return luaState
+                val script = luaState.scripts[handle] ?: return luaState
+                luaState.copy(
+                    scripts = luaState.scripts + (handle to script.copy(sourceContent = content))
+                )
+            }
+
             else -> luaState
         }
     }
@@ -167,33 +232,38 @@ class LuaFeature(
             ActionRegistry.Names.LUA_RELOAD_SCRIPT -> handleReloadScript(action, store)
             ActionRegistry.Names.LUA_EVAL -> handleEval(action, store)
             ActionRegistry.Names.LUA_LIST_SCRIPTS -> handleListScripts(action, store)
-            else -> {
-                // Deliver broadcast events to scripts (if this action is broadcast)
-                deliverBroadcastToScripts(action)
-            }
+            ActionRegistry.Names.LUA_CREATE_SCRIPT -> handleCreateScript(action, store)
+            ActionRegistry.Names.LUA_DELETE_SCRIPT -> handleDeleteScript(action, store)
+            ActionRegistry.Names.LUA_CLONE_SCRIPT -> handleCloneScript(action, store)
+            ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> handleToggleScript(action, store, previousState)
+            ActionRegistry.Names.LUA_SAVE_SCRIPT -> handleSaveScript(action, store)
+
+            // External strategy turn request from the agent pipeline
+            ActionRegistry.Names.AGENT_EXTERNAL_TURN_REQUEST -> handleExternalTurnRequest(action, store)
+
+            // App lifecycle: discover existing scripts on startup
+            ActionRegistry.Names.SYSTEM_RUNNING -> handleAppStartup(store)
+
+            // Async filesystem responses
+            ActionRegistry.Names.FILESYSTEM_RETURN_READ -> handleFileReadResponse(action, store)
+            ActionRegistry.Names.FILESYSTEM_RETURN_LIST -> handleFileListResponse(action, store)
+
+            else -> deliverBroadcastToScripts(action)
         }
     }
 
-    private fun handleLoadScript(action: Action, store: Store) {
-        val payload = action.payload ?: return
-        val scriptPath = payload["scriptPath"]?.jsonPrimitive?.contentOrNull ?: return
-        val localHandle = payload["localHandle"]?.jsonPrimitive?.contentOrNull
-            ?: scriptPath.substringAfterLast("/").substringBeforeLast(".lua")
-                .lowercase().replace(Regex("[^a-z0-9-]"), "-")
-                .replace(Regex("-+"), "-").trimStart('-').trimEnd('-')
-                .ifEmpty { "unnamed" }
-        val handle = "lua.$localHandle"
+    // ========================================================================
+    // LOAD_SCRIPT: dispatch filesystem.READ → wait for RETURN_READ
+    // ========================================================================
 
-        // Read the script file from workspace
-        val sourceCode = try {
-            platformDependencies.readFileContent(
-                platformDependencies.getBasePathFor(asareon.raam.util.BasePath.APP_ZONE) +
-                        "${platformDependencies.pathSeparator}lua${platformDependencies.pathSeparator}$scriptPath"
-            )
-        } catch (e: Exception) {
-            dispatchScriptError(handle, "Failed to read script file: ${e.message}", "load")
-            return
-        }
+    private fun handleLoadScript(action: Action, store: Store) {
+        val payload = action.payload ?: return logMissingPayload("LOAD_SCRIPT")
+        val scriptPath = payload["scriptPath"]?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("LOAD_SCRIPT", "scriptPath")
+        val localHandle = deriveLocalHandle(
+            payload["localHandle"]?.jsonPrimitive?.contentOrNull, scriptPath
+        )
+        val handle = "lua.$localHandle"
 
         // Register script identity
         store.deferredDispatch(identity.handle, Action(
@@ -204,37 +274,36 @@ class LuaFeature(
             }
         ))
 
-        // Execute in the Lua runtime
-        val result = runtime.loadScript(handle, localHandle, sourceCode)
-        if (result.success) {
-            // Update state to RUNNING
-            val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return
-            val script = currentState.scripts[handle] ?: return
-            store.deferredDispatch(identity.handle, Action(
-                name = ActionRegistry.Names.LUA_SCRIPT_LOADED,
-                payload = buildJsonObject {
-                    put("scriptHandle", handle)
-                    put("scriptName", localHandle)
-                    put("scriptPath", scriptPath)
-                }
-            ))
+        // Request the file content from FileSystem
+        val correlationId = nextCorrelationId("load")
+        trackPendingOp(store, PendingFileOp(
+            correlationId = correlationId,
+            opType = "load",
+            scriptHandle = handle,
+            extra = mapOf("localHandle" to localHandle, "scriptPath" to scriptPath)
+        ))
 
-            platformDependencies.log(LogLevel.INFO, identity.handle, "Script loaded: $handle")
-        } else {
-            dispatchScriptError(handle, result.error ?: "Unknown error", "load")
-        }
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_READ,
+            payload = buildJsonObject {
+                put("path", scriptPath)
+            }
+        ))
     }
 
+    // ========================================================================
+    // UNLOAD_SCRIPT
+    // ========================================================================
+
     private fun handleUnloadScript(action: Action, store: Store) {
-        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return
+        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("UNLOAD_SCRIPT", "scriptHandle")
         runtime.unloadScript(handle)
 
-        // Unregister identity
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
             payload = buildJsonObject { put("handle", handle) }
         ))
-
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.LUA_SCRIPT_UNLOADED,
             payload = buildJsonObject {
@@ -242,63 +311,414 @@ class LuaFeature(
                 put("reason", "manual")
             }
         ))
-
         platformDependencies.log(LogLevel.INFO, identity.handle, "Script unloaded: $handle")
     }
 
+    // ========================================================================
+    // RELOAD_SCRIPT: dispatch filesystem.READ → wait for RETURN_READ
+    // ========================================================================
+
     private fun handleReloadScript(action: Action, store: Store) {
-        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return
-        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return
-        val script = currentState.scripts[handle] ?: return
+        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("RELOAD_SCRIPT", "scriptHandle")
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return logMissingState("RELOAD_SCRIPT")
+        val script = currentState.scripts[handle]
+            ?: return logUnknownScript("RELOAD_SCRIPT", handle)
 
-        // Read fresh source
-        val sourceCode = try {
-            platformDependencies.readFileContent(
-                platformDependencies.getBasePathFor(asareon.raam.util.BasePath.APP_ZONE) +
-                        "${platformDependencies.pathSeparator}lua${platformDependencies.pathSeparator}${script.path}"
-            )
-        } catch (e: Exception) {
-            dispatchScriptError(handle, "Failed to read script file: ${e.message}", "load")
-            return
-        }
+        val correlationId = nextCorrelationId("reload")
+        trackPendingOp(store, PendingFileOp(
+            correlationId = correlationId,
+            opType = "reload",
+            scriptHandle = handle,
+            extra = mapOf("localHandle" to script.localHandle)
+        ))
 
-        // Reload: unload then load fresh
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_READ,
+            payload = buildJsonObject { put("path", script.path) }
+        ))
+    }
+
+    // ========================================================================
+    // CREATE_SCRIPT: dispatch filesystem.WRITE → then LOAD_SCRIPT
+    // ========================================================================
+
+    private fun handleCreateScript(action: Action, store: Store) {
+        val name = action.payload?.get("name")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("CREATE_SCRIPT", "name")
+        val localHandle = name.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+            .replace(Regex("-+"), "-").trimStart('-').trimEnd('-').ifEmpty { "unnamed" }
+        val fileName = "$localHandle.lua"
+
+        val template = LuaScriptTemplates.appScript(name, localHandle)
+
+        // Write via FileSystem feature
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_WRITE,
+            payload = buildJsonObject {
+                put("path", fileName)
+                put("content", template)
+            }
+        ))
+
+        // Auto-load the new script (FileSystem WRITE is synchronous within the
+        // Store processing loop — by the time LOAD_SCRIPT is processed, the file exists)
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
+            payload = buildJsonObject {
+                put("scriptPath", fileName)
+                put("localHandle", localHandle)
+            }
+        ))
+    }
+
+    // ========================================================================
+    // DELETE_SCRIPT: unload + filesystem.DELETE_FILE + unregister
+    // ========================================================================
+
+    private fun handleDeleteScript(action: Action, store: Store) {
+        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("DELETE_SCRIPT", "scriptHandle")
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return logMissingState("DELETE_SCRIPT")
+        val script = currentState.scripts[handle]
+            ?: return logUnknownScript("DELETE_SCRIPT", handle)
+
         runtime.unloadScript(handle)
-        val result = runtime.loadScript(handle, script.localHandle, sourceCode)
-        if (result.success) {
-            platformDependencies.log(LogLevel.INFO, identity.handle, "Script reloaded: $handle")
+
+        // Delete the file via FileSystem
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_DELETE_FILE,
+            payload = buildJsonObject { put("path", script.path) }
+        ))
+
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
+            payload = buildJsonObject { put("handle", handle) }
+        ))
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.LUA_SCRIPT_UNLOADED,
+            payload = buildJsonObject {
+                put("scriptHandle", handle)
+                put("reason", "deleted")
+            }
+        ))
+    }
+
+    // ========================================================================
+    // CLONE_SCRIPT: filesystem.READ source → on response, WRITE clone + LOAD
+    // ========================================================================
+
+    private fun handleCloneScript(action: Action, store: Store) {
+        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("CLONE_SCRIPT", "scriptHandle")
+        val newName = action.payload?.get("newName")?.jsonPrimitive?.contentOrNull
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return logMissingState("CLONE_SCRIPT")
+        val script = currentState.scripts[handle]
+            ?: return logUnknownScript("CLONE_SCRIPT", handle)
+
+        val cloneName = newName ?: "copy-of-${script.localHandle}"
+        val cloneLocalHandle = cloneName.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+            .replace(Regex("-+"), "-").trimStart('-').trimEnd('-').ifEmpty { "unnamed" }
+        val cloneFileName = "$cloneLocalHandle.lua"
+
+        val correlationId = nextCorrelationId("clone")
+        trackPendingOp(store, PendingFileOp(
+            correlationId = correlationId,
+            opType = "clone-read",
+            scriptHandle = handle,
+            extra = mapOf(
+                "cloneLocalHandle" to cloneLocalHandle,
+                "cloneFileName" to cloneFileName
+            )
+        ))
+
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_READ,
+            payload = buildJsonObject { put("path", script.path) }
+        ))
+    }
+
+    // ========================================================================
+    // TOGGLE_SCRIPT: stop or load based on previous state
+    // ========================================================================
+
+    private fun handleToggleScript(action: Action, store: Store, previousState: FeatureState?) {
+        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("TOGGLE_SCRIPT", "scriptHandle")
+        val prevLuaState = previousState as? LuaState
+            ?: return logMissingState("TOGGLE_SCRIPT")
+        val prevScript = prevLuaState.scripts[handle]
+            ?: return logUnknownScript("TOGGLE_SCRIPT", handle)
+
+        if (prevScript.status == ScriptStatus.RUNNING || prevScript.status == ScriptStatus.LOADING) {
+            runtime.unloadScript(handle)
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.LUA_SCRIPT_UNLOADED,
+                payload = buildJsonObject {
+                    put("scriptHandle", handle)
+                    put("reason", "manual")
+                }
+            ))
         } else {
-            dispatchScriptError(handle, result.error ?: "Unknown error", "load")
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
+                payload = buildJsonObject {
+                    put("scriptPath", prevScript.path)
+                    put("localHandle", prevScript.localHandle)
+                }
+            ))
         }
     }
 
+    // ========================================================================
+    // SAVE_SCRIPT: filesystem.WRITE + hot-reload from content in payload
+    // ========================================================================
+
+    private fun handleSaveScript(action: Action, store: Store) {
+        val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("SAVE_SCRIPT", "scriptHandle")
+        val content = action.payload?.get("content")?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("SAVE_SCRIPT", "content")
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return logMissingState("SAVE_SCRIPT")
+        val script = currentState.scripts[handle]
+            ?: return logUnknownScript("SAVE_SCRIPT", handle)
+
+        // Persist via FileSystem
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_WRITE,
+            payload = buildJsonObject {
+                put("path", script.path)
+                put("content", content)
+            }
+        ))
+
+        // Hot-reload if running (we have the content in hand, no need to re-read)
+        if (script.status == ScriptStatus.RUNNING) {
+            runtime.unloadScript(handle)
+            val result = runtime.loadScript(handle, script.name, content)
+            if (result.success) {
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.LUA_SCRIPT_LOADED,
+                    payload = buildJsonObject {
+                        put("scriptHandle", handle)
+                        put("scriptName", script.name)
+                        put("scriptPath", script.path)
+                    }
+                ))
+            } else {
+                dispatchScriptError(handle, result.error ?: "Reload failed", "load")
+            }
+        }
+
+        platformDependencies.log(LogLevel.INFO, identity.handle, "Script saved: $handle")
+    }
+
+    // ========================================================================
+    // APP STARTUP: discover .lua files in workspace
+    // ========================================================================
+
+    private companion object {
+        const val DISCOVER_CORRELATION_ID = "lua:discover"
+    }
+
+    private fun handleAppStartup(store: Store) {
+        if (!runtime.isAvailable) return
+
+        // Ask FileSystem to list our workspace root — the response arrives
+        // as a targeted FILESYSTEM_RETURN_LIST with our correlationId.
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_LIST,
+            payload = buildJsonObject {
+                put("path", "")
+                put("recursive", false)
+                put("correlationId", DISCOVER_CORRELATION_ID)
+            }
+        ))
+    }
+
+    private fun handleFileListResponse(action: Action, store: Store) {
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+        if (correlationId != DISCOVER_CORRELATION_ID) return // Not our response
+
+        val listing = action.payload?.get("listing")?.jsonArray ?: run {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "Autodiscovery: RETURN_LIST missing 'listing' array")
+            return
+        }
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: run {
+            platformDependencies.log(LogLevel.WARN, identity.handle, "Autodiscovery: LuaState not available")
+            return
+        }
+
+        for (entry in listing) {
+            val obj = entry.jsonObject
+            val path = obj["path"]?.jsonPrimitive?.contentOrNull ?: continue
+            val isDir = obj["isDirectory"]?.jsonPrimitive?.booleanOrNull ?: false
+            if (isDir) continue
+            if (!path.endsWith(".lua", ignoreCase = true)) continue
+
+            // Derive handle and check if already loaded
+            val localHandle = deriveLocalHandle(null, path)
+            val handle = "lua.$localHandle"
+            if (handle in currentState.scripts) continue
+
+            // Auto-load this script
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
+                payload = buildJsonObject {
+                    put("scriptPath", path)
+                    put("localHandle", localHandle)
+                }
+            ))
+        }
+    }
+
+    // ========================================================================
+    // EXTERNAL STRATEGY: handle turn requests from the agent pipeline
+    // ========================================================================
+
+    private fun handleExternalTurnRequest(action: Action, store: Store) {
+        val payload = action.payload ?: return logMissingPayload("EXTERNAL_TURN_REQUEST")
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("EXTERNAL_TURN_REQUEST", "correlationId")
+        val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull ?: ""
+        val state = payload["state"]
+        val agentHandle = payload["agentHandle"]?.jsonPrimitive?.contentOrNull
+
+        // Build the context table for on_turn(ctx)
+        val ctx = mutableMapOf<String, Any?>(
+            "systemPrompt" to systemPrompt,
+            "state" to state?.let { jsonElementToAny(it) },
+            "agentHandle" to agentHandle,
+            "modelProvider" to payload["modelProvider"]?.jsonPrimitive?.contentOrNull,
+            "modelName" to payload["modelName"]?.jsonPrimitive?.contentOrNull
+        )
+
+        // Find a loaded script that can handle this turn.
+        // For now, look for a script whose handle matches "lua.agent-*" or
+        // use the first script that defines on_turn().
+        // TODO: The agent's resource assignment should specify which script to use.
+        val scriptHandle = findAgentScript(correlationId)
+
+        if (scriptHandle == null) {
+            // No script available — return error
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
+                payload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("mode", "error")
+                    put("error", "No Lua script loaded for this agent. Load a script with on_turn() defined.")
+                }
+            ))
+            return
+        }
+
+        // Execute the script's on_turn(ctx)
+        val result = runtime.executeTurn(scriptHandle, ctx)
+        if (!result.success) {
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
+                payload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("mode", "error")
+                    put("error", result.error ?: "on_turn() execution failed")
+                }
+            ))
+            return
+        }
+
+        // Parse the script's return value to determine mode
+        val returnMap = result.returnValue ?: emptyMap()
+        val mode = when {
+            returnMap["turnAdvance"] == true -> "advance"
+            returnMap["response"] is String -> "custom"
+            returnMap["error"] is String -> "error"
+            else -> "advance" // Default: proceed with gateway
+        }
+
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
+            payload = buildJsonObject {
+                put("correlationId", correlationId)
+                put("mode", mode)
+                when (mode) {
+                    "advance" -> {
+                        val modifiedPrompt = returnMap["systemPrompt"] as? String
+                        if (modifiedPrompt != null) put("systemPrompt", modifiedPrompt)
+                        else put("systemPrompt", systemPrompt)
+                    }
+                    "custom" -> {
+                        put("response", (returnMap["response"] as? String) ?: "")
+                    }
+                    "error" -> {
+                        put("error", (returnMap["error"] as? String) ?: "Script error")
+                    }
+                }
+                // Pass through state updates
+                val stateUpdate = returnMap["state"]
+                if (stateUpdate != null) {
+                    put("state", anyToJsonElement(stateUpdate))
+                }
+            }
+        ))
+    }
+
+    /**
+     * Finds a loaded script that can serve as the cognitive strategy for an agent.
+     * Looks for scripts with handle "lua.agent-{agentUUID}" first, then any script
+     * that has on_turn defined.
+     */
+    private fun findAgentScript(agentUUID: String): String? {
+        val directHandle = "lua.agent-$agentUUID"
+        if (runtime.isScriptLoaded(directHandle)) return directHandle
+
+        // Fallback: find any loaded script (TODO: improve with resource-based mapping)
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return null
+        return currentState.scripts.values
+            .firstOrNull { it.status == ScriptStatus.RUNNING }
+            ?.handle
+    }
+
+    // ========================================================================
+    // EVAL
+    // ========================================================================
+
     private fun handleEval(action: Action, store: Store) {
-        val payload = action.payload ?: return
-        val handle = payload["scriptHandle"]?.jsonPrimitive?.contentOrNull ?: return
-        val code = payload["code"]?.jsonPrimitive?.contentOrNull ?: return
+        val payload = action.payload ?: return logMissingPayload("EVAL")
+        val handle = payload["scriptHandle"]?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("EVAL", "scriptHandle")
+        val code = payload["code"]?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("EVAL", "code")
 
         val result = runtime.eval(handle, code)
         if (!result.success) {
             dispatchScriptError(handle, result.error ?: "Eval error", "eval")
         } else if (result.returnValue != null) {
-            // Log the return value
-            val returnStr = result.returnValue.toString()
             store.deferredDispatch(identity.handle, Action(
                 name = ActionRegistry.Names.LUA_SCRIPT_OUTPUT,
                 payload = buildJsonObject {
                     put("scriptHandle", handle)
                     put("level", "log")
-                    put("message", "=> $returnStr")
+                    put("message", "=> ${result.returnValue}")
                     put("timestamp", platformDependencies.currentTimeMillis())
                 }
             ))
         }
     }
 
+    // ========================================================================
+    // LIST_SCRIPTS
+    // ========================================================================
+
     private fun handleListScripts(action: Action, store: Store) {
-        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return logMissingState("LIST_SCRIPTS")
         val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
-        val originator = action.originator ?: return
+        val originator = action.originator
+            ?: return logMissingField("LIST_SCRIPTS", "originator")
 
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.LUA_RETURN_LIST,
@@ -321,15 +741,101 @@ class LuaFeature(
     }
 
     // ========================================================================
+    // Filesystem response handler (async completion)
+    // ========================================================================
+
+    private fun handleFileReadResponse(action: Action, store: Store) {
+        val path = action.payload?.get("path")?.jsonPrimitive?.contentOrNull ?: return // Not our response (no path)
+        val content = action.payload?.get("content")?.jsonPrimitive?.contentOrNull
+
+        // Find the pending op that matches this file path — if none, this response isn't for us
+        val pendingOp = findPendingOpByPath(path, store) ?: return
+
+        // Clean up the pending op
+        removePendingOp(store, pendingOp.correlationId)
+
+        if (content == null) {
+            dispatchScriptError(pendingOp.scriptHandle, "File not found: $path", pendingOp.opType)
+            return
+        }
+
+        when (pendingOp.opType) {
+            "load" -> {
+                val localHandle = pendingOp.extra["localHandle"]
+                    ?: return logMissingField("FILESYSTEM_RETURN_READ[load]", "localHandle in pendingOp")
+                val handle = pendingOp.scriptHandle
+                val result = runtime.loadScript(handle, localHandle, content)
+                if (result.success) {
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.LUA_SCRIPT_LOADED,
+                        payload = buildJsonObject {
+                            put("scriptHandle", handle)
+                            put("scriptName", localHandle)
+                            put("scriptPath", path)
+                            put("sourceContent", content)
+                        }
+                    ))
+                    platformDependencies.log(LogLevel.INFO, identity.handle, "Script loaded: $handle")
+                } else {
+                    dispatchScriptError(handle, result.error ?: "Unknown error", "load")
+                }
+            }
+
+            "reload" -> {
+                val handle = pendingOp.scriptHandle
+                val localHandle = pendingOp.extra["localHandle"]
+                    ?: return logMissingField("FILESYSTEM_RETURN_READ[reload]", "localHandle in pendingOp")
+                runtime.unloadScript(handle)
+                val result = runtime.loadScript(handle, localHandle, content)
+                if (result.success) {
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.LUA_SCRIPT_LOADED,
+                        payload = buildJsonObject {
+                            put("scriptHandle", handle)
+                            put("scriptName", localHandle)
+                            put("scriptPath", path)
+                            put("sourceContent", content)
+                        }
+                    ))
+                    platformDependencies.log(LogLevel.INFO, identity.handle, "Script reloaded: $handle")
+                } else {
+                    dispatchScriptError(handle, result.error ?: "Reload error", "load")
+                }
+            }
+
+            "clone-read" -> {
+                val cloneLocalHandle = pendingOp.extra["cloneLocalHandle"]
+                    ?: return logMissingField("FILESYSTEM_RETURN_READ[clone]", "cloneLocalHandle in pendingOp")
+                val cloneFileName = pendingOp.extra["cloneFileName"]
+                    ?: return logMissingField("FILESYSTEM_RETURN_READ[clone]", "cloneFileName in pendingOp")
+
+                // Write clone via FileSystem
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.FILESYSTEM_WRITE,
+                    payload = buildJsonObject {
+                        put("path", cloneFileName)
+                        put("content", content)
+                    }
+                ))
+
+                // Load the clone
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
+                    payload = buildJsonObject {
+                        put("scriptPath", cloneFileName)
+                        put("localHandle", cloneLocalHandle)
+                    }
+                ))
+            }
+        }
+    }
+
+    // ========================================================================
     // Event delivery to scripts
     // ========================================================================
 
     private fun deliverBroadcastToScripts(action: Action) {
-        // Only deliver broadcast actions (the Store already filtered non-broadcasts)
-        // Skip lua's own internal actions to avoid feedback loops
         if (action.name.startsWith("lua.")) return
-
-        // Re-entrancy / cascade guard
         if (currentCascadeDepth >= maxCascadeDepth) {
             platformDependencies.log(
                 LogLevel.WARN, identity.handle,
@@ -338,9 +844,7 @@ class LuaFeature(
             return
         }
 
-        // Convert payload to a Kotlin map for the runtime
         val payloadMap = action.payload?.let { jsonObjectToMap(it) }
-
         currentCascadeDepth++
         try {
             val errors = runtime.deliverEvent(action.name, payloadMap)
@@ -364,11 +868,6 @@ class LuaFeature(
                 actionName: String,
                 payload: Map<String, Any?>?
             ): Pair<Boolean, String?> {
-                // Re-entrancy guard
-                if (scriptHandle in scriptsInCallback) {
-                    // Script is dispatching from within a callback — use deferred dispatch
-                }
-
                 val jsonPayload = payload?.let { mapToJsonObject(it) }
                 store.deferredDispatch(scriptHandle, Action(
                     name = actionName,
@@ -387,7 +886,6 @@ class LuaFeature(
                     scriptHandle,
                     message
                 )
-
                 store.deferredDispatch(identity.handle, Action(
                     name = ActionRegistry.Names.LUA_SCRIPT_OUTPUT,
                     payload = buildJsonObject {
@@ -410,50 +908,71 @@ class LuaFeature(
 
             override fun getIdentities(): List<LuaIdentitySnapshot> {
                 return store.state.value.identityRegistry.values.map {
-                    LuaIdentitySnapshot(
-                        handle = it.handle,
-                        name = it.name,
-                        parentHandle = it.parentHandle
-                    )
+                    LuaIdentitySnapshot(handle = it.handle, name = it.name, parentHandle = it.parentHandle)
                 }
             }
 
             override fun getScriptPermissions(scriptHandle: String): Map<String, String> {
-                val identity = store.state.value.identityRegistry[scriptHandle] ?: return emptyMap()
-                val effective = store.resolveEffectivePermissions(identity)
-                return effective.mapValues { (_, grant) -> grant.level.name }
+                val id = store.state.value.identityRegistry[scriptHandle] ?: return emptyMap()
+                return store.resolveEffectivePermissions(id).mapValues { (_, grant) -> grant.level.name }
             }
         }
     }
 
     // ========================================================================
-    // Public API for LuaStrategy
-    // ========================================================================
-
-    /**
-     * Execute a script's on_turn() function. Called by LuaStrategy.
-     */
-    fun executeTurn(scriptHandle: String, context: Map<String, Any?>): LuaExecutionResult {
-        return runtime.executeTurn(scriptHandle, context)
-    }
-
-    /**
-     * Load a script programmatically (used by LuaStrategy for agent scripts).
-     */
-    fun loadScriptDirect(handle: String, name: String, sourceCode: String): LuaExecutionResult {
-        return runtime.loadScript(handle, name, sourceCode)
-    }
-
-    /**
-     * Unload a script programmatically.
-     */
-    fun unloadScriptDirect(handle: String) {
-        runtime.unloadScript(handle)
-    }
-
-    // ========================================================================
     // Helpers
     // ========================================================================
+
+    private fun deriveLocalHandle(explicit: String?, scriptPath: String): String {
+        return explicit ?: scriptPath.substringAfterLast("/").substringBeforeLast(".lua")
+            .lowercase().replace(Regex("[^a-z0-9-]"), "-")
+            .replace(Regex("-+"), "-").trimStart('-').trimEnd('-')
+            .ifEmpty { "unnamed" }
+    }
+
+    private fun trackPendingOp(store: Store, op: PendingFileOp) {
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return
+        // Direct state update via a deferred internal mechanism —
+        // pendingFileOps is transient tracking, managed in side effects.
+        // We store it in-memory on the feature instance instead.
+        pendingOps[op.correlationId] = op
+    }
+
+    private fun removePendingOp(store: Store, correlationId: String) {
+        pendingOps.remove(correlationId)
+    }
+
+    /** In-memory pending operation tracking (not persisted in FeatureState). */
+    private val pendingOps = mutableMapOf<String, PendingFileOp>()
+
+    /** Override to look up pending ops from in-memory map instead of state. */
+    private fun findPendingOpByPath(path: String, store: Store): PendingFileOp? {
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+        return pendingOps.values.find { op ->
+            when (op.opType) {
+                "load" -> op.extra["scriptPath"] == path
+                "reload" -> currentState?.scripts?.get(op.scriptHandle)?.path == path
+                "clone-read" -> currentState?.scripts?.get(op.scriptHandle)?.path == path
+                else -> false
+            }
+        }
+    }
+
+    private fun logMissingPayload(action: String) {
+        platformDependencies.log(LogLevel.ERROR, identity.handle, "$action: missing payload")
+    }
+
+    private fun logMissingField(action: String, field: String) {
+        platformDependencies.log(LogLevel.ERROR, identity.handle, "$action: missing or invalid field '$field'")
+    }
+
+    private fun logMissingState(action: String) {
+        platformDependencies.log(LogLevel.ERROR, identity.handle, "$action: LuaState not available")
+    }
+
+    private fun logUnknownScript(action: String, handle: String) {
+        platformDependencies.log(LogLevel.WARN, identity.handle, "$action: unknown script '$handle'")
+    }
 
     private fun dispatchScriptError(handle: String, error: String, context: String) {
         platformDependencies.log(LogLevel.ERROR, identity.handle, "Script error [$handle]: $error")
@@ -510,9 +1029,7 @@ class LuaFeature(
                 }
             }
             is List<*> -> buildJsonArray {
-                for (item in value) {
-                    add(anyToJsonElement(item))
-                }
+                for (item in value) { add(anyToJsonElement(item)) }
             }
             else -> JsonPrimitive(value.toString())
         }

@@ -126,6 +126,121 @@
       "required_permissions": ["lua:execute"]
     },
     {
+      "action_name": "lua.CREATE_SCRIPT",
+      "summary": "Create a new Lua script file in the workspace with default template content.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name for the new script."
+          }
+        },
+        "required": ["name"]
+      },
+      "required_permissions": ["lua:manage"]
+    },
+    {
+      "action_name": "lua.DELETE_SCRIPT",
+      "summary": "Delete a Lua script file from disk and unload it if running.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          }
+        },
+        "required": ["scriptHandle"]
+      },
+      "required_permissions": ["lua:manage"]
+    },
+    {
+      "action_name": "lua.CLONE_SCRIPT",
+      "summary": "Clone an existing Lua script to a new file with a new identity.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string",
+            "description": "The handle of the script to clone."
+          },
+          "newName": {
+            "type": ["string", "null"],
+            "description": "Optional name for the clone. Defaults to 'Copy of <original>'."
+          }
+        },
+        "required": ["scriptHandle"]
+      },
+      "required_permissions": ["lua:manage"]
+    },
+    {
+      "action_name": "lua.RENAME_SCRIPT",
+      "summary": "Rename a Lua script (updates display name and file).",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          },
+          "newName": {
+            "type": "string"
+          }
+        },
+        "required": ["scriptHandle", "newName"]
+      },
+      "required_permissions": ["lua:manage"]
+    },
+    {
+      "action_name": "lua.TOGGLE_SCRIPT",
+      "summary": "Toggle a script between active (running) and inactive (off) states.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          }
+        },
+        "required": ["scriptHandle"]
+      },
+      "required_permissions": ["lua:execute"]
+    },
+    {
+      "action_name": "lua.SAVE_SCRIPT",
+      "summary": "Save edited script content to disk and hot-reload if running.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "description": "The new Lua source code to persist."
+          }
+        },
+        "required": ["scriptHandle", "content"]
+      },
+      "required_permissions": ["lua:manage"]
+    },
+    {
       "action_name": "lua.SCRIPT_LOADED",
       "summary": "Broadcast notification that a Lua script has been successfully loaded and is now running.",
       "public": false,

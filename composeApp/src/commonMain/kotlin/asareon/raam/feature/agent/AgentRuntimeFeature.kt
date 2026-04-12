@@ -202,6 +202,18 @@ class AgentRuntimeFeature(
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
+            // --- External Strategy Registration ---
+            ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY -> {
+                handleRegisterExternalStrategy(action, store)
+            }
+            ActionRegistry.Names.AGENT_UNREGISTER_EXTERNAL_STRATEGY -> {
+                handleUnregisterExternalStrategy(action, store)
+            }
+            ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT -> {
+                // Reducer already stored the result — now trigger the pipeline gate
+                val agentId = action.payload?.agentUUID("correlationId")
+                if (agentId != null) {
+                    CognitivePipeline.handleExternalTurnResult(agentId, store)
             ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 // Register compression settings
                 CompressionConfig.settingDefinitions.forEach { (key, label, desc) ->
@@ -1260,6 +1272,93 @@ class AgentRuntimeFeature(
     // ========================================================================
     // Polymorphic lifecycle dispatch helpers
     // ========================================================================
+
+    // ========================================================================
+    // External Strategy Registration
+    // ========================================================================
+
+    private fun handleRegisterExternalStrategy(action: Action, store: Store) {
+        val payload = action.payload ?: return
+        val strategyId = payload["strategyId"]?.jsonPrimitive?.contentOrNull ?: run {
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "REGISTER_EXTERNAL_STRATEGY: missing strategyId")
+            return
+        }
+        val displayName = payload["displayName"]?.jsonPrimitive?.contentOrNull ?: strategyId
+        val featureHandle = payload["featureHandle"]?.jsonPrimitive?.contentOrNull ?: run {
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "REGISTER_EXTERNAL_STRATEGY: missing featureHandle")
+            return
+        }
+
+        // Parse resource slots
+        val slots = payload["resourceSlots"]?.jsonArray?.mapNotNull { elem ->
+            val obj = elem.jsonObject
+            val slotId = obj["slotId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val typeName = obj["type"]?.jsonPrimitive?.contentOrNull ?: "SYSTEM_INSTRUCTION"
+            val type = try { AgentResourceType.valueOf(typeName) } catch (_: Exception) { AgentResourceType.SYSTEM_INSTRUCTION }
+            ResourceSlot(
+                slotId = slotId,
+                type = type,
+                displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: slotId,
+                description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "",
+                isRequired = obj["isRequired"]?.jsonPrimitive?.booleanOrNull ?: true
+            )
+        } ?: emptyList()
+
+        // Parse config fields
+        val configFields = payload["configFields"]?.jsonArray?.mapNotNull { elem ->
+            val obj = elem.jsonObject
+            val key = obj["key"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val typeName = obj["type"]?.jsonPrimitive?.contentOrNull ?: "OUTPUT_SESSION"
+            val type = try { StrategyConfigFieldType.valueOf(typeName) } catch (_: Exception) { StrategyConfigFieldType.OUTPUT_SESSION }
+            StrategyConfigField(
+                key = key,
+                type = type,
+                displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: key,
+                description = obj["description"]?.jsonPrimitive?.contentOrNull ?: ""
+            )
+        } ?: emptyList()
+
+        val initialState = payload["initialState"] ?: JsonNull
+
+        val proxy = ExternalStrategyProxy(
+            identityHandle = IdentityHandle(strategyId),
+            displayName = displayName,
+            featureHandle = featureHandle,
+            declaredSlots = slots,
+            declaredConfigFields = configFields,
+            declaredInitialState = initialState
+        )
+
+        CognitiveStrategyRegistry.register(proxy)
+        platformDependencies.log(LogLevel.INFO, identity.handle,
+            "External strategy registered: $strategyId (provider: $featureHandle)")
+
+        // Respond to the registrant
+        val originator = action.originator
+        if (originator != null) {
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.AGENT_RETURN_STRATEGY_REGISTERED,
+                payload = buildJsonObject {
+                    put("strategyId", strategyId)
+                    put("success", true)
+                },
+                targetRecipient = originator
+            ))
+        }
+    }
+
+    private fun handleUnregisterExternalStrategy(action: Action, store: Store) {
+        val strategyId = action.payload?.get("strategyId")?.jsonPrimitive?.contentOrNull ?: run {
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "UNREGISTER_EXTERNAL_STRATEGY: missing strategyId")
+            return
+        }
+        // CognitiveStrategyRegistry doesn't have an unregister method yet —
+        // for now, log that the strategy was requested to be removed.
+        // Agents using it will fall back to the default strategy via the registry's
+        // get() fallback behavior.
+        platformDependencies.log(LogLevel.INFO, identity.handle,
+            "External strategy unregister requested: $strategyId (not yet implemented in registry)")
+    }
 
     /**
      * Calls [CognitiveStrategy.ensureInfrastructure] for every active agent.
