@@ -191,7 +191,8 @@ class LuaFeatureT1SideEffectsTest {
             put("scriptHandle", "lua.test")
         })
 
-        feature.handleSideEffects(action, store, null, luaState)
+        // previousState has the script (pre-reducer), newState has it removed (post-reducer)
+        feature.handleSideEffects(action, store, luaState, LuaState())
 
         val deleteAction = store.dispatchedActions.find {
             it.name == ActionRegistry.Names.FILESYSTEM_DELETE_FILE
