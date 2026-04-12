@@ -928,7 +928,7 @@ class LuaFeature(
                         name = desc.fullName,
                         featureName = desc.featureName,
                         summary = desc.summary,
-                        isPublic = desc.isPublic
+                        isPublic = desc.`public`
                     )
                 }
             }

@@ -427,7 +427,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
                     override fun call(): LuaValue {
                         // Check if still active (not cancelled via raam.off or unloaded)
                         val currentEnv = scripts[scriptHandle] ?: return LuaValue.NIL
-                        if (id !in currentEnv.delayedCallbacks) return LuaValue.NIL
+                        if (!currentEnv.delayedCallbacks.containsKey(id)) return LuaValue.NIL
 
                         // Execute the user callback
                         try {
@@ -438,7 +438,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
                         }
 
                         // Re-store and re-schedule if still active
-                        if (id in (scripts[scriptHandle]?.delayedCallbacks ?: emptyMap())) {
+                        if (scripts[scriptHandle]?.delayedCallbacks?.containsKey(id) == true) {
                             currentEnv.delayedCallbacks[id] = this
                             scheduleTick()
                         }

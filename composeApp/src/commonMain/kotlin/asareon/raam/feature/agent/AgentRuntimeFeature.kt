@@ -214,6 +214,8 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.agentUUID("correlationId")
                 if (agentId != null) {
                     CognitivePipeline.handleExternalTurnResult(agentId, store)
+                }
+            }
             ActionRegistry.Names.SYSTEM_INITIALIZING -> {
                 // Register compression settings
                 CompressionConfig.settingDefinitions.forEach { (key, label, desc) ->
