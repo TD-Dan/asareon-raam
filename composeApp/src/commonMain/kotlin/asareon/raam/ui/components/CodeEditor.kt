@@ -2,12 +2,14 @@ package asareon.raam.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
@@ -86,7 +88,8 @@ fun CodeEditor(
     val lineCount = remember(value) { value.count { it == '\n' } + 1 }
     val lineNumberColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 
-    val scrollState = rememberScrollState()
+    val verticalScrollState = rememberScrollState()
+    val horizontalScrollState = rememberScrollState()
 
     Box(
         modifier = modifier
@@ -98,9 +101,9 @@ fun CodeEditor(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(scrollState)
+                .verticalScroll(verticalScrollState)
         ) {
-            // Line number gutter — scrolls with the text
+            // Line number gutter — scrolls vertically with the text
             Column(
                 modifier = Modifier.padding(end = 8.dp),
                 horizontalAlignment = androidx.compose.ui.Alignment.End
@@ -117,23 +120,25 @@ fun CodeEditor(
                 }
             }
 
-            // Editor — no internal scrolling, outer Row handles it
-            BasicTextField(
-                value = value,
-                onValueChange = { if (!readOnly) onValueChange(it) },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("code_editor_input"),
-                readOnly = readOnly,
-                textStyle = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    lineHeight = 20.sp
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                visualTransformation = transformation
-            )
+            // Editor — no soft-wrap, scrolls horizontally for long lines
+            Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScrollState)) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = { if (!readOnly) onValueChange(it) },
+                    modifier = Modifier
+                        .testTag("code_editor_input"),
+                    readOnly = readOnly,
+                    softWrap = false,
+                    textStyle = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 20.sp
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    visualTransformation = transformation
+                )
+            }
         }
     }
 }
