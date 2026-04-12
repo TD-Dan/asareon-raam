@@ -1,6 +1,7 @@
 package asareon.raam.feature.agent.contextformatters
 
 import asareon.raam.feature.agent.CollapseState
+import asareon.raam.feature.agent.CompressionConfig
 import asareon.raam.feature.agent.PromptSection
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
@@ -273,7 +274,8 @@ object HkgContextFormatter {
         hkgContext: JsonObject,
         headers: Map<String, HolonSummary>,
         platformDependencies: PlatformDependencies?,
-        isRoot: Boolean = false
+        isRoot: Boolean = false,
+        compressionConfig: CompressionConfig = CompressionConfig()
     ): PromptSection {
         val holonId = summary.id
         val rawContent = hkgContext[holonId]?.jsonPrimitive?.contentOrNull
@@ -285,35 +287,69 @@ object HkgContextFormatter {
         }
         val content = rawContent ?: "[Content not loaded for holon '$holonId']"
 
+        // Three-tier display: STRIPPED is the default for open holons.
+        // EXPANDED (fullExpand=true) only when scope:"full" is used (future: tracked per holon).
+        val isFullExpand = false
+
+        // Apply TOON / JSON Minify / stripping based on CompressionConfig
+        val processedContent = when {
+            compressionConfig.useToon -> ToonRenderer.render(content, stripped = !isFullExpand)
+            compressionConfig.jsonMinify -> {
+                val stripped = stripHolonContent(content, fullExpand = isFullExpand)
+                // Minify: re-serialize without pretty print
+                try {
+                    val parsed = json.parseToJsonElement(stripped)
+                    Json { prettyPrint = false }.encodeToString(JsonElement.serializer(), parsed)
+                } catch (_: Exception) { stripped }
+            }
+            else -> stripHolonContent(content, fullExpand = isFullExpand)
+        }
+
         // Resolve children that are actually present in the loaded header set
         val childSummaries = summary.subHolonRefs
             .mapNotNull { headers[it.id] }
             .sortedBy { it.id }
 
+        // Collapsed summary text — shorter when consolidation is enabled
+        val consolidate = compressionConfig.consolidateCollapsed
+
         return if (childSummaries.isEmpty()) {
             // Leaf holon → Section
+            val collapsedText = if (consolidate) {
+                "[${summary.type}: ${summary.name}]"
+            } else {
+                "[${summary.type}: \"${summary.name}\" — file closed]"
+            }
             PromptSection.Section(
                 key = "hkg:$holonId",
-                content = content,
+                content = processedContent,
                 isProtected = isRoot,
                 isCollapsible = !isRoot,
                 priority = if (isRoot) 1000 else 0,
-                collapsedSummary = "[${summary.type}: \"${summary.name}\" — file closed]",
+                collapsedSummary = collapsedText,
                 defaultCollapsed = !isRoot
             )
         } else {
             // Branch holon → Group
             val totalSubs = countSubHolons(holonId, headers)
+            val collapsedText = if (consolidate) {
+                "[${summary.type}: ${summary.name} | $totalSubs children]"
+            } else {
+                "[${summary.type}: \"${summary.name}\" — $totalSubs sub-holons collapsed]"
+            }
             PromptSection.Group(
                 key = "hkg:$holonId",
-                header = content,
+                header = processedContent,
                 children = childSummaries.map { child ->
-                    buildHolonSection(child, hkgContext, headers, platformDependencies)
+                    buildHolonSection(
+                        child, hkgContext, headers, platformDependencies,
+                        compressionConfig = compressionConfig
+                    )
                 },
                 isProtected = isRoot,
                 isCollapsible = !isRoot,
                 priority = if (isRoot) 1000 else 0,
-                collapsedSummary = "[${summary.type}: \"${summary.name}\" — $totalSubs sub-holons collapsed]",
+                collapsedSummary = collapsedText,
                 defaultCollapsed = !isRoot
             )
         }
@@ -351,7 +387,8 @@ object HkgContextFormatter {
         collapseOverrides: Map<String, CollapseState>,
         personaName: String? = null,
         protectRoots: Boolean = true,
-        platformDependencies: PlatformDependencies? = null
+        platformDependencies: PlatformDependencies? = null,
+        compressionConfig: CompressionConfig = CompressionConfig()
     ): PromptSection.Group {
         val roots = headers.values
             .filter { it.parentId == null }
@@ -366,12 +403,15 @@ object HkgContextFormatter {
             append(buildIndexTree(headers, collapseOverrides, personaName))
             appendLine()
             appendLine()
-            append(buildNavigationContent())
+            append(buildNavigationContent(compressionConfig))
         }
 
         // Children = only the holon file tree
         val children = roots.map { root ->
-            buildHolonSection(root, hkgContext, headers, platformDependencies, isRoot = protectRoots)
+            buildHolonSection(
+                root, hkgContext, headers, platformDependencies,
+                isRoot = protectRoots, compressionConfig = compressionConfig
+            )
         }
 
         return PromptSection.Group(
@@ -391,27 +431,9 @@ object HkgContextFormatter {
      * HKG navigation command reference. Included in the unified HOLON_KNOWLEDGE_GRAPH
      * that owns the HKG context structure.
      */
-    private fun buildNavigationContent(): String = buildString {
-        appendLine("Your Knowledge Graph is presented as an INDEX (tree overview) and holon files.")
-        appendLine("By default, all files are closed. Use these commands to navigate:")
-        appendLine()
-        appendLine("Open a single holon file:")
-        appendLine("```raam_agent.CONTEXT_UNCOLLAPSE")
-        appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "single" }""")
-        appendLine("```")
-        appendLine()
-        appendLine("Open a holon and all its children:")
-        appendLine("```raam_agent.CONTEXT_UNCOLLAPSE")
-        appendLine("""{ "partitionKey": "hkg:<holonId>", "scope": "subtree" }""")
-        appendLine("```")
-        appendLine()
-        appendLine("Close a holon file:")
-        appendLine("```raam_agent.CONTEXT_COLLAPSE")
-        appendLine("""{ "partitionKey": "hkg:<holonId>" }""")
-        appendLine("```")
-        appendLine()
-        appendLine("IMPORTANT: You must expand a holon file before writing to it.")
-        appendLine("The system will block writes to collapsed holons to prevent data loss.")
+    private fun buildNavigationContent(compressionConfig: CompressionConfig = CompressionConfig()): String {
+        val text = TerseText.get("HKG_NAVIGATION", compressionConfig.terseSystemText)
+        return if (compressionConfig.abbreviations) TerseText.abbreviate(text) else text
     }
 
     /**
@@ -425,6 +447,42 @@ object HkgContextFormatter {
         collapseOverrides: Map<String, CollapseState>
     ): CollapseState {
         return collapseOverrides["hkg:$holonId"] ?: CollapseState.COLLAPSED
+    }
+
+    // =========================================================================
+    // Content stripping helpers
+    // =========================================================================
+
+    /**
+     * Strips holon header to essential fields for STRIPPED display mode.
+     * Always removes sub_holons (INDEX is the single source of structure).
+     * In stripped mode, also removes version, dates, paths, relationships.
+     */
+    private fun stripHolonContent(rawContent: String, fullExpand: Boolean): String {
+        return try {
+            val holonJson = json.parseToJsonElement(rawContent).jsonObject.toMutableMap()
+            val header = (holonJson["header"] as? JsonObject)?.toMutableMap() ?: return rawContent
+
+            // Always strip sub_holons — INDEX tree is the single source
+            header.remove("sub_holons")
+
+            if (!fullExpand) {
+                // STRIPPED mode: keep only id, type, name, summary
+                header.remove("version")
+                header.remove("created_at")
+                header.remove("modified_at")
+                header.remove("relationships")
+                header.remove("filePath")
+                header.remove("parentId")
+                header.remove("depth")
+            }
+
+            holonJson["header"] = JsonObject(header)
+            val outputJson = JsonObject(holonJson)
+            Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), outputJson)
+        } catch (_: Exception) {
+            rawContent
+        }
     }
 
     // =========================================================================
