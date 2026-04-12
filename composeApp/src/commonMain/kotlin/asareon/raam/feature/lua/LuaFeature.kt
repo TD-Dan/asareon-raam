@@ -84,38 +84,8 @@ class LuaFeature(
     override fun init(store: Store) {
         this.store = store
         runtime.setBridgeListener(createBridgeListener())
-
-        // Register Lua as an external cognitive strategy via the action bus.
-        // No agent feature imports — pure action-based protocol.
-        store.deferredDispatch(identity.handle, Action(
-            name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
-            payload = buildJsonObject {
-                put("strategyId", "agent.strategy.lua")
-                put("displayName", "Lua Script")
-                put("featureHandle", identity.handle)
-                put("resourceSlots", buildJsonArray {
-                    add(buildJsonObject {
-                        put("slotId", "system_instruction")
-                        put("type", "SYSTEM_INSTRUCTION")
-                        put("displayName", "System Instructions")
-                        put("description", "Context instructions passed to the Lua script via ctx.resources.")
-                        put("isRequired", false)
-                    })
-                })
-                put("configFields", buildJsonArray {
-                    add(buildJsonObject {
-                        put("key", "outputSessionId")
-                        put("type", "OUTPUT_SESSION")
-                        put("displayName", "Output Session")
-                        put("description", "The session where the Lua agent's responses are posted.")
-                    })
-                })
-                put("initialState", buildJsonObject {
-                    put("phase", "READY")
-                    put("turnCount", 0)
-                })
-            }
-        ))
+        // Strategy registration happens in handleSideEffects for SYSTEM_RUNNING,
+        // not here — init() runs during BOOTING when cross-feature dispatches are blocked.
     }
 
     // ========================================================================
@@ -527,10 +497,42 @@ class LuaFeature(
     }
 
     private fun handleAppStartup(store: Store) {
+        // Register Lua as an external cognitive strategy via the action bus.
+        // Done here (not in init()) because init() runs during BOOTING when
+        // cross-feature dispatches are blocked by the lifecycle guard.
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+            payload = buildJsonObject {
+                put("strategyId", "agent.strategy.lua")
+                put("displayName", "Lua Script")
+                put("featureHandle", identity.handle)
+                put("resourceSlots", buildJsonArray {
+                    add(buildJsonObject {
+                        put("slotId", "system_instruction")
+                        put("type", "SYSTEM_INSTRUCTION")
+                        put("displayName", "System Instructions")
+                        put("description", "Context instructions passed to the Lua script via ctx.resources.")
+                        put("isRequired", false)
+                    })
+                })
+                put("configFields", buildJsonArray {
+                    add(buildJsonObject {
+                        put("key", "outputSessionId")
+                        put("type", "OUTPUT_SESSION")
+                        put("displayName", "Output Session")
+                        put("description", "The session where the Lua agent's responses are posted.")
+                    })
+                })
+                put("initialState", buildJsonObject {
+                    put("phase", "READY")
+                    put("turnCount", 0)
+                })
+            }
+        ))
+
         if (!runtime.isAvailable) return
 
-        // Ask FileSystem to list our workspace root — the response arrives
-        // as a targeted FILESYSTEM_RETURN_LIST with our correlationId.
+        // Autodiscover .lua scripts in workspace
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.FILESYSTEM_LIST,
             payload = buildJsonObject {
