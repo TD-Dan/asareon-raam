@@ -4,8 +4,6 @@
 
 # GENERAL
 
-**- Rebrand and publish as Asareon Raam 1.0.0 **
-
 **- Clean up deprecated code and unneeded migration/resolve notes (atleast agent feature)**
 
 - Actions cleanup for token efficiency: Many of the actions can be consolidated into one action: f.ex. TOGGLE_MESSAGE_LOCKED / LOCK_MESSAGE / UNLOCK_MESSAGE to save tokens
@@ -13,6 +11,16 @@
 - self contained "USB Stick" distributions in addition to installers
 
 - Need a pre loaded state view that shows live log stream while app is loading
+
+- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere
+
+
+# ONBOARDING
+
+- First run wizard
+- Include default agents and a default session
+- Now with Squirrel included!
+
 
 # DOCUMENTATION
 
@@ -26,6 +34,7 @@
 #Overall
 
 - clean silent returns from the codebase to log an error (f.ex. "return@mapNotNull")
+- run intellij code analysis and fix problems found
 
 
 # FILESYSTEM
@@ -65,18 +74,21 @@
 
 - App size is not set up correctly from settings upon app launch
 
-
+- Global spelling checker. lib or API service? API service adds security vulnerability. Could use a small integrated agent for this in addition to library.
 
 # SETTINGS
 - API keys need to be hidden in settings. Adda sensitive flag to the setting.ADD action?
 
 
 # AGENT
-- thinking reporting: update agent current status. Upgrade status as two part status:current_task.
+- thinking reporting: update agent current status. Upgrade status as two part status:current_task. Dependend on
 - remove the boot sentinel from Sovereign and replace with Constitution sub-agent: instead of fragile one time check we get constant checks.
 - fix resource files being saved always as json files. SHould be respective xml or md files per resource type definition.
 
 BUG: gocnitivepipeline 969: should error not default
+
+## Automatic mode
+- Only trigger a turn when CommandBot has an error or a deliverable. OK messages should be ignored. maybe a setting "Ignore Ok from CommandBot"?
 
 ## Strategies 
 
@@ -116,7 +128,8 @@ BUG: gocnitivepipeline 969: should error not default
 - Delete session from tab right click menu
 - TOGGLE_MESSAGE_COLLAPSED could allow none as message to toggle all messages states at once
 - non destructive ledger deletions and edits. Why are we permanantly deleting entries when modern storage capacity is practically unlimited for text.
-
+- Render Action items in JSON formatting with the CodeEditor
+- Add emoticon and unicode search to the input
 
 ## WorkspacePane
 - session files pane does not support folders and files in folders
@@ -148,6 +161,10 @@ BUG: gocnitivepipeline 969: should error not default
 ## Ideas
 - Multi-user HKGs: reservation system, git, other method?
 
+# LUA
+- add comprehensive unit test suite
+- add LUA scripting Documentation
+- 
 
 # FUTURE IDEAS FOR FEATURES
 
@@ -158,3 +175,9 @@ BUG: gocnitivepipeline 969: should error not default
 
 # GIT
 - GIT Feature: connect to local and remote repos, permissions for pull (read), push (commit) and merge (manage)
+
+# IDENTITY
+- Move user identity business logic from core and core feature into its own feature. Ownership stays at AppCore.kt.
+
+## Ideas
+- Explore integration with SSI (Self Dovereign Identity) frameworks. Potential frameworks: IOTA Identity, others?
