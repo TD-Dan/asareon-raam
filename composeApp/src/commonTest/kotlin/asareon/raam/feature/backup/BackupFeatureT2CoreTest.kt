@@ -111,7 +111,8 @@ class BackupFeatureT2CoreTest {
             override fun createZipArchive(
                 sourceDirectoryPath: String,
                 destinationZipPath: String,
-                excludeDirectoryName: String
+                excludeDirectoryName: String,
+                onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
             ) = throw Exception("Simulated zip failure")
         }
         val backupsDir = platform.getBasePathFor(BasePath.APP_ZONE) + "/_backups"

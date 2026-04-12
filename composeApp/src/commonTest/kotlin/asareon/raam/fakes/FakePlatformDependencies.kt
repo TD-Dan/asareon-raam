@@ -51,6 +51,14 @@ open class FakePlatformDependencies(
         writtenFiles[path] = content
     }
 
+    override fun readFileBytes(path: String): ByteArray {
+        return readFileContent(path).encodeToByteArray()
+    }
+
+    override fun writeFileBytes(path: String, bytes: ByteArray) {
+        writeFileContent(path, bytes.decodeToString())
+    }
+
     override fun fileExists(path: String): Boolean {
         return files.containsKey(path) || directories.contains(path)
     }
@@ -143,7 +151,16 @@ open class FakePlatformDependencies(
 
     override fun getUserHomePath(): String = "/fake/user/home"
 
-    override fun createZipArchive(sourceDirectoryPath: String, destinationZipPath: String, excludeDirectoryName: String) {
+    override fun resolveAbsoluteSandboxPath(featureHandle: String, relativePath: String): String {
+        return "${getBasePathFor(BasePath.APP_ZONE)}/$featureHandle/$relativePath"
+    }
+
+    override fun createZipArchive(
+        sourceDirectoryPath: String,
+        destinationZipPath: String,
+        excludeDirectoryName: String,
+        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
+    ) {
         // Simulate creating a zip by writing a marker file
         val parent = getParentDirectory(destinationZipPath)
         if (parent != null) createDirectories(parent)
@@ -154,7 +171,11 @@ open class FakePlatformDependencies(
     data class ExtractedZip(val zipPath: String, val targetDirectoryPath: String)
     val extractedZips = mutableListOf<ExtractedZip>()
 
-    override fun extractZipArchive(zipPath: String, targetDirectoryPath: String) {
+    override fun extractZipArchive(
+        zipPath: String,
+        targetDirectoryPath: String,
+        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
+    ) {
         if (!files.containsKey(zipPath)) throw Exception("Fake zip file not found: $zipPath")
         extractedZips.add(ExtractedZip(zipPath, targetDirectoryPath))
     }
@@ -245,4 +266,6 @@ open class FakePlatformDependencies(
     override fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         capturedLogs.add(CapturedLog(level, tag, message, throwable))
     }
+
+    override var logListener: ((LogLevel, String, String) -> Unit)? = null
 }
