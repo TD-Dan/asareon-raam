@@ -4,8 +4,6 @@
 
 # GENERAL
 
-**- Rebrand and publish as Asareon Raam 1.0.0 **
-
 **- Clean up deprecated code and unneeded migration/resolve notes (atleast agent feature)**
 
 - Actions cleanup for token efficiency: Many of the actions can be consolidated into one action: f.ex. TOGGLE_MESSAGE_LOCKED / LOCK_MESSAGE / UNLOCK_MESSAGE to save tokens
@@ -13,6 +11,8 @@
 - self contained "USB Stick" distributions in addition to installers
 
 - Need a pre loaded state view that shows live log stream while app is loading
+
+- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere
 
 
 # ONBOARDING
@@ -161,6 +161,10 @@ BUG: gocnitivepipeline 969: should error not default
 ## Ideas
 - Multi-user HKGs: reservation system, git, other method?
 
+# LUA
+- add comprehensive unit test suite
+- add LUA scripting Documentation
+- 
 
 # FUTURE IDEAS FOR FEATURES
 
@@ -171,3 +175,9 @@ BUG: gocnitivepipeline 969: should error not default
 
 # GIT
 - GIT Feature: connect to local and remote repos, permissions for pull (read), push (commit) and merge (manage)
+
+# IDENTITY
+- Move user identity business logic from core and core feature into its own feature. Ownership stays at AppCore.kt.
+
+## Ideas
+- Explore integration with SSI (Self Dovereign Identity) frameworks. Potential frameworks: IOTA Identity, others?
