@@ -630,6 +630,24 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
             }
 
+            ActionRegistry.Names.SETTINGS_LOADED -> {
+                val payload = action.payload ?: return state
+                val values = payload.entries.associate { (k, v) ->
+                    k to v.jsonPrimitive.contentOrNull
+                }
+                val config = CompressionConfig.fromSettings(values)
+                state.copy(compressionConfig = config)
+            }
+
+            ActionRegistry.Names.SETTINGS_VALUE_CHANGED -> {
+                val payload = action.payload ?: return state
+                val key = payload["key"]?.jsonPrimitive?.contentOrNull ?: return state
+                val value = payload["value"]?.jsonPrimitive?.contentOrNull
+                val updated = CompressionConfig.updateField(state.compressionConfig, key, value)
+                    ?: return state
+                state.copy(compressionConfig = updated)
+            }
+
             else -> state
         }
     }

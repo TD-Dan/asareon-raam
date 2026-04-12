@@ -1187,6 +1187,7 @@ object CognitivePipeline {
             }
             contextMap["HOLON_KNOWLEDGE_GRAPH"] = HkgContextFormatter.buildUnifiedSection(
                 hkgContext, hkgHeaders, mergedOverrides, personaName,
+                compressionConfig = agentState.compressionConfig,
                 platformDependencies = platformDependencies
             )
         }
@@ -1213,7 +1214,7 @@ object CognitivePipeline {
         // AVAILABLE_ACTIONS — structured Group with per-feature children
         val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
         if (agentIdentity != null) {
-            contextMap["AVAILABLE_ACTIONS"] = ActionsContextFormatter.buildSections(store, agentIdentity)
+            contextMap["AVAILABLE_ACTIONS"] = ActionsContextFormatter.buildSections(store, agentIdentity, agentState.compressionConfig)
         }
 
         // ── File permissions ──────────────────────────────────────────────
@@ -1252,7 +1253,8 @@ object CognitivePipeline {
             )
         }
         contextMap["SESSIONS"] = SessionContextFormatter.buildSessionsGroup(
-            sessionSnapshots, subscribedSessionInfos, isPrivateFormat, platformDependencies
+            sessionSnapshots, subscribedSessionInfos, isPrivateFormat, platformDependencies,
+            compressionConfig = agentState.compressionConfig
         )
 
         // SESSION_FILES — per-session workspace file context (cross-sandbox delegation)
