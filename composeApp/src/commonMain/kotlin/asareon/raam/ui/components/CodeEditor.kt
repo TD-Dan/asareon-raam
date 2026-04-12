@@ -16,7 +16,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -90,6 +93,7 @@ fun CodeEditor(
 
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
+    var showLineNumbers by remember { mutableStateOf(true) }
 
     Box(
         modifier = modifier
@@ -98,37 +102,76 @@ fun CodeEditor(
             .background(Color.Transparent, MaterialTheme.shapes.small)
             .padding(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(verticalScrollState)
-        ) {
-            // Line number gutter — scrolls vertically with the text
-            Column(
-                modifier = Modifier.padding(end = 8.dp),
-                horizontalAlignment = androidx.compose.ui.Alignment.End
+        if (showLineNumbers) {
+            // Line numbers ON: no soft-wrap, scroll for overflow
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(verticalScrollState)
             ) {
-                for (i in 1..lineCount) {
-                    Text(
-                        text = i.toString(),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        lineHeight = 20.sp,
-                        color = lineNumberColor,
-                        modifier = Modifier.height(20.dp)
-                    )
-                }
-            }
+                    // Line number gutter
+                    Column(
+                        modifier = Modifier.padding(end = 8.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.End
+                    ) {
+                        Text(
+                            text = "\u2022\u2022\u2022",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            lineHeight = 20.sp,
+                            color = lineNumberColor,
+                            modifier = Modifier.height(20.dp).clickable { showLineNumbers = false }
+                        )
+                        for (i in 2..lineCount) {
+                            Text(
+                                text = i.toString(),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                lineHeight = 20.sp,
+                                color = lineNumberColor,
+                                modifier = Modifier.height(20.dp)
+                            )
+                        }
+                    }
 
-            // Editor — no soft-wrap, scrolls horizontally for long lines
-            Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScrollState)) {
+                    // Editor — no wrapping
+                    Box(modifier = Modifier.weight(1f).horizontalScroll(horizontalScrollState)) {
+                        BasicTextField(
+                            value = value,
+                            onValueChange = { if (!readOnly) onValueChange(it) },
+                            modifier = Modifier.testTag("code_editor_input"),
+                            readOnly = readOnly,
+                            singleLine = false,
+                            textStyle = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 20.sp
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            visualTransformation = transformation
+                        )
+                    }
+                }
+        } else {
+            // Line numbers OFF: soft-wrap enabled
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "\u2022\u2022\u2022",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    color = lineNumberColor,
+                    modifier = Modifier.padding(end = 8.dp).clickable { showLineNumbers = true }
+                )
+
                 BasicTextField(
                     value = value,
                     onValueChange = { if (!readOnly) onValueChange(it) },
                     modifier = Modifier
+                        .weight(1f)
                         .testTag("code_editor_input"),
                     readOnly = readOnly,
-                    softWrap = false,
+                    singleLine = false,
                     textStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
