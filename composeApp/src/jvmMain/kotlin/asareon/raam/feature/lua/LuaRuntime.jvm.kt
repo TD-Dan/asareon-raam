@@ -3,6 +3,7 @@ package asareon.raam.feature.lua
 import org.luaj.vm2.*
 import org.luaj.vm2.lib.*
 import org.luaj.vm2.lib.jse.JseMathLib
+import org.luaj.vm2.lib.jse.JseBaseLib
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicLong
 
@@ -22,6 +23,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
 
     actual val isAvailable: Boolean = true
 
+    @Volatile
     private var bridgeListener: LuaBridgeListener? = null
     private val scripts = ConcurrentHashMap<String, ScriptEnvironment>()
     private val executor = Executors.newCachedThreadPool { r ->
@@ -174,8 +176,10 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
     private fun createSandboxedGlobals(scriptHandle: String): Globals {
         val globals = Globals()
 
-        // Load ONLY safe libraries
-        globals.load(BaseLib())
+        // PackageLib must load first — TableLib and others depend on package.loaded.
+        // We load it, then strip `require` and `module` to prevent native module loading.
+        globals.load(JseBaseLib())
+        globals.load(PackageLib())
         globals.load(TableLib())
         globals.load(StringLib())
         globals.load(JseMathLib())
@@ -187,6 +191,8 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
         globals.set("load", createSafeLoad(globals))  // Allow load() but only for text mode
         globals.set("collectgarbage", LuaValue.NIL)
         globals.set("rawlen", LuaValue.NIL)
+        globals.set("require", LuaValue.NIL)  // Prevent native module loading
+        globals.set("module", LuaValue.NIL)
 
         // Redirect print to raam.log
         globals.set("print", object : VarArgFunction() {
