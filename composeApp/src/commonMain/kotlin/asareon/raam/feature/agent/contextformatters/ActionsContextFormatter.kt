@@ -4,6 +4,7 @@ import asareon.raam.core.Identity
 import asareon.raam.core.PermissionLevel
 import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.feature.agent.CompressionConfig
 import asareon.raam.feature.agent.PromptSection
 
 /**
@@ -34,8 +35,15 @@ object ActionsContextFormatter {
      * @param store The Store instance for resolving effective permissions
      * @param agentIdentity The agent's Identity from the registry
      */
-    fun buildSections(store: Store, agentIdentity: Identity): PromptSection.Group {
-        val preamble = buildPreamble()
+    fun buildSections(store: Store, agentIdentity: Identity, compressionConfig: CompressionConfig = CompressionConfig()): PromptSection.Group {
+        var preamble = if (compressionConfig.terseSystemText || compressionConfig.terseActions) {
+            TerseText.get("ACTIONS_PREAMBLE", true)
+        } else {
+            TerseText.get("ACTIONS_PREAMBLE", false)
+        }
+        if (compressionConfig.abbreviations) {
+            preamble = TerseText.abbreviate(preamble)
+        }
         val agentActions = resolveAgentActions(store, agentIdentity)
 
         if (agentActions.isEmpty()) {
@@ -62,21 +70,25 @@ object ActionsContextFormatter {
         }.toSortedMap()
 
         val children = byFeature.map { (feature, actions) ->
-            val content = buildString {
-                actions.forEach { desc ->
-                    appendLine("### ${desc.fullName}")
-                    appendLine(desc.summary)
-                    if (desc.payloadFields.isNotEmpty()) {
-                        appendLine("Payload fields:")
-                        desc.payloadFields.forEach { field ->
-                            val requiredTag = if (field.required) " (REQUIRED)" else ""
-                            val defaultTag = field.default?.let { " [default: $it]" } ?: ""
-                            appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
+            val content = if (compressionConfig.terseActions) {
+                buildTerseActionContent(actions)
+            } else {
+                buildString {
+                    actions.forEach { desc ->
+                        appendLine("### ${desc.fullName}")
+                        appendLine(desc.summary)
+                        if (desc.payloadFields.isNotEmpty()) {
+                            appendLine("Payload fields:")
+                            desc.payloadFields.forEach { field ->
+                                val requiredTag = if (field.required) " (REQUIRED)" else ""
+                                val defaultTag = field.default?.let { " [default: $it]" } ?: ""
+                                appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
+                            }
+                        } else {
+                            appendLine("Payload: none (empty code block body)")
                         }
-                    } else {
-                        appendLine("Payload: none (empty code block body)")
+                        appendLine()
                     }
-                    appendLine()
                 }
             }
             PromptSection.Section(
@@ -105,35 +117,25 @@ object ActionsContextFormatter {
     // Internal helpers
     // =========================================================================
 
-    /** Builds the shared preamble: syntax instructions, examples, constraints. */
-    private fun buildPreamble(): String = buildString {
-        appendLine("--- AVAILABLE SYSTEM ACTIONS ---")
-        appendLine()
-        appendLine("You can invoke system actions by including a fenced code block in your response.")
-        appendLine("The code block's language tag must be 'raam_' followed by the full action name.")
-        appendLine("The code block body must be a valid JSON payload, or empty for no-payload actions.")
-        appendLine()
-        appendLine("IMPORTANT CONSTRAINTS:")
-        appendLine("- All file paths ('path') are relative to YOUR private workspace directory.")
-        appendLine("- You CANNOT access files outside your workspace. Path traversal is blocked.")
-        appendLine("- File paths must use '/' separators and include a file extension.")
-        appendLine("- You may invoke multiple actions in a single response by including multiple code blocks.")
-        appendLine()
-        appendLine("EXAMPLE — Writing a file:")
-        appendLine("```raam_filesystem.WRITE")
-        appendLine("{")
-        appendLine("  \"path\": \"notes/summary.md\",")
-        appendLine("  \"content\": \"# Meeting Summary\\nKey points discussed today...\"")
-        appendLine("}")
-        appendLine("```")
-        appendLine()
-        appendLine("EXAMPLE — Listing your workspace:")
-        appendLine("```raam_filesystem.LIST")
-        appendLine("{")
-        appendLine("  \"recursive\": true")
-        appendLine("}")
-        appendLine("```")
-        appendLine()
+    /**
+     * Builds compact reference-card format for actions (Strategy 4).
+     * Format: `action.name — One-line description` with `paramName*: type — hint` lines.
+     * Convention: `*` = required, `?` = optional.
+     */
+    private fun buildTerseActionContent(actions: List<ActionRegistry.ActionDescriptor>): String = buildString {
+        actions.forEach { desc ->
+            append("${desc.fullName} — ${desc.summary.take(80)}")
+            appendLine()
+            if (desc.payloadFields.isNotEmpty()) {
+                desc.payloadFields.forEach { field ->
+                    val marker = if (field.required) "*" else "?"
+                    val defaultStr = field.default?.let { " (default: $it)" } ?: ""
+                    val descStr = if (field.description.length > 60) field.description.take(57) + "..." else field.description
+                    appendLine("  ${field.name}$marker: ${field.type}$defaultStr — $descStr")
+                }
+            }
+            appendLine()
+        }
     }
 
     /** Resolves and filters the actions available to the given agent identity. */

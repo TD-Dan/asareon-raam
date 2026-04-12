@@ -1,5 +1,6 @@
 package asareon.raam.feature.agent.contextformatters
 
+import asareon.raam.feature.agent.CompressionConfig
 import asareon.raam.feature.agent.ContextDelimiters
 import asareon.raam.feature.agent.GatewayMessage
 import asareon.raam.feature.agent.PromptSection
@@ -79,10 +80,11 @@ object SessionContextFormatter {
         sessions: List<SessionLedgerSnapshot>,
         sessionInfos: List<SessionInfo>,
         isPrivateFormat: Boolean = false,
-        platformDependencies: PlatformDependencies
+        platformDependencies: PlatformDependencies,
+        compressionConfig: CompressionConfig = CompressionConfig()
     ): PromptSection.Group {
         // Build the header: subscription list + multi-agent + format instructions
-        val header = buildSessionsHeader(sessions, sessionInfos, isPrivateFormat)
+        val header = buildSessionsHeader(sessions, sessionInfos, isPrivateFormat, compressionConfig)
 
         if (sessions.isEmpty() || sessions.all { it.messages.isEmpty() }) {
             return PromptSection.Group(
@@ -104,7 +106,7 @@ object SessionContextFormatter {
         }
 
         val children = sessions.map { session ->
-            val content = buildSessionContent(session, platformDependencies)
+            val content = buildSessionContent(session, platformDependencies, compressionConfig)
             val messageCount = session.messages.size
 
             PromptSection.Section(
@@ -138,9 +140,12 @@ object SessionContextFormatter {
     private fun buildSessionsHeader(
         sessions: List<SessionLedgerSnapshot>,
         sessionInfos: List<SessionInfo>,
-        isPrivateFormat: Boolean
+        isPrivateFormat: Boolean,
+        compressionConfig: CompressionConfig = CompressionConfig()
     ): String = buildString {
         if (sessionInfos.isEmpty()) return@buildString
+
+        val isTerse = compressionConfig.terseSystemText
 
         // 1. Summary line
         val sessionCount = sessionInfos.size
@@ -148,46 +153,67 @@ object SessionContextFormatter {
             .flatMap { it.participants }
             .distinctBy { it.senderId }
             .size
-        val sessionWord = if (sessionCount == 1) "1 session" else "$sessionCount sessions"
-        appendLine("You are participating in $sessionWord with $totalParticipants participants.")
+
+        if (isTerse) {
+            appendLine("$sessionCount sessions, $totalParticipants parts:")
+        } else {
+            val sessionWord = if (sessionCount == 1) "1 session" else "$sessionCount sessions"
+            appendLine("You are participating in $sessionWord with $totalParticipants participants.")
+        }
 
         // 2. Subscription list with per-session participants
-        appendLine("Subscribed sessions:")
-        sessionInfos.forEach { session ->
-            val tag = when {
-                isPrivateFormat && session.isOutput ->
-                    " [PRIVATE — Your direct output is routed here, invisible to others]"
-                isPrivateFormat ->
-                    " [Use session.POST to publish here]"
-                session.isOutput ->
-                    " [PRIMARY — Your output and tool results are routed here]"
-                else ->
-                    " [Use session.POST to publish here]"
+        if (isTerse) {
+            sessionInfos.forEach { session ->
+                val tag = when {
+                    isPrivateFormat && session.isOutput -> " [PRIVATE]"
+                    session.isOutput -> " [PRIMARY]"
+                    else -> " [POST]"
+                }
+                append("${session.name} (${session.handle})$tag")
+                if (session.participants.isNotEmpty()) {
+                    append(" ")
+                    append(session.participants.joinToString(" | ") { p ->
+                        "${p.senderName} (${p.senderId}) ${p.messageCount}msg"
+                    })
+                }
+                appendLine()
             }
-            appendLine("  - ${session.name} (${session.handle})$tag")
-            if (session.participants.isNotEmpty()) {
-                session.participants.forEach { p ->
-                    appendLine("    - ${p.senderName} (${p.senderId}): ${p.type} (${p.messageCount} messages)")
+        } else {
+            appendLine("Subscribed sessions:")
+            sessionInfos.forEach { session ->
+                val tag = when {
+                    isPrivateFormat && session.isOutput ->
+                        " [PRIVATE — Your direct output is routed here, invisible to others]"
+                    isPrivateFormat ->
+                        " [Use session.POST to publish here]"
+                    session.isOutput ->
+                        " [PRIMARY — Your output and tool results are routed here]"
+                    else ->
+                        " [Use session.POST to publish here]"
+                }
+                appendLine("  - ${session.name} (${session.handle})$tag")
+                if (session.participants.isNotEmpty()) {
+                    session.participants.forEach { p ->
+                        appendLine("    - ${p.senderName} (${p.senderId}): ${p.type} (${p.messageCount} messages)")
+                    }
                 }
             }
         }
 
         // 3. Routing instructions
         appendLine()
-        if (isPrivateFormat) {
-            appendLine("You observe messages from all subscribed sessions. Your direct response goes to your private session.")
-            appendLine("Use session.POST to publish to public sessions.")
+        val routingKey = if (isPrivateFormat) {
+            "SESSION_ROUTING_PRIVATE"
+        } else if (sessionCount > 1) {
+            "SESSION_ROUTING_STANDARD_MULTI"
         } else {
-            appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
-            if (sessionCount > 1) {
-                appendLine("Use session.POST to publish to other sessions.")
-            }
+            "SESSION_ROUTING_STANDARD"
         }
+        appendLine(TerseText.get(routingKey, isTerse))
 
         // 4. Message format instructions
         appendLine()
-        appendLine("Each message in the conversation is wrapped with sender headers (name, id, timestamp).")
-        appendLine("When YOU respond, do NOT include these headers — the system adds them automatically.")
+        appendLine(TerseText.get("SESSION_MSG_FORMAT", isTerse))
     }
 
     /**
@@ -196,7 +222,8 @@ object SessionContextFormatter {
      */
     fun buildSessionContent(
         session: SessionLedgerSnapshot,
-        platformDependencies: PlatformDependencies
+        platformDependencies: PlatformDependencies,
+        compressionConfig: CompressionConfig = CompressionConfig()
     ): String = buildString {
         if (session.messages.isEmpty()) {
             appendLine("(no messages)")
@@ -204,10 +231,40 @@ object SessionContextFormatter {
             for (msg in session.messages) {
                 val formattedTimestamp = platformDependencies.formatIsoTimestamp(msg.timestamp)
                 val lockIndicator = if (msg.isLocked) " [🔒]" else ""
-                append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp$lockIndicator"))
-                appendLine(msg.content)
-                append(ContextDelimiters.h3End())
+
+                if (compressionConfig.slimMessageHeaders) {
+                    // Strategy 6: compact bracket notation, short timestamp, no closing delimiter
+                    val shortTs = shortenTimestamp(formattedTimestamp)
+                    var header = "[${msg.senderName}|${msg.senderId}|$shortTs$lockIndicator]"
+                    if (compressionConfig.abbreviations) {
+                        header = TerseText.abbreviate(header)
+                    }
+                    appendLine(header)
+                    appendLine(msg.content)
+                } else {
+                    append(ContextDelimiters.h3("${msg.senderName} (${msg.senderId}) @ $formattedTimestamp$lockIndicator"))
+                    appendLine(msg.content)
+                    append(ContextDelimiters.h3End())
+                }
             }
+        }
+    }
+
+    /**
+     * Shortens an ISO 8601 timestamp (e.g. "2026-04-10T13:35:28Z") to compact
+     * "MM-DD HH:MM" form (e.g. "04-10 13:35"). Falls back to the original
+     * string if parsing fails.
+     */
+    private fun shortenTimestamp(iso: String): String {
+        // Expected format: YYYY-MM-DDTHH:MM:SS... — extract MM-DD HH:MM
+        return try {
+            val datePart = iso.substringBefore('T')
+            val timePart = iso.substringAfter('T')
+            val monthDay = datePart.substring(datePart.length - 5) // "MM-DD"
+            val hourMin = timePart.substring(0, 5) // "HH:MM"
+            "$monthDay $hourMin"
+        } catch (_: Exception) {
+            iso
         }
     }
 }

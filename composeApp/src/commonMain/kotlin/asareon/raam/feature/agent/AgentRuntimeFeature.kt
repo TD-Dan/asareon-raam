@@ -214,6 +214,13 @@ class AgentRuntimeFeature(
                 val agentId = action.payload?.agentUUID("correlationId")
                 if (agentId != null) {
                     CognitivePipeline.handleExternalTurnResult(agentId, store)
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> {
+                // Register compression settings
+                CompressionConfig.settingDefinitions.forEach { (key, label, desc) ->
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
+                        put("key", key); put("type", "BOOLEAN"); put("label", label)
+                        put("description", desc); put("section", "Token Compression"); put("defaultValue", "false")
+                    }))
                 }
             }
             ActionRegistry.Names.AGENT_AGENTS_LOADED -> {
