@@ -154,14 +154,30 @@ object CognitivePipeline {
      * - "error": aborts the turn with an error
      */
     fun handleExternalTurnResult(agentId: IdentityUUID, store: Store) {
-        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
-        val agent = state.agents[agentId] ?: return
-        val statusInfo = state.agentStatuses[agentId] ?: return
-        val resultPayload = statusInfo.transientExternalTurnResult ?: return
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: run {
+            store.platformDependencies.log(LogLevel.ERROR, LOG_TAG,
+                "handleExternalTurnResult: Agent feature state missing for '$agentId'.")
+            return
+        }
+        val agent = state.agents[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleExternalTurnResult: Agent '$agentId' not found. May have been deleted mid-turn.")
+            return
+        }
+        val statusInfo = state.agentStatuses[agentId] ?: run {
+            store.platformDependencies.log(LogLevel.WARN, LOG_TAG,
+                "handleExternalTurnResult: No status entry for agent '$agentId'.")
+            return
+        }
+        val resultPayload = statusInfo.transientExternalTurnResult ?: run {
+            store.platformDependencies.log(LogLevel.DEBUG, LOG_TAG,
+                "handleExternalTurnResult: No transient result for agent '$agentId' (may have been cleared already).")
+            return
+        }
 
         val mode = resultPayload["mode"]?.jsonPrimitive?.contentOrNull ?: "error"
 
-        // Clear the transient result
+        // Clear the processing step
         store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
             put("agentId", agentId.uuid); put("step", JsonNull)
         }))
@@ -189,19 +205,20 @@ object CognitivePipeline {
                 val response = resultPayload["response"]?.jsonPrimitive?.contentOrNull ?: ""
                 val outputSessionUUID = agent.outputSessionId
 
-                if (outputSessionUUID != null) {
-                    val sessionHandle = store.state.value.identityRegistry.values
-                        .find { it.uuid == outputSessionUUID.uuid }?.handle
-
-                    if (sessionHandle != null) {
-                        store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
-                            put("sessionId", outputSessionUUID.uuid)
-                            put("content", response)
-                            put("senderId", agent.identity.handle)
-                            put("senderName", agent.identity.name)
-                        }))
-                    }
+                if (outputSessionUUID == null) {
+                    store.platformDependencies.log(LogLevel.ERROR, LOG_TAG,
+                        "handleExternalTurnResult (custom): Agent '$agentId' has no output session. Response discarded.")
+                    AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR,
+                        "External strategy returned response but agent has no output session configured.")
+                    return
                 }
+
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                    put("sessionId", outputSessionUUID.uuid)
+                    put("content", response)
+                    put("senderId", agent.identity.handle)
+                    put("senderName", agent.identity.name)
+                }))
 
                 // Update NVRAM if provided
                 val newState = resultPayload["state"]
