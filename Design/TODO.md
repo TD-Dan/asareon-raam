@@ -57,12 +57,9 @@
 
 - ASK permissions granted log view in the identity/permissions tab.
 
-- Allow selecting a custom root for App files (move to C:/Daniel for automatic backups!). Makes also possible to run multiple instances of the app.
+- Allow selecting a custom root for App files. Makes also possible to run multiple instances of the app.
 
 - Add detection of multiple running app instances and warn/lock if trying to use same app folder
-
-- BUG: Agent identities are not removed from core when agent is deleted
-- BUG: stale identities remain at the core from session, agent, others?
 
 - Runtime payload schema validation
 
@@ -72,9 +69,16 @@
 
 - add ui header composable to share with features (ui consistency)
 
-- App size is not set up correctly from settings upon app launch
+## Bugs
+- BUG: Agent identities are not removed from core when agent is deleted
+- BUG: stale identities remain at the core from session, agent, others?
+- BUG: Permissions manager bottom scrollbar is too small; gets overridden by the stretch window mouse mode.
+
+## Ideas
 
 - Global spelling checker. lib or API service? API service adds security vulnerability. Could use a small integrated agent for this in addition to library.
+
+
 
 # SETTINGS
 - API keys need to be hidden in settings. Adda sensitive flag to the setting.ADD action?
