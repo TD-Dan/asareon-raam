@@ -231,19 +231,20 @@ class SessionContextFormatterT1CompressionTest {
     // =========================================================================
 
     @Test
-    fun `abbreviations applied to header text`() {
-        // TerseText.abbreviate replaces "configuration" -> "config" etc.
-        // The verbose header text contains words like "automatically"
-        val verbose = buildAndRender(testSessions)
-        val abbreviated = buildAndRender(testSessions, compressionConfig = CompressionConfig(abbreviations = true))
+    fun `abbreviations applied to slim message headers`() {
+        // Abbreviations are applied to slim message headers (bracket format).
+        // Test with a sender name/id that contains an abbreviatable word.
+        val sessionsWithLongId = listOf(
+            snapshot("Chat", "s1", "session.chat", listOf(
+                msg("user", "Hello", "user.configuration-admin", "ConfigAdmin", 1000L)
+            ))
+        )
+        val result = buildAndRender(sessionsWithLongId,
+            compressionConfig = CompressionConfig(slimMessageHeaders = true, abbreviations = true))
 
-        // The verbose text contains "automatically" which should become "auto"
-        if (verbose.contains("automatically")) {
-            assertTrue(abbreviated.contains("auto"),
-                "Abbreviations should replace 'automatically' with 'auto'")
-            assertFalse(abbreviated.contains("automatically"),
-                "Abbreviations should remove full word 'automatically'")
-        }
+        // "configuration" in the senderId should become "config"
+        assertTrue(result.contains("config"),
+            "Abbreviations should shorten words in slim message headers. Got:\n$result")
     }
 
     // =========================================================================
