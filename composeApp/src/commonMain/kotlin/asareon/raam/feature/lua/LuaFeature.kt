@@ -10,6 +10,7 @@ import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 /**
@@ -52,6 +53,8 @@ class LuaFeature(
     private var correlationCounter = 0L
 
     private lateinit var store: Store
+
+    private val scriptsConfigFile = "scripts.json"
 
     private fun nextCorrelationId(prefix: String): String = "lua:$prefix:${++correlationCounter}"
 
@@ -203,10 +206,12 @@ class LuaFeature(
             ActionRegistry.Names.LUA_EVAL -> handleEval(action, store)
             ActionRegistry.Names.LUA_LIST_SCRIPTS -> handleListScripts(action, store)
             ActionRegistry.Names.LUA_CREATE_SCRIPT -> handleCreateScript(action, store)
-            ActionRegistry.Names.LUA_DELETE_SCRIPT -> handleDeleteScript(action, store, previousState)
+            ActionRegistry.Names.LUA_DELETE_SCRIPT -> { handleDeleteScript(action, store, previousState); persistScriptsConfig(store) }
             ActionRegistry.Names.LUA_CLONE_SCRIPT -> handleCloneScript(action, store)
-            ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> handleToggleScript(action, store, previousState)
+            ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> { handleToggleScript(action, store, previousState); persistScriptsConfig(store) }
             ActionRegistry.Names.LUA_SAVE_SCRIPT -> handleSaveScript(action, store)
+            ActionRegistry.Names.LUA_SCRIPT_LOADED -> persistScriptsConfig(store)
+            ActionRegistry.Names.LUA_SCRIPT_UNLOADED -> persistScriptsConfig(store)
 
             // External strategy turn request from the agent pipeline
             ActionRegistry.Names.AGENT_EXTERNAL_TURN_REQUEST -> handleExternalTurnRequest(action, store)
@@ -532,14 +537,11 @@ class LuaFeature(
 
         if (!runtime.isAvailable) return
 
-        // Autodiscover .lua scripts in workspace
+        // Load persisted script config (which scripts exist, which are active)
+        // The config response handler triggers autodiscovery after loading.
         store.deferredDispatch(identity.handle, Action(
-            name = ActionRegistry.Names.FILESYSTEM_LIST,
-            payload = buildJsonObject {
-                put("path", "")
-                put("recursive", false)
-                put("correlationId", DISCOVER_CORRELATION_ID)
-            }
+            name = ActionRegistry.Names.FILESYSTEM_READ,
+            payload = buildJsonObject { put("path", scriptsConfigFile) }
         ))
     }
 
@@ -751,6 +753,12 @@ class LuaFeature(
         val path = action.payload?.get("path")?.jsonPrimitive?.contentOrNull ?: return // Not our response (no path)
         val content = action.payload?.get("content")?.jsonPrimitive?.contentOrNull
 
+        // Handle scripts config file response
+        if (path == scriptsConfigFile) {
+            handleScriptsConfigLoaded(content, store)
+            return
+        }
+
         // Find the pending op that matches this file path — if none, this response isn't for us
         val pendingOp = findPendingOpByPath(path, store) ?: return
 
@@ -767,8 +775,12 @@ class LuaFeature(
                 val localHandle = pendingOp.extra["localHandle"]
                     ?: return logMissingField("FILESYSTEM_RETURN_READ[load]", "localHandle in pendingOp")
                 val handle = pendingOp.scriptHandle
-                val result = runtime.loadScript(handle, localHandle, content)
-                if (result.success) {
+
+                // Check if script was toggled off between the READ dispatch and response
+                val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+                val scriptInfo = currentState?.scripts?.get(handle)
+                if (scriptInfo?.status == ScriptStatus.STOPPED) {
+                    // Script toggled inactive — store source content but don't load into runtime
                     store.deferredDispatch(identity.handle, Action(
                         name = ActionRegistry.Names.LUA_SCRIPT_LOADED,
                         payload = buildJsonObject {
@@ -778,9 +790,28 @@ class LuaFeature(
                             put("sourceContent", content)
                         }
                     ))
-                    platformDependencies.log(LogLevel.INFO, identity.handle, "Script loaded: $handle")
+                    // Immediately set back to STOPPED (SCRIPT_LOADED sets RUNNING)
+                    store.deferredDispatch(identity.handle, Action(
+                        name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
+                        payload = buildJsonObject { put("scriptHandle", handle) }
+                    ))
+                    platformDependencies.log(LogLevel.INFO, identity.handle, "Script discovered (inactive): $handle")
                 } else {
-                    dispatchScriptError(handle, result.error ?: "Unknown error", "load")
+                    val result = runtime.loadScript(handle, localHandle, content)
+                    if (result.success) {
+                        store.deferredDispatch(identity.handle, Action(
+                            name = ActionRegistry.Names.LUA_SCRIPT_LOADED,
+                            payload = buildJsonObject {
+                                put("scriptHandle", handle)
+                                put("scriptName", localHandle)
+                                put("scriptPath", path)
+                                put("sourceContent", content)
+                            }
+                        ))
+                        platformDependencies.log(LogLevel.INFO, identity.handle, "Script loaded: $handle")
+                    } else {
+                        dispatchScriptError(handle, result.error ?: "Unknown error", "load")
+                    }
                 }
             }
 
@@ -831,6 +862,116 @@ class LuaFeature(
                 ))
             }
         }
+    }
+
+    // ========================================================================
+    // Script config persistence
+    // ========================================================================
+
+    /**
+     * Config file format:
+     * ```json
+     * {
+     *   "scripts": [
+     *     { "path": "logger.lua", "localHandle": "logger", "active": true },
+     *     { "path": "helper.lua", "localHandle": "helper", "active": false }
+     *   ]
+     * }
+     * ```
+     */
+    private fun handleScriptsConfigLoaded(content: String?, store: Store) {
+        if (content != null) {
+            try {
+                val configJson = json.parseToJsonElement(content).jsonObject
+                val scriptsArray = configJson["scripts"]?.jsonArray ?: JsonArray(emptyList())
+
+                for (entry in scriptsArray) {
+                    val obj = entry.jsonObject
+                    val path = obj["path"]?.jsonPrimitive?.contentOrNull ?: continue
+                    val localHandle = obj["localHandle"]?.jsonPrimitive?.contentOrNull
+                        ?: deriveLocalHandle(null, path)
+                    val active = obj["active"]?.jsonPrimitive?.booleanOrNull ?: true
+
+                    if (active) {
+                        // Active scripts: full load (creates state entry + reads file + loads into runtime)
+                        store.deferredDispatch(identity.handle, Action(
+                            name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
+                            payload = buildJsonObject {
+                                put("scriptPath", path)
+                                put("localHandle", localHandle)
+                            }
+                        ))
+                    } else {
+                        // Inactive scripts: add to state only (STOPPED status, no runtime load)
+                        // We dispatch LOAD_SCRIPT to get the ScriptInfo into state, then the
+                        // reducer sets it to LOADING. We immediately follow with a reducer-only
+                        // state update to STOPPED. The LOAD_SCRIPT side effect will dispatch
+                        // filesystem.READ, but we skip loading into runtime when toggle catches it.
+                        //
+                        // Simpler approach: directly build the ScriptInfo via an internal action.
+                        // For now, use LOAD_SCRIPT which creates the state entry as LOADING,
+                        // then the side effect fires filesystem.READ. When the file response
+                        // arrives, we check the toggle state and skip runtime loading if STOPPED.
+                        //
+                        // Actually cleanest: just add to state as STOPPED without triggering load.
+                        // We use a direct state manipulation via a synthetic action the reducer handles.
+                        store.deferredDispatch(identity.handle, Action(
+                            name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
+                            payload = buildJsonObject {
+                                put("scriptPath", path)
+                                put("localHandle", localHandle)
+                                put("autostart", false)
+                            }
+                        ))
+                        // Immediately toggle to STOPPED (reducer handles this synchronously
+                        // before the async filesystem.READ response arrives)
+                        store.deferredDispatch(identity.handle, Action(
+                            name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
+                            payload = buildJsonObject { put("scriptHandle", "lua.$localHandle") }
+                        ))
+                    }
+                }
+            } catch (e: Exception) {
+                platformDependencies.log(LogLevel.ERROR, identity.handle,
+                    "Failed to parse $scriptsConfigFile: ${e.message}")
+            }
+        }
+
+        // After loading config (or if no config file), discover new scripts on disk
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_LIST,
+            payload = buildJsonObject {
+                put("path", "")
+                put("recursive", false)
+                put("correlationId", DISCOVER_CORRELATION_ID)
+            }
+        ))
+    }
+
+    /**
+     * Persists the current script configuration to disk.
+     * Called after any change that affects the script list or active state.
+     */
+    private fun persistScriptsConfig(store: Store) {
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return
+        val configJson = buildJsonObject {
+            put("scripts", buildJsonArray {
+                currentState.scripts.values.forEach { script ->
+                    add(buildJsonObject {
+                        put("path", script.path)
+                        put("localHandle", script.localHandle)
+                        put("active", script.status == ScriptStatus.RUNNING || script.status == ScriptStatus.LOADING)
+                    })
+                }
+            })
+        }
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.FILESYSTEM_WRITE,
+            payload = buildJsonObject {
+                put("path", scriptsConfigFile)
+                put("content", json.encodeToString(configJson))
+            }
+        ))
     }
 
     // ========================================================================
