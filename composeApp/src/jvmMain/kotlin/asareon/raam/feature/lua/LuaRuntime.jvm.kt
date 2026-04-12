@@ -1,6 +1,7 @@
 package asareon.raam.feature.lua
 
 import org.luaj.vm2.*
+import org.luaj.vm2.compiler.LuaC
 import org.luaj.vm2.lib.*
 import org.luaj.vm2.lib.jse.JseMathLib
 import org.luaj.vm2.lib.jse.JseBaseLib
@@ -175,6 +176,9 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
 
     private fun createSandboxedGlobals(scriptHandle: String): Globals {
         val globals = Globals()
+
+        // Install the Lua source compiler — without this, globals.load(string) fails with "No compiler."
+        LuaC.install(globals)
 
         // PackageLib must load first — TableLib and others depend on package.loaded.
         // We load it, then strip `require` and `module` to prevent native module loading.
