@@ -159,8 +159,8 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                         script = selected,
                         isEditing = isEditing,
                         onEdit = {
-                            // Read current content into buffer (placeholder — in real impl would read from file)
-                            editBuffer = "-- Script: ${selected.name}\n-- Edit content here\n"
+                            editBuffer = selected.sourceContent
+                                ?: "-- <file content unavailable — reload the script and try again>"
                             isEditing = true
                         },
                         onSave = {
@@ -389,7 +389,6 @@ private fun ScriptListRow(
 // Script Detail Header
 // ══════════════════════════════════════════════════════════════════════════════
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScriptDetailHeader(
     script: ScriptInfo,

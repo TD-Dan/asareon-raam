@@ -33,37 +33,7 @@ class LuaStrategy(
         const val SLOT_LUA_SCRIPT = "lua_script"
         const val SLOT_SYSTEM_INSTRUCTION = "system_instruction"
 
-        val DEFAULT_LUA_SCRIPT = """
-            -- Lua Agent Strategy Script
-            -- This script serves as a CognitiveStrategy for an Asareon Raam agent.
-            -- Implement on_turn(ctx) to handle each agent turn.
-
-            function on_load()
-                raam.log("Lua agent script loaded")
-            end
-
-            function on_turn(ctx)
-                -- ctx.messages   — array of {senderId, content, timestamp}
-                -- ctx.state      — table of NVRAM values (cognitive state)
-                -- ctx.resources  — table of {slotId = content_string}
-                -- ctx.sessions   — array of {handle, name, isOutput, messageCount}
-
-                local msgCount = 0
-                if ctx.messages then msgCount = #ctx.messages end
-
-                return {
-                    response = "Processed " .. msgCount .. " messages.",
-                    -- state = { phase = "ACTIVE" },  -- optional NVRAM update
-                    -- actions = {                     -- optional action dispatches
-                    --     { name = "core.SHOW_TOAST", payload = { message = "Turn done" } }
-                    -- }
-                }
-            end
-
-            function on_config_changed(old_config, new_config)
-                raam.log("Agent config updated")
-            end
-        """.trimIndent()
+        val DEFAULT_LUA_SCRIPT = LuaScriptTemplates.agentStrategyScript
     }
 
     override fun getResourceSlots(): List<ResourceSlot> = listOf(

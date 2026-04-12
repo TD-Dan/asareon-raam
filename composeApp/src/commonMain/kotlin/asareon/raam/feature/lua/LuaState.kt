@@ -29,7 +29,9 @@ data class ScriptInfo(
     val status: ScriptStatus,
     val autostart: Boolean = false,
     val lastError: String? = null,
-    val loadedAt: Long = 0
+    val loadedAt: Long = 0,
+    /** The last-known source code of the script (populated on load/save). */
+    val sourceContent: String? = null
 )
 
 /**
