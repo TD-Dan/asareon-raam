@@ -45,6 +45,12 @@ class LuaRuntimeJvmTest {
             LuaActionDescriptor("session.POST", "session", "Post a message to a session", true),
             LuaActionDescriptor("lua.LOAD_SCRIPT", "lua", "Load a Lua script", true)
         )
+        override fun onScriptConsolePrint(scriptHandle: String, message: String, color: String?, bold: Boolean, italic: Boolean) {
+            capturedLogs.add(Triple(scriptHandle, "log", message))
+        }
+        override fun onScriptConsoleClear(scriptHandle: String) {
+            capturedLogs.add(Triple(scriptHandle, "clear", ""))
+        }
     }
 
     @Before

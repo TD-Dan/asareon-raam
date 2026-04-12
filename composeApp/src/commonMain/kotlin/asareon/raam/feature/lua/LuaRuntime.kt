@@ -76,6 +76,18 @@ interface LuaBridgeListener {
      * Used by raam.actions().
      */
     fun getActionDescriptors(): List<LuaActionDescriptor>
+
+    /**
+     * Called when a script invokes raam.console.print(text, color, bold, italic).
+     * Writes styled output to the script's console buffer AND the application log.
+     */
+    fun onScriptConsolePrint(scriptHandle: String, message: String, color: String?, bold: Boolean, italic: Boolean)
+
+    /**
+     * Called when a script invokes raam.console.clear().
+     * Clears the script's console buffer.
+     */
+    fun onScriptConsoleClear(scriptHandle: String)
 }
 
 /**

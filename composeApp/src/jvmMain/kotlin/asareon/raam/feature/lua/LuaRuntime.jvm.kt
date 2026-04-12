@@ -482,6 +482,31 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
             }
         })
 
+        // raam.console — styled output and buffer control
+        val console = LuaTable()
+
+        // raam.console.print(text, color?, bold?, italic?)
+        console.set("print", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val text = args.checkjstring(1)
+                val color = if (args.narg() >= 2 && args.arg(2).isstring()) args.arg(2).tojstring() else null
+                val bold = if (args.narg() >= 3) args.arg(3).toboolean() else false
+                val italic = if (args.narg() >= 4) args.arg(4).toboolean() else false
+                bridgeListener?.onScriptConsolePrint(scriptHandle, text, color, bold, italic)
+                return LuaValue.NIL
+            }
+        })
+
+        // raam.console.clear()
+        console.set("clear", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                bridgeListener?.onScriptConsoleClear(scriptHandle)
+                return LuaValue.NIL
+            }
+        })
+
+        raam.set("console", console)
+
         globals.set("raam", raam)
     }
 

@@ -41,7 +41,10 @@ data class ScriptInfo(
 data class ConsoleEntry(
     val level: String,  // "log", "warn", "error"
     val message: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val bold: Boolean? = null,
+    val italic: Boolean? = null,
+    val color: String? = null  // hex color override (e.g., "#FF5500")
 )
 
 /**

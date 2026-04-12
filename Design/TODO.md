@@ -108,19 +108,19 @@ BUG: gocnitivepipeline 969: should error not default
 - BOOTING/AWAKE in SovereignStrategy is actually Strategy controlled variable so it should not live in NVRAM where the agent could modify it?
 
 ## NVRAM
-- NVRAM schema adherence: Strategy sets or agent can expand?
+- NVRAM schema adherence: Set by strategy or agent can expand?
 - should the NVRAM needs be tied 1:1 to sub-agents? "My concerns are not being heard, I need to escalate my need." This is essentially an sub-agent veto.
 
 ## Avatar Card
-- BUG: Triple and double agent avatar cards in the session and private session for new agents in sovereign mode
+- BUG: Triple and double agent avatar cards in the session and private session for new agents in sovereign mode. REPORT: not seen for a while. Fixed?
 
 ##Context management
 - "You are <Agentname>" at the end of the context also for persona anchoring.
 - NVRAM needs to be at the end of the context for optimal llm attention.
 
-** - Session files shown in the agent context as session child-partials. Needs to go trough session to retrieve files: session files are sandboxed out of agents reach.**
-
 - CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
+
+- 
 
 # GATEWAY
 - streaming support for gateways
@@ -166,7 +166,6 @@ BUG: gocnitivepipeline 969: should error not default
 - Multi-user HKGs: reservation system, git, other method?
 
 # LUA
-- add comprehensive unit test suite
 - add LUA scripting Documentation
 - 
 

@@ -134,11 +134,21 @@ class LuaFeature(
                 val payload = action.payload ?: return luaState
                 val handle = payload["scriptHandle"]?.jsonPrimitive?.contentOrNull ?: return luaState
                 val level = payload["level"]?.jsonPrimitive?.contentOrNull ?: "log"
+
+                // "clear" level = wipe the console buffer
+                if (level == "clear") {
+                    return luaState.copy(consoleBuffers = luaState.consoleBuffers + (handle to emptyList()))
+                }
+
                 val message = payload["message"]?.jsonPrimitive?.contentOrNull ?: ""
                 val timestamp = payload["timestamp"]?.jsonPrimitive?.longOrNull ?: 0
+                val bold = payload["bold"]?.jsonPrimitive?.booleanOrNull
+                val italic = payload["italic"]?.jsonPrimitive?.booleanOrNull
+                val color = payload["color"]?.jsonPrimitive?.contentOrNull
 
+                val entry = ConsoleEntry(level, message, timestamp, bold, italic, color)
                 val buffer = luaState.consoleBuffers.getOrElse(handle) { emptyList() }
-                val newBuffer = (buffer + ConsoleEntry(level, message, timestamp)).takeLast(maxConsoleEntries)
+                val newBuffer = (buffer + entry).takeLast(maxConsoleEntries)
                 luaState.copy(consoleBuffers = luaState.consoleBuffers + (handle to newBuffer))
             }
 
@@ -1074,6 +1084,38 @@ class LuaFeature(
                         isPublic = desc.`public`
                     )
                 }
+            }
+
+            override fun onScriptConsolePrint(scriptHandle: String, message: String, color: String?, bold: Boolean, italic: Boolean) {
+                // Log to application log
+                platformDependencies.log(LogLevel.INFO, scriptHandle, message)
+
+                // Write styled entry to console buffer via action
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.LUA_SCRIPT_OUTPUT,
+                    payload = buildJsonObject {
+                        put("scriptHandle", scriptHandle)
+                        put("level", "log")
+                        put("message", message)
+                        put("timestamp", platformDependencies.currentTimeMillis())
+                        if (bold) put("bold", true)
+                        if (italic) put("italic", true)
+                        if (color != null) put("color", color)
+                    }
+                ))
+            }
+
+            override fun onScriptConsoleClear(scriptHandle: String) {
+                platformDependencies.log(LogLevel.DEBUG, scriptHandle, "Console cleared")
+                store.deferredDispatch(identity.handle, Action(
+                    name = ActionRegistry.Names.LUA_SCRIPT_OUTPUT,
+                    payload = buildJsonObject {
+                        put("scriptHandle", scriptHandle)
+                        put("level", "clear")
+                        put("message", "")
+                        put("timestamp", platformDependencies.currentTimeMillis())
+                    }
+                ))
             }
         }
     }

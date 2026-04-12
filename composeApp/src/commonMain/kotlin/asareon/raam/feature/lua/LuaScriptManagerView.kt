@@ -12,8 +12,10 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -247,16 +249,35 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                                     }
                                 } else {
                                     items(console) { entry ->
+                                        val prefix = when (entry.level) {
+                                            "error" -> "[ERR] "
+                                            "warn" -> "[!] "
+                                            else -> ""
+                                        }
+                                        val textColor = if (entry.color != null) {
+                                            try {
+                                                val hex = entry.color.removePrefix("#")
+                                                val rgb = hex.toLong(16)
+                                                Color(
+                                                    red = ((rgb shr 16) and 0xFF).toInt() / 255f,
+                                                    green = ((rgb shr 8) and 0xFF).toInt() / 255f,
+                                                    blue = (rgb and 0xFF).toInt() / 255f
+                                                )
+                                            } catch (_: Exception) { null }
+                                        } else null
+
                                         Text(
-                                            text = "[${entry.level.uppercase()}] ${entry.message}",
+                                            text = prefix + entry.message,
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
                                             lineHeight = 14.sp,
-                                            color = when (entry.level) {
+                                            color = textColor ?: when (entry.level) {
                                                 "error" -> MaterialTheme.colorScheme.error
                                                 "warn" -> MaterialTheme.colorScheme.tertiary
                                                 else -> MaterialTheme.colorScheme.onSurface
                                             },
+                                            fontWeight = if (entry.bold == true) FontWeight.Bold else null,
+                                            fontStyle = if (entry.italic == true) FontStyle.Italic else null,
                                             modifier = Modifier.padding(vertical = 0.dp)
                                         )
                                     }
