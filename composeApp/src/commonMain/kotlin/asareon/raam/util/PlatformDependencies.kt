@@ -50,6 +50,16 @@ enum class BasePath {
 enum class LogLevel { DEBUG, INFO, WARN, ERROR, FATAL }
 
 /**
+ * A single buffered log entry for retrieval by scripts and diagnostic tools.
+ */
+data class LogBufferEntry(
+    val level: LogLevel,
+    val tag: String,
+    val message: String,
+    val timestamp: Long
+)
+
+/**
  * Defines a platform-agnostic contract for ALL platform-specific functionalities.
  * This class and its members are marked 'open' to allow for test fakes to inherit from it.
  */
@@ -207,9 +217,34 @@ expect open class PlatformDependencies(appVersion: String) {
     open fun log(level: LogLevel, tag: String, message: String, throwable: Throwable? = null)
 
     /**
-     * Optional callback invoked on every log() call. Used by the boot console
-     * to capture log output before the action bus is operational.
-     * Set to null to detach.
+     * @deprecated Use [addLogListener]/[removeLogListener] instead.
+     * Kept for backward compatibility during migration.
      */
+    @Deprecated("Use addLogListener/removeLogListener", ReplaceWith("addLogListener(id, listener)"))
     open var logListener: ((LogLevel, String, String) -> Unit)?
+
+    // --- Log Listener Registry ---
+
+    /**
+     * Registers a named log listener. Multiple listeners can coexist.
+     * Each listener receives every log entry in real-time.
+     *
+     * @param id Unique identifier for this listener (e.g., "boot", "lua")
+     * @param listener Callback: (level, tag, message, timestamp)
+     */
+    open fun addLogListener(id: String, listener: (LogLevel, String, String, Long) -> Unit)
+
+    /**
+     * Removes a previously registered log listener by ID.
+     */
+    open fun removeLogListener(id: String)
+
+    /**
+     * Returns recent log entries from the in-memory ring buffer.
+     *
+     * @param limit Maximum entries to return (default 100)
+     * @param minLevel Minimum severity level to include (default DEBUG = all)
+     * @return Log entries ordered oldest-first, filtered by level
+     */
+    open fun getRecentLogs(limit: Int = 100, minLevel: LogLevel = LogLevel.DEBUG): List<LogBufferEntry>
 }

@@ -265,7 +265,27 @@ open class FakePlatformDependencies(
 
     override fun log(level: LogLevel, tag: String, message: String, throwable: Throwable?) {
         capturedLogs.add(CapturedLog(level, tag, message, throwable))
+        val timestamp = currentTimeMillis()
+        logBuffer.add(LogBufferEntry(level, tag, message, timestamp))
+        if (logBuffer.size > 1000) logBuffer.removeAt(0)
+        logListenerMap.values.forEach { it(level, tag, message, timestamp) }
     }
 
+    @Suppress("DEPRECATION")
     override var logListener: ((LogLevel, String, String) -> Unit)? = null
+
+    private val logListenerMap = mutableMapOf<String, (LogLevel, String, String, Long) -> Unit>()
+    private val logBuffer = mutableListOf<LogBufferEntry>()
+
+    override fun addLogListener(id: String, listener: (LogLevel, String, String, Long) -> Unit) {
+        logListenerMap[id] = listener
+    }
+
+    override fun removeLogListener(id: String) {
+        logListenerMap.remove(id)
+    }
+
+    override fun getRecentLogs(limit: Int, minLevel: LogLevel): List<LogBufferEntry> {
+        return logBuffer.filter { it.level >= minLevel }.takeLast(limit)
+    }
 }

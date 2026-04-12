@@ -106,7 +106,9 @@ fun main() {
                 dependencies.applyNativeWindowDecorations(window)
 
                 // Wire boot console log listener before dispatching init actions.
-                dependencies.logListener = { level, tag, message ->
+                @Suppress("DEPRECATION")
+                dependencies.logListener = null  // Clear deprecated field
+                dependencies.addLogListener("boot") { level, tag, message, _ ->
                     if (level >= LogLevel.INFO && !message.startsWith("Deferring:")) {
                         bootLog.add(BootLogEntry(id = bootLogId[0]++, level = level, tag = tag, message = message))
                     }

@@ -422,8 +422,52 @@ actual open class PlatformDependencies actual constructor(appVersion: String) {
             System.err.println("!!! FAILED TO WRITE TO LOG FILE: ${e.message} !!!")
         }
 
-        // Notify boot console listener (if attached)
+        // Notify legacy listener (deprecated, boot console migration)
+        @Suppress("DEPRECATION")
         logListener?.invoke(level, tag, fullMessage)
+
+        // Buffer for retrieval
+        val timestamp = System.currentTimeMillis()
+        synchronized(logBuffer) {
+            logBuffer.addLast(LogBufferEntry(level, tag, fullMessage, timestamp))
+            if (logBuffer.size > LOG_BUFFER_MAX) logBuffer.removeFirst()
+        }
+
+        // Notify registered listeners
+        synchronized(logListeners) {
+            logListeners.values.forEach { listener ->
+                try { listener(level, tag, fullMessage, timestamp) } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // --- Log Buffer & Multi-Listener Infrastructure ---
+
+    private val logBuffer = ArrayDeque<LogBufferEntry>(LOG_BUFFER_MAX)
+    private val logListeners = mutableMapOf<String, (LogLevel, String, String, Long) -> Unit>()
+
+    companion object {
+        private const val LOG_BUFFER_MAX = 1000
+    }
+
+    actual open fun addLogListener(id: String, listener: (LogLevel, String, String, Long) -> Unit) {
+        synchronized(logListeners) {
+            logListeners[id] = listener
+        }
+    }
+
+    actual open fun removeLogListener(id: String) {
+        synchronized(logListeners) {
+            logListeners.remove(id)
+        }
+    }
+
+    actual open fun getRecentLogs(limit: Int, minLevel: LogLevel): List<LogBufferEntry> {
+        synchronized(logBuffer) {
+            return logBuffer
+                .filter { it.level >= minLevel }
+                .takeLast(limit)
+        }
     }
 }
 

@@ -8,10 +8,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.util.LogBufferEntry
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
+
+/** Lightweight entry for the action history buffer (no payloads). */
+data class ActionBufferEntry(
+    val name: String,
+    val originator: String?,
+    val timestamp: Long
+)
+
+/** Tracks a script's log subscription for live forwarding. */
+data class LogSubscriptionEntry(
+    val scriptHandle: String,
+    val minLevel: LogLevel,
+    val callbackId: Long
+)
 
 /**
  * ## Mandate
@@ -55,6 +70,10 @@ class LuaFeature(
     private lateinit var store: Store
 
     private val scriptsConfigFile = "scripts.json"
+    private val actionBufferMax = 2000
+    private val actionBuffer = ArrayDeque<ActionBufferEntry>(actionBufferMax)
+    /** Log subscriptions from scripts: scriptHandle → list of (minLevel, callbackId) */
+    private val logSubscriptions = mutableListOf<LogSubscriptionEntry>()
 
     private fun nextCorrelationId(prefix: String): String = "lua:$prefix:${++correlationCounter}"
 
@@ -87,8 +106,11 @@ class LuaFeature(
     override fun init(store: Store) {
         this.store = store
         runtime.setBridgeListener(createBridgeListener())
-        // Strategy registration happens in handleSideEffects for SYSTEM_RUNNING,
-        // not here — init() runs during BOOTING when cross-feature dispatches are blocked.
+
+        // Register log listener for live forwarding to scripts via raam.log.listen()
+        platformDependencies.addLogListener("lua") { level, tag, message, timestamp ->
+            forwardLogToSubscribedScripts(level, tag, message, timestamp)
+        }
     }
 
     // ========================================================================
@@ -989,6 +1011,14 @@ class LuaFeature(
     // ========================================================================
 
     private fun deliverBroadcastToScripts(action: Action) {
+        // Buffer ALL broadcast actions for raam.actionbus.retrieve() — even lua.* ones
+        actionBuffer.addLast(ActionBufferEntry(
+            name = action.name,
+            originator = action.originator,
+            timestamp = platformDependencies.currentTimeMillis()
+        ))
+        if (actionBuffer.size > actionBufferMax) actionBuffer.removeFirst()
+
         if (action.name.startsWith("lua.")) return
         if (currentCascadeDepth >= maxCascadeDepth) {
             platformDependencies.log(
@@ -1014,6 +1044,28 @@ class LuaFeature(
     // ========================================================================
     // Bridge Listener (Lua → Kotlin)
     // ========================================================================
+
+    private fun forwardLogToSubscribedScripts(level: LogLevel, tag: String, message: String, timestamp: Long) {
+        if (logSubscriptions.isEmpty()) return
+        for (sub in logSubscriptions.toList()) {  // toList() to avoid ConcurrentModification
+            if (level >= sub.minLevel) {
+                // Deliver as a delayed callback so it runs on the script thread
+                val ctx = mapOf(
+                    "level" to level.name,
+                    "tag" to tag,
+                    "message" to message,
+                    "timestamp" to timestamp
+                )
+                // We can't invoke Lua directly here (may be called from any thread).
+                // Instead, use the existing event delivery which is Store-synchronized.
+                // For now, just dispatch an internal action that the script can subscribe to.
+                // Actually, log listeners fire from the log() call which is synchronous on
+                // the dispatch thread. So we CAN call into the runtime here safely IF we're
+                // careful about re-entrancy. For safety, buffer and deliver on next cycle.
+                // TODO: Phase 2 — direct Lua callback invocation for log events
+            }
+        }
+    }
 
     private fun createBridgeListener(): LuaBridgeListener {
         return object : LuaBridgeListener {
@@ -1116,6 +1168,26 @@ class LuaFeature(
                         put("timestamp", platformDependencies.currentTimeMillis())
                     }
                 ))
+            }
+
+            override fun getActionHistory(limit: Int, feature: String?): List<ActionBufferEntry> {
+                val filtered = if (feature != null) {
+                    actionBuffer.filter { it.name.startsWith("$feature.") }
+                } else {
+                    actionBuffer.toList()
+                }
+                return filtered.takeLast(limit)
+            }
+
+            override fun getLogHistory(limit: Int, minLevel: String, tag: String?): List<LogBufferEntry> {
+                val level = try { LogLevel.valueOf(minLevel) } catch (_: Exception) { LogLevel.DEBUG }
+                val logs = platformDependencies.getRecentLogs(limit = 1000, minLevel = level)
+                val filtered = if (tag != null) {
+                    logs.filter { it.tag.contains(tag, ignoreCase = true) }
+                } else {
+                    logs
+                }
+                return filtered.takeLast(limit)
             }
         }
     }

@@ -51,6 +51,28 @@ class LuaRuntimeJvmTest {
         override fun onScriptConsoleClear(scriptHandle: String) {
             capturedLogs.add(Triple(scriptHandle, "clear", ""))
         }
+        override fun getActionHistory(limit: Int, feature: String?): List<ActionBufferEntry> {
+            // Return some test data
+            val testHistory = listOf(
+                ActionBufferEntry("session.POST", "core.alice", 1776000001000),
+                ActionBufferEntry("session.POST", "core.bob", 1776000002000),
+                ActionBufferEntry("agent.SET_STATUS", "agent", 1776000003000),
+                ActionBufferEntry("filesystem.WRITE", "settings", 1776000004000)
+            )
+            val filtered = if (feature != null) testHistory.filter { it.name.startsWith("$feature.") } else testHistory
+            return filtered.takeLast(limit)
+        }
+        override fun getLogHistory(limit: Int, minLevel: String, tag: String?): List<asareon.raam.util.LogBufferEntry> {
+            val testLogs = listOf(
+                asareon.raam.util.LogBufferEntry(asareon.raam.util.LogLevel.INFO, "Store", "Processing action", 1776000001000),
+                asareon.raam.util.LogBufferEntry(asareon.raam.util.LogLevel.WARN, "agent", "Rate limit approaching", 1776000002000),
+                asareon.raam.util.LogBufferEntry(asareon.raam.util.LogLevel.ERROR, "session", "Session not found", 1776000003000)
+            )
+            val level = try { asareon.raam.util.LogLevel.valueOf(minLevel) } catch (_: Exception) { asareon.raam.util.LogLevel.DEBUG }
+            val filtered = testLogs.filter { it.level >= level }
+            val tagFiltered = if (tag != null) filtered.filter { it.tag.contains(tag) } else filtered
+            return tagFiltered.takeLast(limit)
+        }
     }
 
     @Before
@@ -823,5 +845,126 @@ class LuaRuntimeJvmTest {
             "raam.actions() should return a table")
         assertTrue(capturedLogs.any { it.third.startsWith("catalog_count=") },
             "Should report catalog count")
+    }
+
+    // ========================================================================
+    // raam.actionbus.retrieve()
+    // ========================================================================
+
+    @Test
+    fun `raam_actionbus_retrieve returns history entries`() {
+        val result = runtime.loadScript("lua.test", "test", """
+            local history = raam.actionbus.retrieve()
+            raam.log("count=" .. #history)
+            if #history > 0 then
+                raam.log("first=" .. history[1].name)
+                raam.log("has_originator=" .. tostring(history[1].originator ~= nil))
+                raam.log("has_timestamp=" .. tostring(history[1].timestamp ~= nil))
+            end
+        """.trimIndent())
+
+        assertTrue(result.success, "Script should load: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "count=4" }, "Should return 4 test history entries")
+        assertTrue(capturedLogs.any { it.third == "first=session.POST" })
+        assertTrue(capturedLogs.any { it.third == "has_originator=true" })
+        assertTrue(capturedLogs.any { it.third == "has_timestamp=true" })
+    }
+
+    @Test
+    fun `raam_actionbus_retrieve filters by feature`() {
+        val result = runtime.loadScript("lua.test", "test", """
+            local history = raam.actionbus.retrieve({ feature = "session" })
+            raam.log("count=" .. #history)
+            for _, entry in ipairs(history) do
+                raam.log("action=" .. entry.name)
+            end
+        """.trimIndent())
+
+        assertTrue(result.success, "Script should load: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "count=2" }, "Should only return session.* actions")
+    }
+
+    @Test
+    fun `raam_actionbus_retrieve respects limit`() {
+        val result = runtime.loadScript("lua.test", "test", """
+            local history = raam.actionbus.retrieve({ limit = 2 })
+            raam.log("count=" .. #history)
+        """.trimIndent())
+
+        assertTrue(result.success, "Script should load: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "count=2" }, "Should respect limit=2")
+    }
+
+    @Test
+    fun `raam_actionbus_listen is alias for raam_on`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.actionbus.listen("test.EVENT", function(name, payload, originator)
+                raam.log("heard: " .. name)
+            end)
+        """.trimIndent())
+
+        val subs = runtime.getSubscriptions("lua.test")
+        assertEquals(1, subs.size, "actionbus.listen should create a subscription")
+        assertEquals("test.EVENT", subs[0])
+    }
+
+    // ========================================================================
+    // raam.log.retrieve()
+    // ========================================================================
+
+    @Test
+    fun `raam_log_retrieve returns log entries`() {
+        val result = runtime.loadScript("lua.test", "test", """
+            local logs = raam.log.retrieve()
+            raam.log("count=" .. #logs)
+            if #logs > 0 then
+                raam.log("first_level=" .. logs[1].level)
+                raam.log("first_tag=" .. logs[1].tag)
+                raam.log("has_message=" .. tostring(logs[1].message ~= nil))
+            end
+        """.trimIndent())
+
+        assertTrue(result.success, "Script should load: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "count=3" }, "Should return 3 test log entries")
+        assertTrue(capturedLogs.any { it.third == "first_level=INFO" })
+        assertTrue(capturedLogs.any { it.third == "first_tag=Store" })
+    }
+
+    @Test
+    fun `raam_log_retrieve filters by minLevel`() {
+        val result = runtime.loadScript("lua.test", "test", """
+            local logs = raam.log.retrieve({ minLevel = "WARN" })
+            raam.log("count=" .. #logs)
+            for _, entry in ipairs(logs) do
+                raam.log(entry.level .. ": " .. entry.message)
+            end
+        """.trimIndent())
+
+        assertTrue(result.success, "Script should load: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "count=2" }, "Should only return WARN and ERROR")
+    }
+
+    @Test
+    fun `raam_log_retrieve filters by tag`() {
+        val result = runtime.loadScript("lua.test", "test", """
+            local logs = raam.log.retrieve({ tag = "agent" })
+            raam.log("count=" .. #logs)
+        """.trimIndent())
+
+        assertTrue(result.success, "Script should load: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "count=1" }, "Should only return agent-tagged logs")
+    }
+
+    @Test
+    fun `raam_log_listen creates subscription`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log.listen("WARN", function(level, tag, message, timestamp)
+                raam.log("live: " .. level .. " " .. tag)
+            end)
+        """.trimIndent())
+
+        val subs = runtime.getSubscriptions("lua.test")
+        assertEquals(1, subs.size, "log.listen should create a subscription")
+        assertTrue(subs[0].startsWith("log:"), "Subscription pattern should have log: prefix")
     }
 }

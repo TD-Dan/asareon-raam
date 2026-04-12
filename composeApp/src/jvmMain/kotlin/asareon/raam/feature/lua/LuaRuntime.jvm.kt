@@ -507,6 +507,92 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
 
         raam.set("console", console)
 
+        // raam.actionbus — action history and live listening
+        val actionbus = LuaTable()
+
+        // raam.actionbus.retrieve(options?) → array of {name, originator, timestamp}
+        actionbus.set("retrieve", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val limit = if (args.narg() >= 1 && args.arg(1).istable()) {
+                    args.arg(1).checktable().get("limit").optint(500)
+                } else 500
+                val feature = if (args.narg() >= 1 && args.arg(1).istable()) {
+                    val f = args.arg(1).checktable().get("feature")
+                    if (f.isstring()) f.tojstring() else null
+                } else null
+
+                val history = bridgeListener?.getActionHistory(limit, feature) ?: return LuaTable()
+                val table = LuaTable()
+                history.forEachIndexed { index, entry ->
+                    val row = LuaTable()
+                    row.set("name", LuaValue.valueOf(entry.name))
+                    if (entry.originator != null) row.set("originator", LuaValue.valueOf(entry.originator))
+                    row.set("timestamp", LuaValue.valueOf(entry.timestamp.toDouble()))
+                    table.set(index + 1, row)
+                }
+                return table
+            }
+        })
+
+        // raam.actionbus.listen(pattern, handler) — alias for raam.on
+        actionbus.set("listen", raam.get("on"))
+
+        raam.set("actionbus", actionbus)
+
+        // raam.log — log history and live listening
+        val logTable = LuaTable()
+
+        // raam.log.retrieve(options?) → array of {level, tag, message, timestamp}
+        logTable.set("retrieve", object : VarArgFunction() {
+            override fun invoke(args: Varargs): Varargs {
+                val limit: Int
+                val minLevel: String
+                val tag: String?
+
+                if (args.narg() >= 1 && args.arg(1).istable()) {
+                    val opts = args.arg(1).checktable()
+                    limit = opts.get("limit").optint(100)
+                    minLevel = opts.get("minLevel").optjstring("DEBUG") ?: "DEBUG"
+                    val t = opts.get("tag")
+                    tag = if (t.isstring()) t.tojstring() else null
+                } else {
+                    limit = 100
+                    minLevel = "DEBUG"
+                    tag = null
+                }
+
+                val logs = bridgeListener?.getLogHistory(limit, minLevel, tag) ?: return LuaTable()
+                val table = LuaTable()
+                logs.forEachIndexed { index, entry ->
+                    val row = LuaTable()
+                    row.set("level", LuaValue.valueOf(entry.level.name))
+                    row.set("tag", LuaValue.valueOf(entry.tag))
+                    row.set("message", LuaValue.valueOf(entry.message))
+                    row.set("timestamp", LuaValue.valueOf(entry.timestamp.toDouble()))
+                    table.set(index + 1, row)
+                }
+                return table
+            }
+        })
+
+        // raam.log.listen(minLevel, handler) → subscriptionId
+        // Subscribes to live log events filtered by minimum level.
+        logTable.set("listen", object : TwoArgFunction() {
+            override fun call(levelArg: LuaValue, handler: LuaValue): LuaValue {
+                val minLevel = levelArg.optjstring("DEBUG") ?: "DEBUG"
+                if (!handler.isfunction()) {
+                    return LuaValue.error("raam.log.listen: second argument must be a function")
+                }
+                val env = scripts[scriptHandle] ?: return LuaValue.NIL
+                val id = callbackIdCounter.incrementAndGet()
+                // Store as a subscription with a special "log:" prefix pattern
+                env.subscriptions.add(SubscriptionEntry(id, "log:$minLevel", handler))
+                return LuaValue.valueOf(id.toDouble())
+            }
+        })
+
+        raam.set("log", logTable)
+
         globals.set("raam", raam)
     }
 

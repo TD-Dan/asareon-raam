@@ -15,4 +15,10 @@ actual open class PlatformDependencies {
     actual open fun parseIsoTimestamp(timestamp: String): Long? {
         return null
     }
+
+    @Suppress("DEPRECATION")
+    actual open var logListener: ((LogLevel, String, String) -> Unit)? = null
+    actual open fun addLogListener(id: String, listener: (LogLevel, String, String, Long) -> Unit) {}
+    actual open fun removeLogListener(id: String) {}
+    actual open fun getRecentLogs(limit: Int, minLevel: LogLevel): List<LogBufferEntry> = emptyList()
 }

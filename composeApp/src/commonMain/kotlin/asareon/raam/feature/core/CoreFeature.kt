@@ -246,7 +246,7 @@ class CoreFeature(
                 }))
             }
             ActionRegistry.Names.SYSTEM_RUNNING -> {
-                platformDependencies.logListener = null
+                platformDependencies.removeLogListener("boot")
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_READ, buildJsonObject { put("path", identitiesFileName)}))
             }
             ActionRegistry.Names.CORE_DISMISS_CONFIRMATION_DIALOG -> {

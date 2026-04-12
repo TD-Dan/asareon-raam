@@ -88,6 +88,18 @@ interface LuaBridgeListener {
      * Clears the script's console buffer.
      */
     fun onScriptConsoleClear(scriptHandle: String)
+
+    /**
+     * Returns historical broadcast actions from the action buffer.
+     * Used by raam.actionbus.retrieve().
+     */
+    fun getActionHistory(limit: Int, feature: String?): List<ActionBufferEntry>
+
+    /**
+     * Returns recent log entries from the platform log buffer.
+     * Used by raam.log.retrieve().
+     */
+    fun getLogHistory(limit: Int, minLevel: String, tag: String?): List<asareon.raam.util.LogBufferEntry>
 }
 
 /**
