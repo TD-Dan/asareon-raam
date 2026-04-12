@@ -102,7 +102,7 @@ class AnthropicProvider(
 
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) { requestTimeoutMillis = 240_000 }
+        install(HttpTimeout) { requestTimeoutMillis = 360_000 }
         // Allow inspection of non-2xx responses (e.g., 429) without throwing.
         // The ResponseException catch below is a safety net for Ktor versions
         // where this flag may not fully suppress exceptions.
