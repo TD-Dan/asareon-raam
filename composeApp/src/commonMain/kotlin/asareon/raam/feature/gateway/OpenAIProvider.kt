@@ -62,7 +62,7 @@ class OpenAIProvider(
 
     private val client = HttpClient {
         install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) { requestTimeoutMillis = 240_000 }
+        install(HttpTimeout) { requestTimeoutMillis = 360_000 }
         expectSuccess = false
     }
 

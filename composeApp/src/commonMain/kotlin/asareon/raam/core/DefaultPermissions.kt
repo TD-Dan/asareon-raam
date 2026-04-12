@@ -94,5 +94,12 @@ object DefaultPermissions {
 
         // ── Session feature — baseline for sessions (session.chat1 etc.) ──
         DefaultGrant("session", "filesystem:workspace",       PermissionLevel.YES),
+
+        // ── Lua feature — baseline for scripts (lua.my-script etc.) ──
+        DefaultGrant("lua", "filesystem:workspace",           PermissionLevel.YES),
+        DefaultGrant("lua", "lua:execute",                    PermissionLevel.YES),
+        DefaultGrant("lua", "lua:manage",                     PermissionLevel.YES),
+        DefaultGrant("lua", "lua:dispatch",                   PermissionLevel.YES),
+        DefaultGrant("lua", "session:read",                   PermissionLevel.YES),
     )
 }

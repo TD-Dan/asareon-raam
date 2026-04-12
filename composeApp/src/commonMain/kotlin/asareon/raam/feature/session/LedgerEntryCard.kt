@@ -558,6 +558,7 @@ private fun CodeBlockView(store: Store, block: ContentBlock.CodeBlock) {
                         block.language.contains("json", ignoreCase = true) -> SyntaxMode.JSON
                         block.language.contains("md", ignoreCase = true) ||
                                 block.language.contains("markdown", ignoreCase = true) -> SyntaxMode.MARKDOWN
+                        block.language.contains("lua", ignoreCase = true) -> SyntaxMode.LUA
                         else -> SyntaxMode.NONE
                     }
                 )

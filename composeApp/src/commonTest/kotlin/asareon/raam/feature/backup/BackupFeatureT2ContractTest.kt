@@ -132,7 +132,8 @@ class BackupFeatureT2ContractTest {
                     override fun createZipArchive(
                         sourceDirectoryPath: String,
                         destinationZipPath: String,
-                        excludeDirectoryName: String
+                        excludeDirectoryName: String,
+                        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
                     ) = throw Exception("Simulated createZipArchive failure")
                 }.also { p ->
                     val backupsDir = p.getBasePathFor(BasePath.APP_ZONE) + "/_backups"
@@ -179,13 +180,14 @@ class BackupFeatureT2ContractTest {
                     override fun createZipArchive(
                         sourceDirectoryPath: String,
                         destinationZipPath: String,
-                        excludeDirectoryName: String
+                        excludeDirectoryName: String,
+                        onProgress: ((bytesProcessed: Long, totalBytes: Long) -> Unit)?
                     ) {
                         // Let the preInit backup succeed but fail the safety backup during restore
                         if (destinationZipPath.contains("pre-restore")) {
                             throw Exception("Simulated safety backup failure during restore")
                         }
-                        super.createZipArchive(sourceDirectoryPath, destinationZipPath, excludeDirectoryName)
+                        super.createZipArchive(sourceDirectoryPath, destinationZipPath, excludeDirectoryName, onProgress)
                     }
                 }.also { p ->
                     val backupsDir = p.getBasePathFor(BasePath.APP_ZONE) + "/_backups"

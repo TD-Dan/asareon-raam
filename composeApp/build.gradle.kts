@@ -596,6 +596,7 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.jna)
             implementation(libs.jna.platform)
+            implementation("org.luaj:luaj-jse:3.0.1")
         }
         jvmTest.dependencies {
             implementation(libs.kotlin.test.junit5)

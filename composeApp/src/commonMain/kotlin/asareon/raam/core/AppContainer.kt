@@ -2,6 +2,7 @@ package asareon.raam.core
 
 import asareon.raam.feature.agent.AgentRuntimeFeature
 import asareon.raam.feature.commandbot.CommandBotFeature
+import asareon.raam.feature.lua.LuaFeature
 import asareon.raam.feature.core.CoreFeature
 import asareon.raam.feature.backup.BackupFeature
 import asareon.raam.feature.filesystem.FileSystemFeature
@@ -58,6 +59,8 @@ class AppContainer(
             )
         )
 
+        val luaFeature = LuaFeature(platformDependencies)
+
         val allFeatures = mutableListOf<Feature>()
         allFeatures.addAll(listOf(
             BackupFeature(platformDependencies),
@@ -68,7 +71,8 @@ class AppContainer(
             gatewayFeature,
             AgentRuntimeFeature(platformDependencies, resilientCoroutineScope),
             KnowledgeGraphFeature(platformDependencies, resilientCoroutineScope),
-            CommandBotFeature(platformDependencies)
+            CommandBotFeature(platformDependencies),
+            luaFeature
         ))
         allFeatures
     }

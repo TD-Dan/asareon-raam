@@ -38,7 +38,8 @@ enum class AgentResourceType {
     CONSTITUTION,
     BOOTLOADER,
     SYSTEM_INSTRUCTION,
-    STATE_MACHINE
+    STATE_MACHINE,
+    LUA_SCRIPT
 }
 
 @Serializable
@@ -346,6 +347,8 @@ data class AgentRuntimeState(
     val managingContextForAgentId: IdentityUUID? = null,
     @Transient
     val lastAutoTriggerAgentIndex: Int = 0,
+    @Transient
+    val compressionConfig: CompressionConfig = CompressionConfig(),
 
     // --- Transient State for Command Result Routing ---
     /** Maps correlationId → AgentPendingCommand for in-flight agent commands.
