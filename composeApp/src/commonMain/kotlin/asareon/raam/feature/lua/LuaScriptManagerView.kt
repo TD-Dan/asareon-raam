@@ -389,6 +389,7 @@ private fun ScriptListRow(
 // Script Detail Header
 // ══════════════════════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScriptDetailHeader(
     script: ScriptInfo,
