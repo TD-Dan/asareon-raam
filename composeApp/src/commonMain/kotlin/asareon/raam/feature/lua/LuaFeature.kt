@@ -233,7 +233,7 @@ class LuaFeature(
             ActionRegistry.Names.LUA_EVAL -> handleEval(action, store)
             ActionRegistry.Names.LUA_LIST_SCRIPTS -> handleListScripts(action, store)
             ActionRegistry.Names.LUA_CREATE_SCRIPT -> handleCreateScript(action, store)
-            ActionRegistry.Names.LUA_DELETE_SCRIPT -> handleDeleteScript(action, store)
+            ActionRegistry.Names.LUA_DELETE_SCRIPT -> handleDeleteScript(action, store, previousState)
             ActionRegistry.Names.LUA_CLONE_SCRIPT -> handleCloneScript(action, store)
             ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> handleToggleScript(action, store, previousState)
             ActionRegistry.Names.LUA_SAVE_SCRIPT -> handleSaveScript(action, store)
@@ -377,12 +377,13 @@ class LuaFeature(
     // DELETE_SCRIPT: unload + filesystem.DELETE_FILE + unregister
     // ========================================================================
 
-    private fun handleDeleteScript(action: Action, store: Store) {
+    private fun handleDeleteScript(action: Action, store: Store, previousState: FeatureState?) {
         val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
             ?: return logMissingField("DELETE_SCRIPT", "scriptHandle")
-        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+        // Use previousState because the reducer already removed the script from newState
+        val prevLuaState = previousState as? LuaState
             ?: return logMissingState("DELETE_SCRIPT")
-        val script = currentState.scripts[handle]
+        val script = prevLuaState.scripts[handle]
             ?: return logUnknownScript("DELETE_SCRIPT", handle)
 
         runtime.unloadScript(handle)
