@@ -233,7 +233,7 @@ class LuaRuntimeJvmTest {
             end)
         """.trimIndent())
 
-        val errors = runtime.deliverEvent("session.MESSAGE_ADDED", mapOf("content" to "hi"))
+        val errors = runtime.deliverEvent("session.MESSAGE_ADDED", mapOf("content" to "hi"), "core.alice")
         assertTrue(errors.isEmpty())
         assertTrue(capturedLogs.any { it.third == "event: session.MESSAGE_ADDED" })
     }
@@ -246,9 +246,9 @@ class LuaRuntimeJvmTest {
             end)
         """.trimIndent())
 
-        runtime.deliverEvent("session.MESSAGE_ADDED", null)
-        runtime.deliverEvent("session.CREATED", null)
-        runtime.deliverEvent("agent.CREATED", null)  // should NOT match
+        runtime.deliverEvent("session.MESSAGE_ADDED", null, "session")
+        runtime.deliverEvent("session.CREATED", null, "session")
+        runtime.deliverEvent("agent.CREATED", null, "agent")  // should NOT match
 
         val wildcardLogs = capturedLogs.filter { it.third.startsWith("wildcard:") }
         assertEquals(2, wildcardLogs.size)

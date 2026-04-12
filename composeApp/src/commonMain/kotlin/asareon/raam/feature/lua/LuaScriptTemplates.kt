@@ -58,10 +58,16 @@ end
 -- raam.warn(msg)              — warning log
 -- raam.error(msg)             — error log
 -- raam.delay(ms, fn)          — one-shot timer
+-- raam.interval(ms, fn)       — recurring timer, returns cancel ID
+-- raam.time()                 — current epoch milliseconds
+-- raam.actions()              — list all registered action descriptors
 -- raam.identities()           — list all registered identities
 -- raam.permissions()          — this script's effective permissions
 -- raam.scriptName             — local handle ("$localHandle")
 -- raam.scriptHandle           — full bus address ("lua.$localHandle")
+--
+-- Event handler signature:  function(actionName, payload, originator)
+--   originator is the identity handle of who dispatched the action
 """.trimIndent()
 
     /**
@@ -152,5 +158,11 @@ end
 -- raam.permissions()            — this script's effective permissions
 -- raam.scriptName               — local handle
 -- raam.scriptHandle             — full bus address
+-- raam.time()                   — current epoch milliseconds
+-- raam.actions()                — list all registered action descriptors
+-- raam.interval(ms, fn)         — recurring timer, returns cancel ID
+--
+-- Event handler signature:  function(actionName, payload, originator)
+--   originator is the identity handle of who dispatched the action
 """.trimIndent()
 }

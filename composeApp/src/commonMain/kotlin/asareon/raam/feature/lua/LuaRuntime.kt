@@ -65,7 +65,28 @@ interface LuaBridgeListener {
      * Returns the effective permissions for a script identity.
      */
     fun getScriptPermissions(scriptHandle: String): Map<String, String>
+
+    /**
+     * Returns current epoch milliseconds. Used by raam.time().
+     */
+    fun getCurrentTimeMillis(): Long
+
+    /**
+     * Returns all registered action descriptors as a list of summaries.
+     * Used by raam.actions().
+     */
+    fun getActionDescriptors(): List<LuaActionDescriptor>
 }
+
+/**
+ * A summary of a registered action descriptor for Lua scripts.
+ */
+data class LuaActionDescriptor(
+    val name: String,
+    val featureName: String,
+    val summary: String,
+    val isPublic: Boolean
+)
 
 /**
  * A public-safe snapshot of an identity for Lua scripts.
@@ -130,7 +151,16 @@ expect class LuaRuntime(config: LuaRuntimeConfig = LuaRuntimeConfig()) {
      * @param payload The action payload as a string-keyed map
      * @return List of script handles that errored during delivery
      */
-    fun deliverEvent(actionName: String, payload: Map<String, Any?>?): List<String>
+    /**
+     * Deliver a broadcast action to all scripts that have registered handlers
+     * matching the given action name.
+     *
+     * @param actionName The full action name (e.g., "session.MESSAGE_ADDED")
+     * @param payload The action payload as a string-keyed map
+     * @param originator The identity handle of the action's originator (e.g., "core.alice")
+     * @return List of script handles that errored during delivery
+     */
+    fun deliverEvent(actionName: String, payload: Map<String, Any?>?, originator: String?): List<String>
 
     /**
      * Execute a script's on_turn() function for the CognitiveStrategy use case.

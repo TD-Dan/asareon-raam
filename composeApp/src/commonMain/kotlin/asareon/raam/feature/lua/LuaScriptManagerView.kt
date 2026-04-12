@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -210,7 +211,22 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                             Spacer(Modifier.height(4.dp))
 
                             val console = luaState.consoleBuffers[selected.handle] ?: emptyList()
+                            val consoleListState = rememberLazyListState()
+
+                            // Auto-scroll to bottom when new entries arrive,
+                            // but only if user is already near the bottom.
+                            LaunchedEffect(console.size) {
+                                if (console.isNotEmpty()) {
+                                    val lastVisible = consoleListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                                    val isNearBottom = lastVisible >= console.size - 3
+                                    if (isNearBottom) {
+                                        consoleListState.animateScrollToItem(console.size - 1)
+                                    }
+                                }
+                            }
+
                             LazyColumn(
+                                state = consoleListState,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
@@ -234,13 +250,14 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                                         Text(
                                             text = "[${entry.level.uppercase()}] ${entry.message}",
                                             fontFamily = FontFamily.Monospace,
-                                            fontSize = 12.sp,
+                                            fontSize = 11.sp,
+                                            lineHeight = 14.sp,
                                             color = when (entry.level) {
                                                 "error" -> MaterialTheme.colorScheme.error
                                                 "warn" -> MaterialTheme.colorScheme.tertiary
                                                 else -> MaterialTheme.colorScheme.onSurface
                                             },
-                                            modifier = Modifier.padding(vertical = 1.dp)
+                                            modifier = Modifier.padding(vertical = 0.dp)
                                         )
                                     }
                                 }
@@ -389,7 +406,6 @@ private fun ScriptListRow(
 // Script Detail Header
 // ══════════════════════════════════════════════════════════════════════════════
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScriptDetailHeader(
     script: ScriptInfo,

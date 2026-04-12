@@ -848,7 +848,7 @@ class LuaFeature(
         val payloadMap = action.payload?.let { jsonObjectToMap(it) }
         currentCascadeDepth++
         try {
-            val errors = runtime.deliverEvent(action.name, payloadMap)
+            val errors = runtime.deliverEvent(action.name, payloadMap, action.originator)
             for (errorHandle in errors) {
                 dispatchScriptError(errorHandle, "Callback timed out or errored for ${action.name}", "callback")
                 runtime.unloadScript(errorHandle)
@@ -916,6 +916,21 @@ class LuaFeature(
             override fun getScriptPermissions(scriptHandle: String): Map<String, String> {
                 val id = store.state.value.identityRegistry[scriptHandle] ?: return emptyMap()
                 return store.resolveEffectivePermissions(id).mapValues { (_, grant) -> grant.level.name }
+            }
+
+            override fun getCurrentTimeMillis(): Long {
+                return platformDependencies.currentTimeMillis()
+            }
+
+            override fun getActionDescriptors(): List<LuaActionDescriptor> {
+                return store.state.value.actionDescriptors.values.map { desc ->
+                    LuaActionDescriptor(
+                        name = desc.fullName,
+                        featureName = desc.featureName,
+                        summary = desc.summary,
+                        isPublic = desc.isPublic
+                    )
+                }
             }
         }
     }
