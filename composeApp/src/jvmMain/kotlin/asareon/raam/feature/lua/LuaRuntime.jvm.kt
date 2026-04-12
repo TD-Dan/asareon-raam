@@ -38,6 +38,8 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
         val globals: Globals,
         val subscriptions: MutableList<SubscriptionEntry> = mutableListOf(),
         val delayedCallbacks: ConcurrentHashMap<Long, LuaValue> = ConcurrentHashMap(),
+        /** IDs of interval callbacks (re-schedule after each execution). */
+        val intervalIds: MutableSet<Long> = mutableSetOf(),
         var dispatchCount: Int = 0,
         var lastDispatchResetTime: Long = System.currentTimeMillis()
     )
@@ -154,15 +156,24 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
         val env = scripts[scriptHandle]
             ?: return LuaExecutionResult(success = false, error = "Script not loaded: $scriptHandle")
 
-        val callback = env.delayedCallbacks.remove(callbackId)
+        val callback = env.delayedCallbacks[callbackId]
             ?: return LuaExecutionResult(success = false, error = "Callback not found: $callbackId")
 
         env.dispatchCount = 0
+        val isInterval = callbackId in env.intervalIds
 
-        return executeWithTimeout(config.callbackTimeoutMs) {
+        // One-shot delays: remove before execution (won't be needed again)
+        // Intervals: keep in map — the wrapper re-schedules after execution
+        if (!isInterval) {
+            env.delayedCallbacks.remove(callbackId)
+        }
+
+        val result = executeWithTimeout(config.callbackTimeoutMs) {
             callback.call()
             LuaExecutionResult(success = true)
         } ?: LuaExecutionResult(success = false, error = "Delayed callback timed out")
+
+        return result
     }
 
     actual fun isScriptLoaded(scriptHandle: String): Boolean = scripts.containsKey(scriptHandle)
@@ -415,7 +426,8 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
                 val env = scripts[scriptHandle] ?: return LuaValue.NIL
                 val id = callbackIdCounter.incrementAndGet()
 
-                // Store the callback and schedule the first tick
+                // Mark as interval so executeDelayedCallback doesn't remove it
+                env.intervalIds.add(id)
                 env.delayedCallbacks[id] = callback
 
                 fun scheduleTick() {
@@ -464,6 +476,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
                     env.subscriptions.removeAll { it.id == id }
                     // Also remove from delayed/interval callbacks
                     env.delayedCallbacks.remove(id)
+                    env.intervalIds.remove(id)
                 }
                 return LuaValue.TRUE
             }

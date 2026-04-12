@@ -558,42 +558,184 @@ class LuaRuntimeJvmTest {
     }
 
     // ========================================================================
-    // raam.interval()
+    // raam.interval() and raam.delay() — timers
     // ========================================================================
 
     @Test
-    fun `raam_interval schedules recurring callback`() {
+    fun `raam_interval schedules first tick`() {
         val result = runtime.loadScript("lua.test", "test", """
-            local count = 0
             raam.interval(1000, function()
-                count = count + 1
-                raam.log("tick=" .. tostring(count))
+                raam.log("tick")
             end)
         """.trimIndent())
 
         assertTrue(result.success, "Script should load: ${result.error}")
-        // Should have scheduled at least one delay
         assertEquals(1, capturedDelays.size, "interval should schedule first tick")
         assertEquals(1000L, capturedDelays[0].second, "interval delay should be 1000ms")
     }
 
     @Test
+    fun `raam_interval callback executes and reschedules`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.interval(1000, function()
+                raam.log("tick")
+            end)
+        """.trimIndent())
+
+        // First tick was scheduled
+        assertEquals(1, capturedDelays.size)
+        val firstCallbackId = capturedDelays[0].third
+
+        // Simulate the platform timer firing the first tick
+        capturedDelays.clear()
+        val result = runtime.executeDelayedCallback("lua.test", firstCallbackId)
+        assertTrue(result.success, "First tick should execute: ${result.error}")
+        assertTrue(capturedLogs.any { it.third == "tick" }, "Callback should have run")
+
+        // After execution, interval should have re-scheduled
+        assertEquals(1, capturedDelays.size, "Interval should re-schedule after execution")
+        assertEquals(1000L, capturedDelays[0].second, "Re-scheduled with same delay")
+    }
+
+    @Test
+    fun `raam_interval fires multiple times`() {
+        runtime.loadScript("lua.test", "test", """
+            count = 0
+            raam.interval(500, function()
+                count = count + 1
+                raam.log("tick=" .. count)
+            end)
+        """.trimIndent())
+
+        // Simulate 3 ticks
+        for (i in 1..3) {
+            val callbackId = capturedDelays.last().third
+            capturedDelays.clear()
+            val result = runtime.executeDelayedCallback("lua.test", callbackId)
+            assertTrue(result.success, "Tick $i should execute: ${result.error}")
+        }
+
+        assertTrue(capturedLogs.any { it.third == "tick=1" })
+        assertTrue(capturedLogs.any { it.third == "tick=2" })
+        assertTrue(capturedLogs.any { it.third == "tick=3" })
+
+        // Verify count via eval
+        val countResult = runtime.eval("lua.test", "return count")
+        assertEquals(3, countResult.returnValue?.get("result"), "Should have ticked 3 times")
+    }
+
+    @Test
     fun `raam_interval can be cancelled with raam_off`() {
-        val result = runtime.loadScript("lua.test", "test", """
+        runtime.loadScript("lua.test", "test", """
             local id = raam.interval(1000, function()
-                raam.log("should not fire")
+                raam.log("should not fire after cancel")
             end)
             raam.off(id)
         """.trimIndent())
 
-        assertTrue(result.success, "Script should load: ${result.error}")
-        // After off(), the callback should be removed from delayedCallbacks
-        // Verify by trying to execute the delayed callback — should fail
+        // off() was called during on_load, before any tick fired
         val callbackId = capturedDelays.firstOrNull()?.third
         if (callbackId != null) {
             val execResult = runtime.executeDelayedCallback("lua.test", callbackId)
             assertFalse(execResult.success, "Cancelled interval should not execute")
         }
+    }
+
+    @Test
+    fun `raam_interval cancelled mid-run stops rescheduling`() {
+        runtime.loadScript("lua.test", "test", """
+            cancel_id = nil
+            tick_count = 0
+            cancel_id = raam.interval(500, function()
+                tick_count = tick_count + 1
+                raam.log("tick=" .. tick_count)
+                if tick_count >= 2 then
+                    raam.off(cancel_id)
+                    raam.log("cancelled")
+                end
+            end)
+        """.trimIndent())
+
+        // Tick 1
+        val id1 = capturedDelays.last().third
+        capturedDelays.clear()
+        runtime.executeDelayedCallback("lua.test", id1)
+        assertTrue(capturedLogs.any { it.third == "tick=1" })
+        assertEquals(1, capturedDelays.size, "Should re-schedule after tick 1")
+
+        // Tick 2 — cancels itself
+        val id2 = capturedDelays.last().third
+        capturedDelays.clear()
+        runtime.executeDelayedCallback("lua.test", id2)
+        assertTrue(capturedLogs.any { it.third == "tick=2" })
+        assertTrue(capturedLogs.any { it.third == "cancelled" })
+
+        // After self-cancellation, should NOT re-schedule
+        assertEquals(0, capturedDelays.size, "Cancelled interval should not re-schedule")
+    }
+
+    @Test
+    fun `raam_delay one-shot does not reschedule`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.delay(1000, function()
+                raam.log("fired")
+            end)
+        """.trimIndent())
+
+        assertEquals(1, capturedDelays.size)
+        val callbackId = capturedDelays[0].third
+        capturedDelays.clear()
+
+        // Fire the one-shot
+        val result = runtime.executeDelayedCallback("lua.test", callbackId)
+        assertTrue(result.success)
+        assertTrue(capturedLogs.any { it.third == "fired" })
+
+        // Should NOT re-schedule
+        assertEquals(0, capturedDelays.size, "One-shot delay should not re-schedule")
+
+        // Should not be callable again
+        val secondResult = runtime.executeDelayedCallback("lua.test", callbackId)
+        assertFalse(secondResult.success, "One-shot should not be callable twice")
+    }
+
+    @Test
+    fun `multiple intervals run independently`() {
+        runtime.loadScript("lua.test", "test", """
+            a_count = 0
+            b_count = 0
+            raam.interval(100, function()
+                a_count = a_count + 1
+                raam.log("a=" .. a_count)
+            end)
+            raam.interval(200, function()
+                b_count = b_count + 1
+                raam.log("b=" .. b_count)
+            end)
+        """.trimIndent())
+
+        // Two intervals scheduled
+        assertEquals(2, capturedDelays.size, "Two intervals should produce two initial schedules")
+
+        val idA = capturedDelays[0].third
+        val idB = capturedDelays[1].third
+
+        // Fire A twice, B once
+        capturedDelays.clear()
+        runtime.executeDelayedCallback("lua.test", idA)
+        val idA2 = capturedDelays.find { it.second == 100L }?.third
+        assertNotNull(idA2, "Interval A should re-schedule")
+
+        capturedDelays.clear()
+        runtime.executeDelayedCallback("lua.test", idA2!!)
+
+        capturedDelays.clear()
+        runtime.executeDelayedCallback("lua.test", idB)
+
+        val aResult = runtime.eval("lua.test", "return a_count")
+        val bResult = runtime.eval("lua.test", "return b_count")
+        assertEquals(2, aResult.returnValue?.get("result"), "A should have fired twice")
+        assertEquals(1, bResult.returnValue?.get("result"), "B should have fired once")
     }
 
     // ========================================================================
