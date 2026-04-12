@@ -56,7 +56,11 @@ Filesystem access ranges from a read-only sandboxed work folder to full OS file 
 
 ---
 
-## Planned: Fractal Multi-Agent Cognition
+## Planned for 1.0: LUA scripting support for app and agents.
+
+## Planned for 1.0: Token compression strategies.
+
+## Planned for 1.1: Fractal Multi-Agent Cognition
 
 The next milestone adds an ensemble architecture where sub-agents - Critic, Timekeeper, Affect Monitor, Honesty Checker, Librarian, and others - are real agent instances that deliberate in parallel before the main agent responds. Sub-agents can have sub-agents. The architecture recurses without special-casing. See `MultiAgent_Consciousness_Architecture.md`.
 
