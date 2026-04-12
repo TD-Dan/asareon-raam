@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 /**
  * The syntax highlighting mode for [CodeEditor].
  */
-enum class SyntaxMode { NONE, XML, JSON, MARKDOWN }
+enum class SyntaxMode { NONE, XML, JSON, MARKDOWN, LUA }
 
 /**
  * A reusable monospace text editor with optional syntax highlighting.
@@ -69,6 +69,7 @@ fun CodeEditor(
             SyntaxMode.XML -> XmlHighlightTransformation(depthColors, outlineColor, tertiaryColor, outlineVariantColor)
             SyntaxMode.JSON -> JsonHighlightTransformation(depthColors, outlineColor)
             SyntaxMode.MARKDOWN -> MarkdownHighlightTransformation(depthColors, outlineColor, onSurfaceVariantColor)
+            SyntaxMode.LUA -> LuaHighlightTransformation(depthColors, outlineColor, tertiaryColor, onSurfaceVariantColor)
         }
     }
 
@@ -427,5 +428,140 @@ private class MarkdownHighlightTransformation(
         val base = depthColors[depth % depthColors.size]
         val cycle = depth / depthColors.size
         return if (cycle == 0) base else base.copy(alpha = (0.85f - (cycle - 1) * 0.15f).coerceAtLeast(0.4f))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Lua Syntax Highlighting
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Single-pass Lua tokenizer. Keywords get bold keyword color, strings get string color,
+ * comments get italic comment color, numbers get secondary color.
+ */
+private class LuaHighlightTransformation(
+    private val depthColors: List<Color>,
+    private val commentColor: Color,
+    private val keywordColor: Color,
+    private val stringColor: Color
+) : VisualTransformation {
+
+    companion object {
+        private val KEYWORDS = setOf(
+            "and", "break", "do", "else", "elseif", "end", "false", "for",
+            "function", "goto", "if", "in", "local", "nil", "not", "or",
+            "repeat", "return", "then", "true", "until", "while"
+        )
+        private val BUILTINS = setOf(
+            "print", "type", "tostring", "tonumber", "pairs", "ipairs",
+            "select", "unpack", "error", "pcall", "xpcall", "assert",
+            "setmetatable", "getmetatable", "rawget", "rawset", "next"
+        )
+        private val WORD_REGEX = Regex("[a-zA-Z_][a-zA-Z0-9_]*")
+    }
+
+    override fun filter(text: AnnotatedString): TransformedText {
+        val src = text.text
+        if (src.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
+
+        val builder = AnnotatedString.Builder(src)
+        var i = 0
+
+        while (i < src.length) {
+            when {
+                // Block comment: --[[ ... ]]
+                src.startsWith("--[[", i) -> {
+                    val end = src.indexOf("]]", i + 4)
+                    val commentEnd = if (end == -1) src.length else end + 2
+                    builder.addStyle(SpanStyle(color = commentColor, fontStyle = FontStyle.Italic), i, commentEnd)
+                    i = commentEnd
+                }
+                // Line comment: -- ...
+                src.startsWith("--", i) -> {
+                    val lineEnd = src.indexOf('\n', i)
+                    val commentEnd = if (lineEnd == -1) src.length else lineEnd
+                    builder.addStyle(SpanStyle(color = commentColor, fontStyle = FontStyle.Italic), i, commentEnd)
+                    i = commentEnd
+                }
+                // Long string: [[ ... ]]
+                src.startsWith("[[", i) && (i == 0 || src[i - 1] != '-') -> {
+                    val end = src.indexOf("]]", i + 2)
+                    val strEnd = if (end == -1) src.length else end + 2
+                    builder.addStyle(SpanStyle(color = stringColor), i, strEnd)
+                    i = strEnd
+                }
+                // Double-quoted string
+                src[i] == '"' -> {
+                    val strEnd = findStringEnd(src, i, '"')
+                    builder.addStyle(SpanStyle(color = stringColor), i, strEnd)
+                    i = strEnd
+                }
+                // Single-quoted string
+                src[i] == '\'' -> {
+                    val strEnd = findStringEnd(src, i, '\'')
+                    builder.addStyle(SpanStyle(color = stringColor), i, strEnd)
+                    i = strEnd
+                }
+                // Numbers
+                src[i].isDigit() || (src[i] == '.' && i + 1 < src.length && src[i + 1].isDigit()) -> {
+                    val numEnd = findNumberEnd(src, i)
+                    builder.addStyle(SpanStyle(color = depthColors[1 % depthColors.size]), i, numEnd)
+                    i = numEnd
+                }
+                // Words (keywords, builtins, identifiers)
+                src[i].isLetter() || src[i] == '_' -> {
+                    val match = WORD_REGEX.find(src, i)
+                    if (match != null && match.range.first == i) {
+                        val word = match.value
+                        val wordEnd = match.range.last + 1
+                        when {
+                            word in KEYWORDS -> builder.addStyle(
+                                SpanStyle(color = keywordColor, fontWeight = FontWeight.Bold), i, wordEnd
+                            )
+                            word in BUILTINS -> builder.addStyle(
+                                SpanStyle(color = depthColors[0 % depthColors.size]), i, wordEnd
+                            )
+                        }
+                        i = wordEnd
+                    } else {
+                        i++
+                    }
+                }
+                else -> i++
+            }
+        }
+
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
+
+    private fun findStringEnd(src: String, start: Int, quote: Char): Int {
+        var i = start + 1
+        while (i < src.length) {
+            if (src[i] == '\\') { i += 2; continue }
+            if (src[i] == quote) return i + 1
+            if (src[i] == '\n') return i
+            i++
+        }
+        return src.length
+    }
+
+    private fun findNumberEnd(src: String, start: Int): Int {
+        var i = start
+        if (i + 1 < src.length && src[i] == '0' && (src[i + 1] == 'x' || src[i + 1] == 'X')) {
+            i += 2
+            while (i < src.length && src[i].isLetterOrDigit()) i++
+            return i
+        }
+        while (i < src.length && src[i].isDigit()) i++
+        if (i < src.length && src[i] == '.') {
+            i++
+            while (i < src.length && src[i].isDigit()) i++
+        }
+        if (i < src.length && (src[i] == 'e' || src[i] == 'E')) {
+            i++
+            if (i < src.length && (src[i] == '+' || src[i] == '-')) i++
+            while (i < src.length && src[i].isDigit()) i++
+        }
+        return i
     }
 }

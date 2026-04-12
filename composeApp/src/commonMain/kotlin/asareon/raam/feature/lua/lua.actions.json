@@ -1,0 +1,277 @@
+{
+  "feature_name": "lua",
+  "summary": "Embeds a sandboxed Lua scripting runtime, enabling user-authored automation scripts that dispatch actions, subscribe to events, and serve as agent cognitive strategies.",
+  "permissions": [
+    {
+      "key": "lua:execute",
+      "description": "Load and run Lua scripts",
+      "dangerLevel": "LOW"
+    },
+    {
+      "key": "lua:manage",
+      "description": "Create, delete, and modify Lua script files",
+      "dangerLevel": "CAUTION"
+    },
+    {
+      "key": "lua:dispatch",
+      "description": "Dispatch actions on the bus from within a Lua script",
+      "dangerLevel": "CAUTION"
+    }
+  ],
+  "actions": [
+    {
+      "action_name": "lua.LOAD_SCRIPT",
+      "summary": "Load a Lua script from the workspace and register its identity on the bus.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptPath": {
+            "type": "string",
+            "description": "Relative path to the .lua file within the lua workspace."
+          },
+          "localHandle": {
+            "type": ["string", "null"],
+            "description": "Optional explicit local handle for the script identity. Derived from filename if omitted."
+          },
+          "autostart": {
+            "type": "boolean",
+            "description": "If true, script will auto-load on next app startup.",
+            "default": false
+          }
+        },
+        "required": ["scriptPath"]
+      },
+      "required_permissions": ["lua:execute"]
+    },
+    {
+      "action_name": "lua.UNLOAD_SCRIPT",
+      "summary": "Unload a running Lua script and unregister its identity.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string",
+            "description": "The full handle of the script identity to unload (e.g., 'lua.my-script')."
+          }
+        },
+        "required": ["scriptHandle"]
+      },
+      "required_permissions": ["lua:manage"]
+    },
+    {
+      "action_name": "lua.RELOAD_SCRIPT",
+      "summary": "Hot-reload the source code of a running Lua script without changing its identity or subscriptions.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string",
+            "description": "The full handle of the script identity to reload."
+          }
+        },
+        "required": ["scriptHandle"]
+      },
+      "required_permissions": ["lua:execute"]
+    },
+    {
+      "action_name": "lua.EVAL",
+      "summary": "Execute a Lua code string in the context of a loaded script (REPL/debugging).",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string",
+            "description": "The script context to evaluate in."
+          },
+          "code": {
+            "type": "string",
+            "description": "Lua source code to evaluate."
+          },
+          "correlationId": {
+            "type": ["string", "null"],
+            "default": null
+          }
+        },
+        "required": ["scriptHandle", "code"]
+      },
+      "required_permissions": ["lua:execute"]
+    },
+    {
+      "action_name": "lua.LIST_SCRIPTS",
+      "summary": "Query all loaded scripts and their current status.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": ["string", "null"],
+            "default": null
+          }
+        }
+      },
+      "required_permissions": ["lua:execute"]
+    },
+    {
+      "action_name": "lua.SCRIPT_LOADED",
+      "summary": "Broadcast notification that a Lua script has been successfully loaded and is now running.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          },
+          "scriptName": {
+            "type": "string"
+          },
+          "scriptPath": {
+            "type": "string"
+          }
+        },
+        "required": ["scriptHandle", "scriptName", "scriptPath"]
+      }
+    },
+    {
+      "action_name": "lua.SCRIPT_UNLOADED",
+      "summary": "Broadcast notification that a Lua script has been unloaded.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the script was unloaded: 'manual', 'error', 'rate-limit', 'timeout'."
+          }
+        },
+        "required": ["scriptHandle", "reason"]
+      }
+    },
+    {
+      "action_name": "lua.SCRIPT_ERROR",
+      "summary": "Broadcast notification of a Lua script runtime error.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "context": {
+            "type": ["string", "null"],
+            "description": "Where the error occurred: 'load', 'callback', 'eval', 'on_turn'."
+          }
+        },
+        "required": ["scriptHandle", "error"]
+      }
+    },
+    {
+      "action_name": "lua.SCRIPT_OUTPUT",
+      "summary": "Console output from a Lua script (raam.log/warn/error calls).",
+      "public": false,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "scriptHandle": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "description": "'log', 'warn', or 'error'."
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer"
+          }
+        },
+        "required": ["scriptHandle", "level", "message", "timestamp"]
+      }
+    },
+    {
+      "action_name": "lua.RETURN_LIST",
+      "summary": "Response envelope containing the list of loaded scripts.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": ["string", "null"]
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "handle": { "type": "string" },
+                "name": { "type": "string" },
+                "path": { "type": "string" },
+                "status": { "type": "string" },
+                "autostart": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "required": ["scripts"]
+      }
+    },
+    {
+      "action_name": "lua.ACTION_RESULT",
+      "summary": "Broadcast result envelope published after a command-dispatchable Lua action completes.",
+      "public": false,
+      "broadcast": true,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": {
+            "type": ["string", "null"]
+          },
+          "requestAction": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": ["string", "null"]
+          },
+          "error": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["requestAction", "success"]
+      }
+    }
+  ]
+}

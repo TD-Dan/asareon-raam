@@ -38,7 +38,8 @@ enum class AgentResourceType {
     CONSTITUTION,
     BOOTLOADER,
     SYSTEM_INSTRUCTION,
-    STATE_MACHINE
+    STATE_MACHINE,
+    LUA_SCRIPT
 }
 
 @Serializable
