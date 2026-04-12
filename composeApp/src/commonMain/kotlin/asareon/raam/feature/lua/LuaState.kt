@@ -43,6 +43,21 @@ data class ConsoleEntry(
 )
 
 /**
+ * Tracks a pending filesystem operation so that when the async response arrives,
+ * LuaFeature knows what to do with the result. Stored in-memory on the feature
+ * instance (not in FeatureState) since it is transient runtime tracking.
+ */
+data class PendingFileOp(
+    val correlationId: String,
+    /** The type of operation: "load", "reload", "clone-read" */
+    val opType: String,
+    /** The script handle this operation is for. */
+    val scriptHandle: String,
+    /** Extra context needed to complete the operation. */
+    val extra: Map<String, String> = emptyMap()
+)
+
+/**
  * The feature state for the Lua scripting feature.
  */
 @Serializable

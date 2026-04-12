@@ -14,6 +14,8 @@
 
 - Need a pre loaded state view that shows live log stream while app is loading
 
+- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere
+
 
 # ONBOARDING
 
@@ -161,6 +163,10 @@ BUG: gocnitivepipeline 969: should error not default
 ## Ideas
 - Multi-user HKGs: reservation system, git, other method?
 
+# LUA
+- add comprehensive unit test suite
+- add LUA scripting Documentation
+- 
 
 # FUTURE IDEAS FOR FEATURES
 
