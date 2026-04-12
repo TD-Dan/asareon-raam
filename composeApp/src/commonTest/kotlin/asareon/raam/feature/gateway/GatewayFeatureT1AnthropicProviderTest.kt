@@ -213,8 +213,9 @@ class GatewayFeatureT1AnthropicProviderTest {
         val response = provider.parseResponse(responseBody, correlationId)
 
         // ASSERT
-        // According to the implementation, only the first text block is used
-        assertEquals("First part", response.rawContent)
+        // All parts should be
+        assertContains(response.rawContent.toString(),"First part")
+        assertContains(response.rawContent.toString(),"Second part")
         assertNull(response.errorMessage)
         assertEquals(correlationId, response.correlationId)
     }

@@ -19,7 +19,7 @@ actual class LuaRuntime actual constructor(config: LuaRuntimeConfig) {
         return LuaExecutionResult(success = false, error = "Lua scripting is not available on this platform (WASM)")
     }
 
-    actual fun deliverEvent(actionName: String, payload: Map<String, Any?>?): List<String> = emptyList()
+    actual fun deliverEvent(actionName: String, payload: Map<String, Any?>?, originator: String?): List<String> = emptyList()
 
     actual fun executeTurn(scriptHandle: String, context: Map<String, Any?>): LuaExecutionResult {
         return LuaExecutionResult(success = false, error = "Lua scripting is not available on this platform (WASM)")

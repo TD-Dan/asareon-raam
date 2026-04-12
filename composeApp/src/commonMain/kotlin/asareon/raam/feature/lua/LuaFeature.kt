@@ -233,7 +233,7 @@ class LuaFeature(
             ActionRegistry.Names.LUA_EVAL -> handleEval(action, store)
             ActionRegistry.Names.LUA_LIST_SCRIPTS -> handleListScripts(action, store)
             ActionRegistry.Names.LUA_CREATE_SCRIPT -> handleCreateScript(action, store)
-            ActionRegistry.Names.LUA_DELETE_SCRIPT -> handleDeleteScript(action, store)
+            ActionRegistry.Names.LUA_DELETE_SCRIPT -> handleDeleteScript(action, store, previousState)
             ActionRegistry.Names.LUA_CLONE_SCRIPT -> handleCloneScript(action, store)
             ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> handleToggleScript(action, store, previousState)
             ActionRegistry.Names.LUA_SAVE_SCRIPT -> handleSaveScript(action, store)
@@ -377,12 +377,13 @@ class LuaFeature(
     // DELETE_SCRIPT: unload + filesystem.DELETE_FILE + unregister
     // ========================================================================
 
-    private fun handleDeleteScript(action: Action, store: Store) {
+    private fun handleDeleteScript(action: Action, store: Store, previousState: FeatureState?) {
         val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
             ?: return logMissingField("DELETE_SCRIPT", "scriptHandle")
-        val currentState = store.state.value.featureStates[identity.handle] as? LuaState
+        // Use previousState because the reducer already removed the script from newState
+        val prevLuaState = previousState as? LuaState
             ?: return logMissingState("DELETE_SCRIPT")
-        val script = currentState.scripts[handle]
+        val script = prevLuaState.scripts[handle]
             ?: return logUnknownScript("DELETE_SCRIPT", handle)
 
         runtime.unloadScript(handle)
@@ -847,7 +848,7 @@ class LuaFeature(
         val payloadMap = action.payload?.let { jsonObjectToMap(it) }
         currentCascadeDepth++
         try {
-            val errors = runtime.deliverEvent(action.name, payloadMap)
+            val errors = runtime.deliverEvent(action.name, payloadMap, action.originator)
             for (errorHandle in errors) {
                 dispatchScriptError(errorHandle, "Callback timed out or errored for ${action.name}", "callback")
                 runtime.unloadScript(errorHandle)
@@ -915,6 +916,21 @@ class LuaFeature(
             override fun getScriptPermissions(scriptHandle: String): Map<String, String> {
                 val id = store.state.value.identityRegistry[scriptHandle] ?: return emptyMap()
                 return store.resolveEffectivePermissions(id).mapValues { (_, grant) -> grant.level.name }
+            }
+
+            override fun getCurrentTimeMillis(): Long {
+                return platformDependencies.currentTimeMillis()
+            }
+
+            override fun getActionDescriptors(): List<LuaActionDescriptor> {
+                return store.state.value.actionDescriptors.values.map { desc ->
+                    LuaActionDescriptor(
+                        name = desc.fullName,
+                        featureName = desc.featureName,
+                        summary = desc.summary,
+                        isPublic = desc.`public`
+                    )
+                }
             }
         }
     }

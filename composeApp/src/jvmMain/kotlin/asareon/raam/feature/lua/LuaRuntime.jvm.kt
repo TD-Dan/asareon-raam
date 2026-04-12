@@ -1,8 +1,10 @@
 package asareon.raam.feature.lua
 
 import org.luaj.vm2.*
+import org.luaj.vm2.compiler.LuaC
 import org.luaj.vm2.lib.*
 import org.luaj.vm2.lib.jse.JseMathLib
+import org.luaj.vm2.lib.jse.JseBaseLib
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicLong
 
@@ -22,6 +24,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
 
     actual val isAvailable: Boolean = true
 
+    @Volatile
     private var bridgeListener: LuaBridgeListener? = null
     private val scripts = ConcurrentHashMap<String, ScriptEnvironment>()
     private val executor = Executors.newCachedThreadPool { r ->
@@ -91,9 +94,10 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
         } ?: LuaExecutionResult(success = false, error = "Eval timed out")
     }
 
-    actual fun deliverEvent(actionName: String, payload: Map<String, Any?>?): List<String> {
+    actual fun deliverEvent(actionName: String, payload: Map<String, Any?>?, originator: String?): List<String> {
         val errors = mutableListOf<String>()
         val luaPayload = payload?.let { kotlinMapToLuaTable(it) } ?: LuaValue.NIL
+        val luaOriginator = originator?.let { LuaValue.valueOf(it) } ?: LuaValue.NIL
 
         for ((handle, env) in scripts) {
             val matchingHandlers = env.subscriptions.filter { matchesPattern(it.pattern, actionName) }
@@ -105,7 +109,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
             for (sub in matchingHandlers) {
                 val result = executeWithTimeout(config.callbackTimeoutMs) {
                     sub.handler.invoke(
-                        LuaValue.varargsOf(arrayOf(LuaValue.valueOf(actionName), luaPayload))
+                        LuaValue.varargsOf(arrayOf(LuaValue.valueOf(actionName), luaPayload, luaOriginator))
                     )
                     LuaExecutionResult(success = true)
                 }
@@ -174,8 +178,13 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
     private fun createSandboxedGlobals(scriptHandle: String): Globals {
         val globals = Globals()
 
-        // Load ONLY safe libraries
-        globals.load(BaseLib())
+        // Install the Lua source compiler — without this, globals.load(string) fails with "No compiler."
+        LuaC.install(globals)
+
+        // PackageLib must load first — TableLib and others depend on package.loaded.
+        // We load it, then strip `require` and `module` to prevent native module loading.
+        globals.load(JseBaseLib())
+        globals.load(PackageLib())
         globals.load(TableLib())
         globals.load(StringLib())
         globals.load(JseMathLib())
@@ -187,6 +196,8 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
         globals.set("load", createSafeLoad(globals))  // Allow load() but only for text mode
         globals.set("collectgarbage", LuaValue.NIL)
         globals.set("rawlen", LuaValue.NIL)
+        globals.set("require", LuaValue.NIL)  // Prevent native module loading
+        globals.set("module", LuaValue.NIL)
 
         // Redirect print to raam.log
         globals.set("print", object : VarArgFunction() {
@@ -364,6 +375,97 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
                     table.set(key, LuaValue.valueOf(level))
                 }
                 return table
+            }
+        })
+
+        // raam.time() → epoch millis as number
+        raam.set("time", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                val ms = bridgeListener?.getCurrentTimeMillis() ?: System.currentTimeMillis()
+                return LuaValue.valueOf(ms.toDouble())
+            }
+        })
+
+        // raam.actions() → array of {name, feature, summary, public}
+        raam.set("actions", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                val descriptors = bridgeListener?.getActionDescriptors() ?: return LuaTable()
+                val table = LuaTable()
+                descriptors.forEachIndexed { index, desc ->
+                    val entry = LuaTable()
+                    entry.set("name", LuaValue.valueOf(desc.name))
+                    entry.set("feature", LuaValue.valueOf(desc.featureName))
+                    entry.set("summary", LuaValue.valueOf(desc.summary))
+                    entry.set("public", LuaValue.valueOf(desc.isPublic))
+                    table.set(index + 1, entry)
+                }
+                return table
+            }
+        })
+
+        // raam.interval(ms, fn) → intervalId (cancellable)
+        // Recurring timer — calls fn every ms milliseconds.
+        // Returns a numeric ID. Use raam.off(id) to cancel.
+        raam.set("interval", object : TwoArgFunction() {
+            override fun call(ms: LuaValue, callback: LuaValue): LuaValue {
+                val intervalMs = ms.checklong()
+                if (!callback.isfunction()) {
+                    return LuaValue.error("raam.interval: second argument must be a function")
+                }
+                val env = scripts[scriptHandle] ?: return LuaValue.NIL
+                val id = callbackIdCounter.incrementAndGet()
+
+                // Store the callback and schedule the first tick
+                env.delayedCallbacks[id] = callback
+
+                fun scheduleTick() {
+                    bridgeListener?.onScriptDelay(scriptHandle, intervalMs, id)
+                }
+                // The interval re-schedules itself after each execution.
+                // We wrap the original callback to re-schedule + re-store.
+                val wrappedCallback = object : ZeroArgFunction() {
+                    override fun call(): LuaValue {
+                        // Check if still active (not cancelled via raam.off or unloaded)
+                        val currentEnv = scripts[scriptHandle] ?: return LuaValue.NIL
+                        if (!currentEnv.delayedCallbacks.containsKey(id)) return LuaValue.NIL
+
+                        // Execute the user callback
+                        try {
+                            callback.call()
+                        } catch (e: LuaError) {
+                            bridgeListener?.onScriptLog(scriptHandle, "error",
+                                "interval callback error: ${e.message}")
+                        }
+
+                        // Re-store and re-schedule if still active
+                        if (scripts[scriptHandle]?.delayedCallbacks?.containsKey(id) == true) {
+                            currentEnv.delayedCallbacks[id] = this
+                            scheduleTick()
+                        }
+                        return LuaValue.NIL
+                    }
+                }
+                env.delayedCallbacks[id] = wrappedCallback
+                scheduleTick()
+
+                return LuaValue.valueOf(id.toDouble())
+            }
+        })
+
+        // Allow raam.off(intervalId) to cancel intervals too — remove from delayedCallbacks
+        // (raam.off already removes from subscriptions; we extend it to also clear intervals)
+        val originalOff = raam.get("off")
+        raam.set("off", object : OneArgFunction() {
+            override fun call(idVal: LuaValue): LuaValue {
+                val id = idVal.checklong()
+                val env = scripts[scriptHandle]
+                if (env != null) {
+                    // Remove from subscriptions (existing behavior)
+                    env.subscriptions.removeAll { it.id == id }
+                    // Also remove from delayed/interval callbacks
+                    env.delayedCallbacks.remove(id)
+                }
+                return LuaValue.TRUE
             }
         })
 
