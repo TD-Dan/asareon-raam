@@ -4,6 +4,7 @@ A multi-platform runtime for hosting autonomous AI agents. Kotlin Multiplatform,
 
 > 1.0.0-alpha · Desktop (Windows) released. Linux, macOS, Android, iOS, WebAssembly planned.
 
+Secure by design, flexible, configurable on the fly, transparent and made for the tinkerer mindset.
 ---
 
 <img width="1127" height="1184" alt="image" src="https://github.com/user-attachments/assets/7b1fd325-f6c1-4e1f-b60b-004873431141" />
@@ -12,7 +13,7 @@ A multi-platform runtime for hosting autonomous AI agents. Kotlin Multiplatform,
 
 ### Security First
 
-Every action passes through identity verification, authorization, and permission gating before any state change occurs. Deny-by-default. All grants, denials, and escalations are logged. A visual permission matrix gives the operator full control over what every agent, user, and session is allowed to do.
+Every action passes through identity verification, authorization, and permission gating before any state change occurs. Deny-by-default. All grants, denials, and escalations are logged. A visual permission matrix gives the operator full control over what every agent, user, and session is allowed to do. All agent actions are visible to the operator, no quessing around what the agent is doing in your OS.
 
 ### Multi-Agent, Multi-Session
 
@@ -28,11 +29,11 @@ Users dispatch the same actions agents use via `/` commands in any session. Same
 
 ### Pluggable Cognition
 
-Swappable cognitive strategies define how agents think - from single-turn request/response to multi-phase cognition with constitutional alignment, private thinking sessions, persistent cognitive state, and knowledge graph integration.
+Swappable cognitive strategies define how agents think - from single-turn request/response to multi-phase cognition with constitutional alignment, private thinking sessions, persistent cognitive state, and knowledge graph integration. You can swap all agent parameters mid session including host llm API provider f.ex. to swap to a cheaper model for easier task.
 
 ### Persistent Memory
 
-Holon Knowledge Graphs for structured long-term memory. NVRAM for cognitive state across turns. Private cognition sessions for internal monologue.
+Holon Knowledge Graphs for structured long-term memory. NVRAM for cognitive state across turns. Private cognition sessions for internal monologue. Backed up by the automatic backups, of course.
 
 ### Multi-Provider Gateway
 
