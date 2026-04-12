@@ -37,18 +37,22 @@ class LuaFeatureT1SideEffectsTest {
     }
 
     // ========================================================================
-    // init() — External strategy registration
+    // SYSTEM_RUNNING — External strategy registration + autodiscovery
     // ========================================================================
 
     @Test
-    fun `init dispatches REGISTER_EXTERNAL_STRATEGY for Lua`() {
-        val store = createFakeStore()
+    fun `SYSTEM_RUNNING dispatches REGISTER_EXTERNAL_STRATEGY for Lua`() {
+        val store = createFakeStore(LuaState(runtimeAvailable = true))
         feature.init(store)
+        store.dispatchedActions.clear()
+
+        val action = Action(ActionRegistry.Names.SYSTEM_RUNNING)
+        feature.handleSideEffects(action, store, null, LuaState(runtimeAvailable = true))
 
         val regAction = store.dispatchedActions.find {
             it.name == ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY
         }
-        assertNotNull(regAction, "init() should dispatch strategy registration")
+        assertNotNull(regAction, "SYSTEM_RUNNING should dispatch strategy registration")
         assertEquals("lua", regAction.originator)
         assertEquals("agent.strategy.lua", regAction.payload?.get("strategyId")?.asString())
         assertEquals("Lua Script", regAction.payload?.get("displayName")?.asString())
@@ -316,11 +320,11 @@ class LuaFeatureT1SideEffectsTest {
     }
 
     // ========================================================================
-    // APP STARTUP — dispatches filesystem list for autodiscovery
+    // APP STARTUP — dispatches config read then autodiscovery
     // ========================================================================
 
     @Test
-    fun `SYSTEM_RUNNING dispatches FILESYSTEM_LIST for autodiscovery`() {
+    fun `SYSTEM_RUNNING dispatches FILESYSTEM_READ for scripts config`() {
         val store = createFakeStore(LuaState(runtimeAvailable = true))
         feature.init(store)
         store.dispatchedActions.clear()
@@ -328,11 +332,11 @@ class LuaFeatureT1SideEffectsTest {
         val action = Action(ActionRegistry.Names.SYSTEM_RUNNING)
         feature.handleSideEffects(action, store, null, LuaState(runtimeAvailable = true))
 
-        val listAction = store.dispatchedActions.find {
-            it.name == ActionRegistry.Names.FILESYSTEM_LIST
+        val readAction = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.FILESYSTEM_READ
         }
-        assertNotNull(listAction, "Should dispatch filesystem list for autodiscovery")
-        assertEquals("lua:discover", listAction.payload?.get("correlationId")?.asString())
+        assertNotNull(readAction, "Should dispatch filesystem read for scripts.json")
+        assertEquals("scripts.json", readAction.payload?.get("path")?.asString())
     }
 
     // Note: "runtime not available" cannot be tested from commonTest because

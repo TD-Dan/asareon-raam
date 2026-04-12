@@ -120,7 +120,7 @@ class LuaFeatureT2CoreTest {
     // ========================================================================
 
     @Test
-    fun `SYSTEM_RUNNING dispatches filesystem list for autodiscovery`() {
+    fun `SYSTEM_RUNNING dispatches strategy registration and config read`() {
         val platform = FakePlatformDependencies("test")
         // Start in INITIALIZING so we can transition to RUNNING
         val harness = TestEnvironment.create()
@@ -132,11 +132,18 @@ class LuaFeatureT2CoreTest {
         harness.runAndLogOnFailure {
             harness.store.dispatch("system", Action(ActionRegistry.Names.SYSTEM_RUNNING))
 
-            val listAction = harness.processedActions.find {
-                it.name == ActionRegistry.Names.FILESYSTEM_LIST &&
-                        it.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull == "lua:discover"
+            // Should register the Lua strategy
+            val regAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY
             }
-            assertNotNull(listAction, "Should dispatch filesystem list with discovery correlationId")
+            assertNotNull(regAction, "Should dispatch strategy registration")
+
+            // Should read scripts.json config (autodiscovery follows in response handler)
+            val readAction = harness.processedActions.find {
+                it.name == ActionRegistry.Names.FILESYSTEM_READ &&
+                        it.payload?.get("path")?.jsonPrimitive?.contentOrNull == "scripts.json"
+            }
+            assertNotNull(readAction, "Should dispatch filesystem read for scripts.json")
         }
     }
 
