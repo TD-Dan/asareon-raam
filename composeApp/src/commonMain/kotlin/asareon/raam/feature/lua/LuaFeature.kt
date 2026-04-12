@@ -308,6 +308,7 @@ class LuaFeature(
         val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull
             ?: return logMissingField("UNLOAD_SCRIPT", "scriptHandle")
         runtime.unloadScript(handle)
+        logSubscriptions.removeAll { it.scriptHandle == handle }
 
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.CORE_UNREGISTER_IDENTITY,
@@ -1037,6 +1038,7 @@ class LuaFeature(
             for (errorHandle in errors) {
                 dispatchScriptError(errorHandle, "Callback timed out or errored for ${action.name}", "callback")
                 runtime.unloadScript(errorHandle)
+                logSubscriptions.removeAll { it.scriptHandle == errorHandle }
             }
         } finally {
             currentCascadeDepth--
@@ -1049,22 +1051,18 @@ class LuaFeature(
 
     private fun forwardLogToSubscribedScripts(level: LogLevel, tag: String, message: String, timestamp: Long) {
         if (logSubscriptions.isEmpty()) return
-        for (sub in logSubscriptions.toList()) {  // toList() to avoid ConcurrentModification
-            if (level >= sub.minLevel) {
-                // Deliver as a delayed callback so it runs on the script thread
-                val ctx = mapOf(
-                    "level" to level.name,
-                    "tag" to tag,
-                    "message" to message,
-                    "timestamp" to timestamp
-                )
-                // We can't invoke Lua directly here (may be called from any thread).
-                // Instead, use the existing event delivery which is Store-synchronized.
-                // For now, just dispatch an internal action that the script can subscribe to.
-                // Actually, log listeners fire from the log() call which is synchronous on
-                // the dispatch thread. So we CAN call into the runtime here safely IF we're
-                // careful about re-entrancy. For safety, buffer and deliver on next cycle.
-                // TODO: Phase 2 — direct Lua callback invocation for log events
+        // Check if any subscription would match this level before scheduling
+        val hasMatch = logSubscriptions.any { level >= it.minLevel }
+        if (!hasMatch) return
+        // Marshal off the log-listener thread via scheduleDelayed(0) — same pattern as onScriptDelay.
+        // This avoids routing through the action bus (which would require a registered action descriptor).
+        val levelName = level.name
+        platformDependencies.scheduleDelayed(0) {
+            val errors = runtime.deliverLogEvent(levelName, tag, message, timestamp)
+            for (errorHandle in errors) {
+                dispatchScriptError(errorHandle, "Log listener callback timed out or errored", "callback")
+                runtime.unloadScript(errorHandle)
+                logSubscriptions.removeAll { it.scriptHandle == errorHandle }
             }
         }
     }
@@ -1103,6 +1101,11 @@ class LuaFeature(
                         put("timestamp", platformDependencies.currentTimeMillis())
                     }
                 ))
+            }
+
+            override fun onScriptLogSubscribe(scriptHandle: String, minLevel: String, callbackId: Long) {
+                val level = try { LogLevel.valueOf(minLevel) } catch (_: Exception) { LogLevel.DEBUG }
+                logSubscriptions.add(LogSubscriptionEntry(scriptHandle, level, callbackId))
             }
 
             override fun onScriptDelay(scriptHandle: String, delayMs: Long, callbackId: Long) {

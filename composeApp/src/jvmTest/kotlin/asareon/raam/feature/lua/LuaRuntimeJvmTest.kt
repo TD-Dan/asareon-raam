@@ -30,6 +30,9 @@ class LuaRuntimeJvmTest {
         override fun onScriptDelay(scriptHandle: String, delayMs: Long, callbackId: Long) {
             capturedDelays.add(Triple(scriptHandle, delayMs, callbackId))
         }
+        override fun onScriptLogSubscribe(scriptHandle: String, minLevel: String, callbackId: Long) {
+            // No-op in tests
+        }
         override fun getIdentities(): List<LuaIdentitySnapshot> = listOf(
             LuaIdentitySnapshot("core", "Core", null),
             LuaIdentitySnapshot("lua", "Lua", null),

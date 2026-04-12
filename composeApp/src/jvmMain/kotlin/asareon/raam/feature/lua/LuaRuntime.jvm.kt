@@ -587,6 +587,8 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
                 val id = callbackIdCounter.incrementAndGet()
                 // Store as a subscription with a special "log:" prefix pattern
                 env.subscriptions.add(SubscriptionEntry(id, "log:$minLevel", handler))
+                // Notify the feature layer so it can forward live log events
+                bridgeListener?.onScriptLogSubscribe(scriptHandle, minLevel, id)
                 return LuaValue.valueOf(id.toDouble())
             }
         })
@@ -685,6 +687,54 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
             value.istable() -> luaTableToKotlinMap(value.checktable())
             else -> value.tojstring()
         }
+    }
+
+    // ========================================================================
+    // Log event delivery to subscribed scripts
+    // ========================================================================
+
+    /**
+     * Log level ordinals for comparison (mirrors LogLevel enum ordering).
+     */
+    private val logLevelOrdinals = mapOf(
+        "DEBUG" to 0, "INFO" to 1, "WARN" to 2, "ERROR" to 3, "FATAL" to 4
+    )
+
+    actual fun deliverLogEvent(level: String, tag: String, message: String, timestamp: Long): List<String> {
+        val eventOrdinal = logLevelOrdinals[level] ?: return emptyList()
+        val errors = mutableListOf<String>()
+
+        for ((handle, env) in scripts) {
+            // Find subscriptions with "log:LEVEL" pattern
+            val logHandlers = env.subscriptions.filter { sub ->
+                if (!sub.pattern.startsWith("log:")) return@filter false
+                val minLevelName = sub.pattern.removePrefix("log:")
+                val minOrdinal = logLevelOrdinals[minLevelName] ?: return@filter false
+                eventOrdinal >= minOrdinal
+            }
+            if (logHandlers.isEmpty()) continue
+
+            env.dispatchCount = 0
+
+            for (sub in logHandlers) {
+                val result = executeWithTimeout(config.callbackTimeoutMs) {
+                    sub.handler.invoke(
+                        LuaValue.varargsOf(arrayOf(
+                            LuaValue.valueOf(level),
+                            LuaValue.valueOf(tag),
+                            LuaValue.valueOf(message),
+                            LuaValue.valueOf(timestamp.toDouble())
+                        ))
+                    )
+                    LuaExecutionResult(success = true)
+                }
+                if (result == null || !result.success) {
+                    errors.add(handle)
+                    break
+                }
+            }
+        }
+        return errors
     }
 
     // ========================================================================

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -237,59 +238,61 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                                 }
                             }
 
-                            LazyColumn(
-                                state = consoleListState,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceContainerLowest,
-                                        MaterialTheme.shapes.small
-                                    )
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
-                                    .padding(8.dp)
-                            ) {
-                                if (console.isEmpty()) {
-                                    item {
-                                        Text(
-                                            "No output yet.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            SelectionContainer {
+                                LazyColumn(
+                                    state = consoleListState,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceContainerLowest,
+                                            MaterialTheme.shapes.small
                                         )
-                                    }
-                                } else {
-                                    items(console) { entry ->
-                                        val prefix = when (entry.level) {
-                                            "error" -> "[ERR] "
-                                            "warn" -> "[!] "
-                                            else -> ""
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
+                                        .padding(8.dp)
+                                ) {
+                                    if (console.isEmpty()) {
+                                        item {
+                                            Text(
+                                                "No output yet.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
-                                        val textColor = if (entry.color != null) {
-                                            try {
-                                                val hex = entry.color.removePrefix("#")
-                                                val rgb = hex.toLong(16)
-                                                Color(
-                                                    red = ((rgb shr 16) and 0xFF).toInt() / 255f,
-                                                    green = ((rgb shr 8) and 0xFF).toInt() / 255f,
-                                                    blue = (rgb and 0xFF).toInt() / 255f
-                                                )
-                                            } catch (_: Exception) { null }
-                                        } else null
+                                    } else {
+                                        items(console) { entry ->
+                                            val prefix = when (entry.level) {
+                                                "error" -> "[ERR] "
+                                                "warn" -> "[!] "
+                                                else -> ""
+                                            }
+                                            val textColor = if (entry.color != null) {
+                                                try {
+                                                    val hex = entry.color.removePrefix("#")
+                                                    val rgb = hex.toLong(16)
+                                                    Color(
+                                                        red = ((rgb shr 16) and 0xFF).toInt() / 255f,
+                                                        green = ((rgb shr 8) and 0xFF).toInt() / 255f,
+                                                        blue = (rgb and 0xFF).toInt() / 255f
+                                                    )
+                                                } catch (_: Exception) { null }
+                                            } else null
 
-                                        Text(
-                                            text = prefix + entry.message,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            lineHeight = 14.sp,
-                                            color = textColor ?: when (entry.level) {
-                                                "error" -> MaterialTheme.colorScheme.error
-                                                "warn" -> MaterialTheme.colorScheme.tertiary
-                                                else -> MaterialTheme.colorScheme.onSurface
-                                            },
-                                            fontWeight = if (entry.bold == true) FontWeight.Bold else null,
-                                            fontStyle = if (entry.italic == true) FontStyle.Italic else null,
-                                            modifier = Modifier.padding(vertical = 0.dp)
-                                        )
+                                            Text(
+                                                text = prefix + entry.message,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                lineHeight = 14.sp,
+                                                color = textColor ?: when (entry.level) {
+                                                    "error" -> MaterialTheme.colorScheme.error
+                                                    "warn" -> MaterialTheme.colorScheme.tertiary
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                },
+                                                fontWeight = if (entry.bold == true) FontWeight.Bold else null,
+                                                fontStyle = if (entry.italic == true) FontStyle.Italic else null,
+                                                modifier = Modifier.padding(vertical = 0.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

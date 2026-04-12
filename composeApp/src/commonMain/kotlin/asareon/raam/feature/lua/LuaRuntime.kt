@@ -57,6 +57,12 @@ interface LuaBridgeListener {
     fun onScriptDelay(scriptHandle: String, delayMs: Long, callbackId: Long)
 
     /**
+     * Called when a script registers a log listener via raam.applog.listen(minLevel, handler).
+     * The feature layer tracks these so it can forward live log events.
+     */
+    fun onScriptLogSubscribe(scriptHandle: String, minLevel: String, callbackId: Long)
+
+    /**
      * Returns the identity registry as a list of public-safe identity snapshots.
      */
     fun getIdentities(): List<LuaIdentitySnapshot>
@@ -209,4 +215,16 @@ expect class LuaRuntime(config: LuaRuntimeConfig = LuaRuntimeConfig()) {
      * Get the list of action patterns a script has subscribed to.
      */
     fun getSubscriptions(scriptHandle: String): List<String>
+
+    /**
+     * Deliver a log event to all scripts that have registered log listeners
+     * (via raam.applog.listen) whose minimum level is at or below the given level.
+     *
+     * @param level The log level name (e.g., "DEBUG", "INFO", "WARN", "ERROR", "FATAL")
+     * @param tag The log source tag
+     * @param message The log message
+     * @param timestamp The event timestamp in epoch millis
+     * @return List of script handles that errored during delivery
+     */
+    fun deliverLogEvent(level: String, tag: String, message: String, timestamp: Long): List<String>
 }

@@ -32,4 +32,6 @@ actual class LuaRuntime actual constructor(config: LuaRuntimeConfig) {
     actual fun isScriptLoaded(scriptHandle: String): Boolean = false
 
     actual fun getSubscriptions(scriptHandle: String): List<String> = emptyList()
+
+    actual fun deliverLogEvent(level: String, tag: String, message: String, timestamp: Long): List<String> = emptyList()
 }

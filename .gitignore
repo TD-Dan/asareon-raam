@@ -22,3 +22,4 @@ captures
 /composeApp/sessions/
 _backups
 _app_data_backups
+/.claude/*
