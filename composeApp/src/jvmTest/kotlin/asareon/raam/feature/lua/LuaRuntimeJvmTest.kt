@@ -909,13 +909,13 @@ class LuaRuntimeJvmTest {
     }
 
     // ========================================================================
-    // raam.log.retrieve()
+    // raam.applog.retrieve()
     // ========================================================================
 
     @Test
     fun `raam_log_retrieve returns log entries`() {
         val result = runtime.loadScript("lua.test", "test", """
-            local logs = raam.log.retrieve()
+            local logs = raam.applog.retrieve()
             raam.log("count=" .. #logs)
             if #logs > 0 then
                 raam.log("first_level=" .. logs[1].level)
@@ -933,7 +933,7 @@ class LuaRuntimeJvmTest {
     @Test
     fun `raam_log_retrieve filters by minLevel`() {
         val result = runtime.loadScript("lua.test", "test", """
-            local logs = raam.log.retrieve({ minLevel = "WARN" })
+            local logs = raam.applog.retrieve({ minLevel = "WARN" })
             raam.log("count=" .. #logs)
             for _, entry in ipairs(logs) do
                 raam.log(entry.level .. ": " .. entry.message)
@@ -947,7 +947,7 @@ class LuaRuntimeJvmTest {
     @Test
     fun `raam_log_retrieve filters by tag`() {
         val result = runtime.loadScript("lua.test", "test", """
-            local logs = raam.log.retrieve({ tag = "agent" })
+            local logs = raam.applog.retrieve({ tag = "agent" })
             raam.log("count=" .. #logs)
         """.trimIndent())
 
@@ -958,7 +958,7 @@ class LuaRuntimeJvmTest {
     @Test
     fun `raam_log_listen creates subscription`() {
         runtime.loadScript("lua.test", "test", """
-            raam.log.listen("WARN", function(level, tag, message, timestamp)
+            raam.applog.listen("WARN", function(level, tag, message, timestamp)
                 raam.log("live: " .. level .. " " .. tag)
             end)
         """.trimIndent())

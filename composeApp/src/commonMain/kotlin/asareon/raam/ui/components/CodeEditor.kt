@@ -3,10 +3,16 @@ package asareon.raam.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -77,6 +83,11 @@ fun CodeEditor(
         Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
     } else Modifier
 
+    val lineCount = remember(value) { value.count { it == '\n' } + 1 }
+    val lineNumberColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+
+    val scrollState = rememberScrollState()
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -84,22 +95,46 @@ fun CodeEditor(
             .background(Color.Transparent, MaterialTheme.shapes.small)
             .padding(8.dp)
     ) {
-        BasicTextField(
-            value = value,
-            onValueChange = { if (!readOnly) onValueChange(it) },
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("code_editor_input"),
-            readOnly = readOnly,
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 20.sp
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            visualTransformation = transformation
-        )
+                .verticalScroll(scrollState)
+        ) {
+            // Line number gutter — scrolls with the text
+            Column(
+                modifier = Modifier.padding(end = 8.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.End
+            ) {
+                for (i in 1..lineCount) {
+                    Text(
+                        text = i.toString(),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        lineHeight = 20.sp,
+                        color = lineNumberColor,
+                        modifier = Modifier.height(20.dp)
+                    )
+                }
+            }
+
+            // Editor — no internal scrolling, outer Row handles it
+            BasicTextField(
+                value = value,
+                onValueChange = { if (!readOnly) onValueChange(it) },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("code_editor_input"),
+                readOnly = readOnly,
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 20.sp
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = transformation
+            )
+        }
     }
 }
 

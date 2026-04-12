@@ -591,7 +591,7 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
             }
         })
 
-        raam.set("log", logTable)
+        raam.set("applog", logTable)
 
         globals.set("raam", raam)
     }

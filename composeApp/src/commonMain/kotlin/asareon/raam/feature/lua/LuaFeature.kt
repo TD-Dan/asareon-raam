@@ -107,7 +107,7 @@ class LuaFeature(
         this.store = store
         runtime.setBridgeListener(createBridgeListener())
 
-        // Register log listener for live forwarding to scripts via raam.log.listen()
+        // Register log listener for live forwarding to scripts via raam.applog.listen()
         platformDependencies.addLogListener("lua") { level, tag, message, timestamp ->
             forwardLogToSubscribedScripts(level, tag, message, timestamp)
         }
@@ -177,11 +177,13 @@ class LuaFeature(
             ActionRegistry.Names.LUA_SCRIPT_ERROR -> {
                 val handle = action.payload?.get("scriptHandle")?.jsonPrimitive?.contentOrNull ?: return luaState
                 val error = action.payload?.get("error")?.jsonPrimitive?.contentOrNull
+                val sourceContent = action.payload?.get("sourceContent")?.jsonPrimitive?.contentOrNull
                 val script = luaState.scripts[handle] ?: return luaState
                 luaState.copy(
                     scripts = luaState.scripts + (handle to script.copy(
                         status = ScriptStatus.ERRORED,
-                        lastError = error
+                        lastError = error,
+                        sourceContent = sourceContent ?: script.sourceContent
                     ))
                 )
             }
@@ -842,7 +844,7 @@ class LuaFeature(
                         ))
                         platformDependencies.log(LogLevel.INFO, identity.handle, "Script loaded: $handle")
                     } else {
-                        dispatchScriptError(handle, result.error ?: "Unknown error", "load")
+                        dispatchScriptErrorWithSource(handle, result.error ?: "Unknown error", "load", content)
                     }
                 }
             }
@@ -865,7 +867,7 @@ class LuaFeature(
                     ))
                     platformDependencies.log(LogLevel.INFO, identity.handle, "Script reloaded: $handle")
                 } else {
-                    dispatchScriptError(handle, result.error ?: "Reload error", "load")
+                    dispatchScriptErrorWithSource(handle, result.error ?: "Reload error", "load", content)
                 }
             }
 
@@ -1255,6 +1257,19 @@ class LuaFeature(
                 put("scriptHandle", handle)
                 put("error", error)
                 put("context", context)
+            }
+        ))
+    }
+
+    private fun dispatchScriptErrorWithSource(handle: String, error: String, context: String, sourceContent: String) {
+        platformDependencies.log(LogLevel.ERROR, identity.handle, "Script error [$handle]: $error")
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.LUA_SCRIPT_ERROR,
+            payload = buildJsonObject {
+                put("scriptHandle", handle)
+                put("error", error)
+                put("context", context)
+                put("sourceContent", sourceContent)
             }
         ))
     }

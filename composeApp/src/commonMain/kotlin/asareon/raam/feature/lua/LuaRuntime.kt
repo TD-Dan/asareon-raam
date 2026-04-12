@@ -97,7 +97,7 @@ interface LuaBridgeListener {
 
     /**
      * Returns recent log entries from the platform log buffer.
-     * Used by raam.log.retrieve().
+     * Used by raam.applog.retrieve().
      */
     fun getLogHistory(limit: Int, minLevel: String, tag: String?): List<asareon.raam.util.LogBufferEntry>
 }

@@ -2,6 +2,7 @@ package asareon.raam.fakes
 
 import asareon.raam.util.BasePath
 import asareon.raam.util.FileEntry
+import asareon.raam.util.LogBufferEntry
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 

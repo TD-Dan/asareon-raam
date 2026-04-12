@@ -162,18 +162,25 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                         script = selected,
                         isEditing = isEditing,
                         onEdit = {
-                            editBuffer = selected.sourceContent
-                                ?: "-- <file content unavailable — reload the script and try again>"
-                            isEditing = true
+                            if (selected.sourceContent != null) {
+                                editBuffer = selected.sourceContent
+                                isEditing = true
+                            }
                         },
                         onSave = {
-                            store.dispatch("lua", Action(
-                                name = ActionRegistry.Names.LUA_SAVE_SCRIPT,
-                                payload = buildJsonObject {
-                                    put("scriptHandle", selected.handle)
-                                    put("content", editBuffer)
-                                }
-                            ))
+                            // Never save placeholder text to disk
+                            if (!editBuffer.startsWith("-- <file content unavailable")) {
+                                store.dispatch("lua", Action(
+                                    name = ActionRegistry.Names.LUA_SAVE_SCRIPT,
+                                    payload = buildJsonObject {
+                                        put("scriptHandle", selected.handle)
+                                        put("content", editBuffer)
+                                    }
+                                ))
+                            }
+                            isEditing = false
+                        },
+                        onCancel = {
                             isEditing = false
                         },
                         onClone = {
@@ -188,7 +195,7 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                     HorizontalDivider()
 
                     // Script content area
-                    if (isEditing) {
+                    if (isEditing && selected.sourceContent != null) {
                         CodeEditor(
                             value = editBuffer,
                             onValueChange = { editBuffer = it },
@@ -196,6 +203,9 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                             modifier = Modifier.fillMaxSize().padding(8.dp),
                             bordered = false
                         )
+                    } else if (selected.sourceContent == null && isEditing) {
+                        // Shouldn't happen, but safety fallback
+                        isEditing = false
                     } else {
                         // Info + console
                         Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
@@ -434,6 +444,7 @@ private fun ScriptDetailHeader(
     isEditing: Boolean,
     onEdit: () -> Unit,
     onSave: () -> Unit,
+    onCancel: () -> Unit,
     onClone: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -456,8 +467,11 @@ private fun ScriptDetailHeader(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            // Edit / Save toggle
+            // Edit / Save+Cancel toggle
             if (isEditing) {
+                IconButton(onClick = onCancel) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel editing")
+                }
                 FilledTonalButton(onClick = onSave) {
                     Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -509,14 +523,6 @@ private fun ScriptInfoSection(script: ScriptInfo, luaState: LuaState) {
             Text("Status:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             StatusBadge(script.status)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("File:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(script.path, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Identity:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(script.handle, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-        }
         if (script.lastError != null) {
             Spacer(Modifier.height(4.dp))
             Surface(
@@ -531,6 +537,15 @@ private fun ScriptInfoSection(script: ScriptInfo, luaState: LuaState) {
                     modifier = Modifier.padding(8.dp)
                 )
             }
+        }
+        if (script.sourceContent == null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Source content not available — toggle the script on to load it from disk.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontStyle = FontStyle.Italic
+            )
         }
     }
 }
