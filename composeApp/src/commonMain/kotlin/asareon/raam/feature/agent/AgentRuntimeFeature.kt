@@ -202,6 +202,15 @@ class AgentRuntimeFeature(
                 }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
             }
+            ActionRegistry.Names.SYSTEM_INITIALIZING -> {
+                // Register compression settings
+                CompressionConfig.settingDefinitions.forEach { (key, label, desc) ->
+                    store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SETTINGS_ADD, buildJsonObject {
+                        put("key", key); put("type", "BOOLEAN"); put("label", label)
+                        put("description", desc); put("section", "Token Compression"); put("defaultValue", "false")
+                    }))
+                }
+            }
             ActionRegistry.Names.AGENT_AGENTS_LOADED -> {
                 // Seed nvram.json for any agent that doesn't have one yet
                 agentState.agents.values.forEach { agent ->
