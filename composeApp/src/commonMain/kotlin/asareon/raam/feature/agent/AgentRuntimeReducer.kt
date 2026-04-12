@@ -56,6 +56,13 @@ object AgentRuntimeReducer {
                 state.copy(agentStatuses = state.agentStatuses + (payload.agentId to updatedStatus))
             }
 
+            ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT -> {
+                val agentId = action.payload?.agentUUID("correlationId") ?: return state
+                val currentStatus = state.agentStatuses[agentId] ?: AgentStatusInfo()
+                val updatedStatus = currentStatus.copy(transientExternalTurnResult = action.payload)
+                state.copy(agentStatuses = state.agentStatuses + (agentId to updatedStatus))
+            }
+
             ActionRegistry.Names.AGENT_SET_WORKSPACE_LISTING -> {
                 val agentId = action.payload?.agentUUID() ?: return state
                 val listing = action.payload?.get("listing")?.jsonArray ?: return state

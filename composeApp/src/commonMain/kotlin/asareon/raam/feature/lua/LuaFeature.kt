@@ -8,7 +8,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
-import asareon.raam.feature.agent.CognitiveStrategyRegistry
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
@@ -85,7 +84,38 @@ class LuaFeature(
     override fun init(store: Store) {
         this.store = store
         runtime.setBridgeListener(createBridgeListener())
-        CognitiveStrategyRegistry.register(LuaStrategy(this))
+
+        // Register Lua as an external cognitive strategy via the action bus.
+        // No agent feature imports — pure action-based protocol.
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+            payload = buildJsonObject {
+                put("strategyId", "agent.strategy.lua")
+                put("displayName", "Lua Script")
+                put("featureHandle", identity.handle)
+                put("resourceSlots", buildJsonArray {
+                    add(buildJsonObject {
+                        put("slotId", "system_instruction")
+                        put("type", "SYSTEM_INSTRUCTION")
+                        put("displayName", "System Instructions")
+                        put("description", "Context instructions passed to the Lua script via ctx.resources.")
+                        put("isRequired", false)
+                    })
+                })
+                put("configFields", buildJsonArray {
+                    add(buildJsonObject {
+                        put("key", "outputSessionId")
+                        put("type", "OUTPUT_SESSION")
+                        put("displayName", "Output Session")
+                        put("description", "The session where the Lua agent's responses are posted.")
+                    })
+                })
+                put("initialState", buildJsonObject {
+                    put("phase", "READY")
+                    put("turnCount", 0)
+                })
+            }
+        ))
     }
 
     // ========================================================================
@@ -207,6 +237,9 @@ class LuaFeature(
             ActionRegistry.Names.LUA_CLONE_SCRIPT -> handleCloneScript(action, store)
             ActionRegistry.Names.LUA_TOGGLE_SCRIPT -> handleToggleScript(action, store, previousState)
             ActionRegistry.Names.LUA_SAVE_SCRIPT -> handleSaveScript(action, store)
+
+            // External strategy turn request from the agent pipeline
+            ActionRegistry.Names.AGENT_EXTERNAL_TURN_REQUEST -> handleExternalTurnRequest(action, store)
 
             // App lifecycle: discover existing scripts on startup
             ActionRegistry.Names.SYSTEM_RUNNING -> handleAppStartup(store)
@@ -544,6 +577,112 @@ class LuaFeature(
     }
 
     // ========================================================================
+    // EXTERNAL STRATEGY: handle turn requests from the agent pipeline
+    // ========================================================================
+
+    private fun handleExternalTurnRequest(action: Action, store: Store) {
+        val payload = action.payload ?: return logMissingPayload("EXTERNAL_TURN_REQUEST")
+        val correlationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull
+            ?: return logMissingField("EXTERNAL_TURN_REQUEST", "correlationId")
+        val systemPrompt = payload["systemPrompt"]?.jsonPrimitive?.contentOrNull ?: ""
+        val state = payload["state"]
+        val agentHandle = payload["agentHandle"]?.jsonPrimitive?.contentOrNull
+
+        // Build the context table for on_turn(ctx)
+        val ctx = mutableMapOf<String, Any?>(
+            "systemPrompt" to systemPrompt,
+            "state" to state?.let { jsonElementToAny(it) },
+            "agentHandle" to agentHandle,
+            "modelProvider" to payload["modelProvider"]?.jsonPrimitive?.contentOrNull,
+            "modelName" to payload["modelName"]?.jsonPrimitive?.contentOrNull
+        )
+
+        // Find a loaded script that can handle this turn.
+        // For now, look for a script whose handle matches "lua.agent-*" or
+        // use the first script that defines on_turn().
+        // TODO: The agent's resource assignment should specify which script to use.
+        val scriptHandle = findAgentScript(correlationId)
+
+        if (scriptHandle == null) {
+            // No script available — return error
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
+                payload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("mode", "error")
+                    put("error", "No Lua script loaded for this agent. Load a script with on_turn() defined.")
+                }
+            ))
+            return
+        }
+
+        // Execute the script's on_turn(ctx)
+        val result = runtime.executeTurn(scriptHandle, ctx)
+        if (!result.success) {
+            store.deferredDispatch(identity.handle, Action(
+                name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
+                payload = buildJsonObject {
+                    put("correlationId", correlationId)
+                    put("mode", "error")
+                    put("error", result.error ?: "on_turn() execution failed")
+                }
+            ))
+            return
+        }
+
+        // Parse the script's return value to determine mode
+        val returnMap = result.returnValue ?: emptyMap()
+        val mode = when {
+            returnMap["turnAdvance"] == true -> "advance"
+            returnMap["response"] is String -> "custom"
+            returnMap["error"] is String -> "error"
+            else -> "advance" // Default: proceed with gateway
+        }
+
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
+            payload = buildJsonObject {
+                put("correlationId", correlationId)
+                put("mode", mode)
+                when (mode) {
+                    "advance" -> {
+                        val modifiedPrompt = returnMap["systemPrompt"] as? String
+                        if (modifiedPrompt != null) put("systemPrompt", modifiedPrompt)
+                        else put("systemPrompt", systemPrompt)
+                    }
+                    "custom" -> {
+                        put("response", (returnMap["response"] as? String) ?: "")
+                    }
+                    "error" -> {
+                        put("error", (returnMap["error"] as? String) ?: "Script error")
+                    }
+                }
+                // Pass through state updates
+                val stateUpdate = returnMap["state"]
+                if (stateUpdate != null) {
+                    put("state", anyToJsonElement(stateUpdate))
+                }
+            }
+        ))
+    }
+
+    /**
+     * Finds a loaded script that can serve as the cognitive strategy for an agent.
+     * Looks for scripts with handle "lua.agent-{agentUUID}" first, then any script
+     * that has on_turn defined.
+     */
+    private fun findAgentScript(agentUUID: String): String? {
+        val directHandle = "lua.agent-$agentUUID"
+        if (runtime.isScriptLoaded(directHandle)) return directHandle
+
+        // Fallback: find any loaded script (TODO: improve with resource-based mapping)
+        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return null
+        return currentState.scripts.values
+            .firstOrNull { it.status == ScriptStatus.RUNNING }
+            ?.handle
+    }
+
+    // ========================================================================
     // EVAL
     // ========================================================================
 
@@ -778,22 +917,6 @@ class LuaFeature(
                 return store.resolveEffectivePermissions(id).mapValues { (_, grant) -> grant.level.name }
             }
         }
-    }
-
-    // ========================================================================
-    // Public API for LuaStrategy
-    // ========================================================================
-
-    fun executeTurn(scriptHandle: String, context: Map<String, Any?>): LuaExecutionResult {
-        return runtime.executeTurn(scriptHandle, context)
-    }
-
-    fun loadScriptDirect(handle: String, name: String, sourceCode: String): LuaExecutionResult {
-        return runtime.loadScript(handle, name, sourceCode)
-    }
-
-    fun unloadScriptDirect(handle: String) {
-        runtime.unloadScript(handle)
     }
 
     // ========================================================================

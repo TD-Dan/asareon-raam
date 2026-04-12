@@ -1529,6 +1529,144 @@
           "contents"
         ]
       }
+    },
+    {
+      "action_name": "agent.REGISTER_EXTERNAL_STRATEGY",
+      "summary": "Register an external CognitiveStrategy provided by another feature. The registering feature handles turn execution via EXTERNAL_TURN_REQUEST/RESULT.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "strategyId": {
+            "type": "string",
+            "description": "Identity handle for the strategy (e.g., 'agent.strategy.lua')."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable name shown in the strategy selector."
+          },
+          "featureHandle": {
+            "type": "string",
+            "description": "The handle of the feature that provides this strategy (e.g., 'lua'). Turn requests are targeted here."
+          },
+          "resourceSlots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slotId": { "type": "string" },
+                "type": { "type": "string" },
+                "displayName": { "type": "string" },
+                "description": { "type": "string" },
+                "isRequired": { "type": "boolean" }
+              }
+            },
+            "description": "Resource slots this strategy declares."
+          },
+          "configFields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "type": { "type": "string" },
+                "displayName": { "type": "string" },
+                "description": { "type": "string" }
+              }
+            },
+            "description": "Strategy-specific config fields for the Agent Manager UI."
+          },
+          "initialState": {
+            "type": "object",
+            "description": "Initial NVRAM state for newly created agents using this strategy."
+          }
+        },
+        "required": ["strategyId", "displayName", "featureHandle"]
+      },
+      "required_permissions": ["agent:manage"]
+    },
+    {
+      "action_name": "agent.UNREGISTER_EXTERNAL_STRATEGY",
+      "summary": "Unregister a previously registered external strategy. Agents using it fall back to the default strategy.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "strategyId": {
+            "type": "string"
+          }
+        },
+        "required": ["strategyId"]
+      },
+      "required_permissions": ["agent:manage"]
+    },
+    {
+      "action_name": "agent.RETURN_STRATEGY_REGISTERED",
+      "summary": "Targeted response confirming an external strategy was registered (or reporting failure).",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "strategyId": { "type": "string" },
+          "success": { "type": "boolean" },
+          "error": { "type": ["string", "null"] }
+        },
+        "required": ["strategyId", "success"]
+      }
+    },
+    {
+      "action_name": "agent.EXTERNAL_TURN_REQUEST",
+      "summary": "Dispatched by the pipeline to an external strategy provider. Contains assembled context partitions for the script to inspect, modify, and then advance or handle.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "correlationId": { "type": "string" },
+          "agentHandle": { "type": "string" },
+          "systemPrompt": { "type": "string", "description": "The fully assembled system prompt." },
+          "partitions": { "type": "object", "description": "Named context partitions the script can read/modify." },
+          "state": { "description": "Current agent NVRAM (cognitive state)." },
+          "resources": { "type": "object", "description": "Resolved resource contents keyed by slotId." },
+          "sessions": { "type": "array", "description": "Subscribed session info." },
+          "modelProvider": { "type": "string" },
+          "modelName": { "type": "string" }
+        },
+        "required": ["agentId", "correlationId", "systemPrompt"]
+      }
+    },
+    {
+      "action_name": "agent.EXTERNAL_TURN_RESULT",
+      "summary": "Response from an external strategy provider after processing a turn request.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "hidden": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "correlationId": { "type": "string" },
+          "mode": {
+            "type": "string",
+            "description": "'advance' = proceed with gateway using modified prompt, 'custom' = script handled gateway, post response directly, 'error' = abort turn."
+          },
+          "systemPrompt": { "type": ["string", "null"], "description": "Modified system prompt (for advance mode)." },
+          "response": { "type": ["string", "null"], "description": "Direct response text (for custom mode)." },
+          "state": { "description": "Updated NVRAM state (optional)." },
+          "actions": { "type": ["array", "null"], "description": "Optional actions to dispatch after the turn." },
+          "error": { "type": ["string", "null"], "description": "Error message (for error mode)." }
+        },
+        "required": ["correlationId", "mode"]
+      },
+      "required_permissions": ["agent:execute"]
     }
   ]
 }

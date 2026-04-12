@@ -145,6 +145,91 @@ object CognitivePipeline {
         }
     }
 
+    /**
+     * Called by AgentRuntimeFeature when EXTERNAL_TURN_RESULT arrives.
+     * The reducer has already stored the result in transientExternalTurnResult.
+     * This method reads the result and either:
+     * - "advance": dispatches to gateway with (possibly modified) system prompt
+     * - "custom": posts the response directly to the output session
+     * - "error": aborts the turn with an error
+     */
+    fun handleExternalTurnResult(agentId: IdentityUUID, store: Store) {
+        val state = store.state.value.featureStates["agent"] as? AgentRuntimeState ?: return
+        val agent = state.agents[agentId] ?: return
+        val statusInfo = state.agentStatuses[agentId] ?: return
+        val resultPayload = statusInfo.transientExternalTurnResult ?: return
+
+        val mode = resultPayload["mode"]?.jsonPrimitive?.contentOrNull ?: "error"
+
+        // Clear the transient result
+        store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+            put("agentId", agentId.uuid); put("step", JsonNull)
+        }))
+
+        when (mode) {
+            "advance" -> {
+                // External feature approved/modified the prompt — dispatch to gateway
+                val systemPrompt = resultPayload["systemPrompt"]?.jsonPrimitive?.contentOrNull
+                    ?: statusInfo.managedContext?.systemPrompt ?: ""
+
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+                    put("agentId", agentId.uuid); put("step", "Generating Content")
+                }))
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+                    put("providerId", agent.modelProvider)
+                    put("modelName", agent.modelName)
+                    put("correlationId", agentId.uuid)
+                    put("contents", buildJsonArray {})
+                    put("systemPrompt", systemPrompt)
+                }))
+            }
+
+            "custom" -> {
+                // External feature already handled the generation — post response directly
+                val response = resultPayload["response"]?.jsonPrimitive?.contentOrNull ?: ""
+                val outputSessionUUID = agent.outputSessionId
+
+                if (outputSessionUUID != null) {
+                    val sessionHandle = store.state.value.identityRegistry.values
+                        .find { it.uuid == outputSessionUUID.uuid }?.handle
+
+                    if (sessionHandle != null) {
+                        store.deferredDispatch("agent", Action(ActionRegistry.Names.SESSION_POST, buildJsonObject {
+                            put("sessionId", outputSessionUUID.uuid)
+                            put("content", response)
+                            put("senderId", agent.identity.handle)
+                            put("senderName", agent.identity.name)
+                        }))
+                    }
+                }
+
+                // Update NVRAM if provided
+                val newState = resultPayload["state"]
+                if (newState != null && newState !is JsonNull) {
+                    store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_NVRAM_LOADED, buildJsonObject {
+                        put("agentId", agentId.uuid)
+                        put("state", newState)
+                    }))
+                }
+
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.IDLE)
+            }
+
+            "error" -> {
+                val error = resultPayload["error"]?.jsonPrimitive?.contentOrNull ?: "External strategy error"
+                store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "External turn error for '$agentId': $error")
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR, error)
+            }
+
+            else -> {
+                store.platformDependencies.log(LogLevel.ERROR, LOG_TAG,
+                    "Unknown external turn result mode '$mode' for agent '$agentId'")
+                AgentAvatarLogic.updateAgentAvatars(agentId, store, state, AgentStatus.ERROR,
+                    "Unknown external turn result mode: $mode")
+            }
+        }
+    }
+
     private fun handleLedgerResponse(payload: JsonObject, store: Store) {
         val rawCorrelationId = payload["correlationId"]?.jsonPrimitive?.contentOrNull ?: run {
             store.platformDependencies.log(LogLevel.ERROR, LOG_TAG, "handleLedgerResponse: Missing correlationId.")
@@ -938,17 +1023,39 @@ object CognitivePipeline {
                 put("key", "feature.agent.context_viewer")
             }))
         } else {
-            // DIRECT mode: dispatch to gateway immediately
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
-                put("agentId", agentUuid.uuid); put("step", "Generating Content")
-            }))
-            store.deferredDispatch("agent", Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
-                put("providerId", agent.modelProvider)
-                put("modelName", agent.modelName)
-                put("correlationId", agentUuid.uuid)
-                put("contents", buildJsonArray {})
-                put("systemPrompt", result.systemPrompt)
-            }))
+            // Check if this is an external strategy — if so, dispatch to the
+            // external feature for inspection/modification before gateway.
+            val strategy = CognitiveStrategyRegistry.get(agent.cognitiveStrategyId)
+            if (strategy is ExternalStrategyProxy) {
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+                    put("agentId", agentUuid.uuid); put("step", "External Strategy Processing")
+                }))
+                store.deferredDispatch("agent", Action(
+                    name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_REQUEST,
+                    payload = buildJsonObject {
+                        put("agentId", agentUuid.uuid)
+                        put("correlationId", agentUuid.uuid)
+                        put("agentHandle", agent.identity.handle)
+                        put("systemPrompt", result.systemPrompt)
+                        put("state", agent.cognitiveState)
+                        put("modelProvider", agent.modelProvider)
+                        put("modelName", agent.modelName)
+                    },
+                    targetRecipient = strategy.featureHandle
+                ))
+            } else {
+                // DIRECT mode: dispatch to gateway immediately
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.AGENT_SET_PROCESSING_STEP, buildJsonObject {
+                    put("agentId", agentUuid.uuid); put("step", "Generating Content")
+                }))
+                store.deferredDispatch("agent", Action(ActionRegistry.Names.GATEWAY_GENERATE_CONTENT, buildJsonObject {
+                    put("providerId", agent.modelProvider)
+                    put("modelName", agent.modelName)
+                    put("correlationId", agentUuid.uuid)
+                    put("contents", buildJsonArray {})
+                    put("systemPrompt", result.systemPrompt)
+                }))
+            }
         }
     }
 

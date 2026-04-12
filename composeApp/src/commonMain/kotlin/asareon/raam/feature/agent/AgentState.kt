@@ -38,8 +38,7 @@ enum class AgentResourceType {
     CONSTITUTION,
     BOOTLOADER,
     SYSTEM_INSTRUCTION,
-    STATE_MACHINE,
-    LUA_SCRIPT
+    STATE_MACHINE
 }
 
 @Serializable
@@ -255,6 +254,16 @@ data class AgentStatusInfo(
      * Null = no label. Cleared when the next turn begins.
      */
     val strategyDisplayHint: String? = null,
+
+    // ========================================================================
+    // External Strategy Turn Result
+    //
+    // Populated when an external strategy provider (e.g., Lua) responds to an
+    // EXTERNAL_TURN_REQUEST. Consumed by the pipeline and cleared after use.
+    // ========================================================================
+
+    /** The raw JSON payload from agent.EXTERNAL_TURN_RESULT. Null = no result pending. */
+    val transientExternalTurnResult: JsonObject? = null,
 
     // ========================================================================
     // Phase A: Context Collapse Overrides (§3.7)

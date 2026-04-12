@@ -71,36 +71,53 @@ end
     val agentStrategyScript: String = """
 -- Lua Agent Strategy Script
 -- This script serves as a CognitiveStrategy for an Asareon Raam agent.
--- Implement on_turn(ctx) to handle each agent turn.
+--
+-- The pipeline assembles context partitions normally, then sends them here
+-- via on_turn(ctx). You can inspect/modify the system prompt, then either:
+--   return { turnAdvance = true }              — proceed with gateway
+--   return { turnAdvance = true,               — modify prompt, then gateway
+--            systemPrompt = "new prompt" }
+--   return { response = "direct text" }        — skip gateway, post directly
+--   return { error = "reason" }                — abort the turn
 
 -- ═══════════════════════════════════════════════════════════
 -- LIFECYCLE HOOKS
 -- ═══════════════════════════════════════════════════════════
 
 function on_load()
-    raam.log("Lua agent script loaded")
+    raam.log("Lua agent strategy loaded")
 end
 
 -- ═══════════════════════════════════════════════════════════
--- AGENT TURN — called each time the agent's turn fires
+-- AGENT TURN — called by the pipeline after context assembly
 -- ═══════════════════════════════════════════════════════════
 
 function on_turn(ctx)
-    -- ctx.messages   — array of {senderId, content, timestamp}
-    -- ctx.state      — table of NVRAM values (cognitive state)
-    -- ctx.resources  — table of {slotId = content_string}
-    -- ctx.sessions   — array of {handle, name, isOutput, messageCount}
+    -- ctx.systemPrompt  — the fully assembled system prompt
+    -- ctx.state         — table of NVRAM values (cognitive state)
+    -- ctx.agentHandle   — this agent's bus handle
+    -- ctx.modelProvider — configured LLM provider
+    -- ctx.modelName     — configured model name
 
-    local msgCount = 0
-    if ctx.messages then msgCount = #ctx.messages end
+    raam.log("Turn received. Prompt length: " .. #(ctx.systemPrompt or ""))
 
-    return {
-        response = "Processed " .. msgCount .. " messages.",
-        -- state = { phase = "ACTIVE" },  -- optional NVRAM update
-        -- actions = {                     -- optional action dispatches
-        --     { name = "core.SHOW_TOAST", payload = { message = "Turn done" } }
-        -- }
-    }
+    -- Option 1: Advance with the assembled prompt as-is
+    return { turnAdvance = true }
+
+    -- Option 2: Modify the prompt before gateway
+    -- return {
+    --     turnAdvance = true,
+    --     systemPrompt = "You are a Lua-powered agent.\n" .. ctx.systemPrompt
+    -- }
+
+    -- Option 3: Skip gateway, post a direct response
+    -- return { response = "I handled this turn locally." }
+
+    -- Option 4: Update NVRAM state alongside any mode
+    -- return {
+    --     turnAdvance = true,
+    --     state = { phase = "ACTIVE", turnCount = (ctx.state.turnCount or 0) + 1 }
+    -- }
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -112,18 +129,28 @@ function on_config_changed(old_config, new_config)
 end
 
 -- ═══════════════════════════════════════════════════════════
+-- TURN CONTROL REFERENCE
+-- ═══════════════════════════════════════════════════════════
+-- Return table from on_turn(ctx):
+--   turnAdvance = true           — proceed with configured gateway
+--   systemPrompt = "..."         — override assembled prompt (with turnAdvance)
+--   response = "..."             — skip gateway, post directly (custom mode)
+--   error = "..."                — abort the turn
+--   state = { ... }              — update agent NVRAM (any mode)
+
+-- ═══════════════════════════════════════════════════════════
 -- UTILITIES REFERENCE
 -- ═══════════════════════════════════════════════════════════
--- raam.dispatch(name, payload) — dispatch an action on the bus
--- raam.on(pattern, handler)    — subscribe to broadcast events
--- raam.off(subscriptionId)     — unsubscribe
--- raam.log(msg)                — info log
--- raam.warn(msg)               — warning log
--- raam.error(msg)              — error log
--- raam.delay(ms, fn)           — one-shot timer
--- raam.identities()            — list all registered identities
--- raam.permissions()           — this script's effective permissions
--- raam.scriptName              — local handle
--- raam.scriptHandle            — full bus address
+-- raam.dispatch(name, payload)  — dispatch an action on the bus
+-- raam.on(pattern, handler)     — subscribe to broadcast events
+-- raam.off(subscriptionId)      — unsubscribe
+-- raam.log(msg)                 — info log
+-- raam.warn(msg)                — warning log
+-- raam.error(msg)               — error log
+-- raam.delay(ms, fn)            — one-shot timer
+-- raam.identities()             — list all registered identities
+-- raam.permissions()            — this script's effective permissions
+-- raam.scriptName               — local handle
+-- raam.scriptHandle             — full bus address
 """.trimIndent()
 }
