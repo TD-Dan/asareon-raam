@@ -25,11 +25,13 @@
 # DOCUMENTATION
 
 - Overall schematics of:
-	- Core concepts
+	- Core concepts DONE
 	- Feature dependency hierarchy. eg agent <- session <- filesystem. Who knows of and needs other features?
 - Per Feature:
 	- Scope and purpose
 	- UI layouts
+- Action/LUA reference
+
 
 #Overall
 
@@ -79,7 +81,6 @@
 - Global spelling checker. lib or API service? API service adds security vulnerability. Could use a small integrated agent for this in addition to library.
 
 
-
 # SETTINGS
 - API keys need to be hidden in settings. Adda sensitive flag to the setting.ADD action?
 
@@ -117,14 +118,11 @@ BUG: gocnitivepipeline 969: should error not default
 ##Context management
 - "You are <Agentname>" at the end of the context also for persona anchoring.
 - NVRAM needs to be at the end of the context for optimal llm attention.
-
 - CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
 
-- 
 
 # GATEWAY
 - streaming support for gateways
-- add MINIMAX API
 
 
 # SESSION
@@ -167,7 +165,9 @@ BUG: gocnitivepipeline 969: should error not default
 
 # LUA
 - add LUA scripting Documentation
-- 
+- fix lua strategy pipeline issues
+
+---
 
 # FUTURE IDEAS FOR FEATURES
 
