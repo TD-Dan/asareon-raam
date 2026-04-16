@@ -12,6 +12,7 @@ import asareon.raam.feature.gateway.openai.OpenAIProvider
 import asareon.raam.feature.gateway.anthropic.AnthropicProvider
 import asareon.raam.feature.gateway.inception.InceptionProvider
 import asareon.raam.feature.gateway.minimax.MiniMaxProvider
+import asareon.raam.feature.gateway.ollama.OllamaProvider
 import asareon.raam.feature.knowledgegraph.KnowledgeGraphFeature
 import asareon.raam.feature.settings.SettingsFeature
 import asareon.raam.feature.session.SessionFeature
@@ -55,7 +56,8 @@ class AppContainer(
                 OpenAIProvider(platformDependencies),
                 AnthropicProvider(platformDependencies),
                 InceptionProvider(platformDependencies),
-                MiniMaxProvider(platformDependencies)
+                MiniMaxProvider(platformDependencies),
+                OllamaProvider(platformDependencies)
             )
         )
 

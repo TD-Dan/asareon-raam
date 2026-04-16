@@ -5,6 +5,23 @@ A multi-platform runtime for hosting autonomous AI agents. Kotlin Multiplatform,
 > 1.0.0-alpha · Desktop (Windows) released. Linux, macOS, Android, iOS, WebAssembly planned.
 
 Secure by design, flexible, configurable on the fly, transparent and made for the tinkerer mindset.
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.0--alpha-orange.svg)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-7F52FF?logo=kotlin&logoColor=white)
+![Compose](https://img.shields.io/badge/Compose-Multiplatform-4285F4?logo=jetpackcompose&logoColor=white)
+![JDK](https://img.shields.io/badge/JDK-21%2B-ED8B00?logo=openjdk&logoColor=white)
+
+**Supported LLM providers:**
+
+![Anthropic](https://img.shields.io/badge/Anthropic-D97757?logo=anthropic&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-412991?logo=openai&logoColor=white)
+![Gemini](https://img.shields.io/badge/Google%20Gemini-886FBF?logo=googlegemini&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-000000?logo=ollama&logoColor=white)
+![MiniMax](https://img.shields.io/badge/MiniMax-F23B5F)
+![Inception](https://img.shields.io/badge/Inception%20Labs-111827)
+
 ---
 
 <img width="1127" height="1184" alt="image" src="https://github.com/user-attachments/assets/7b1fd325-f6c1-4e1f-b60b-004873431141" />
@@ -37,7 +54,7 @@ Holon Knowledge Graphs for structured long-term memory. NVRAM for cognitive stat
 
 ### Multi-Provider Gateway
 
-Centralized AI routing behind a single permission gate. Ships with Gemini, OpenAI, Anthropic, and Inception. Easily extendable - adding a new API provider or local LLM requires implementing one interface.
+Centralized AI routing behind a single permission gate. Ships with Anthropic, OpenAI, Google Gemini, Inception Labs, and MiniMax as cloud providers, plus Ollama for local inference on your own hardware. Easily extendable — adding a new API provider or local LLM requires implementing one interface.
 
 ---
 
