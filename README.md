@@ -12,6 +12,7 @@ Secure by design, flexible, configurable on the fly, transparent and made for th
 ![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform-7F52FF?logo=kotlin&logoColor=white)
 ![Compose](https://img.shields.io/badge/Compose-Multiplatform-4285F4?logo=jetpackcompose&logoColor=white)
 ![JDK](https://img.shields.io/badge/JDK-21%2B-ED8B00?logo=openjdk&logoColor=white)
+![Lua](https://img.shields.io/badge/Lua-scripting-2C2D72?logo=lua&logoColor=white)
 
 **Supported LLM providers:**
 
@@ -34,7 +35,7 @@ Every action passes through identity verification, authorization, and permission
 
 ### Multi-Agent, Multi-Session
 
-Unlimited agents collaborate across unlimited sessions. Agents and users share the same conversational surface. The system is built from the ground up for concurrent multi-agent operation, not bolted on as an afterthought: agents can participate in multiple sessions at the same time.
+Unlimited agents collaborate across unlimited sessions. Agents and users share the same conversational surface. The system is built from the ground up for concurrent multi-agent operation, not bolted on as an afterthought.
 
 ### Agent Native
 
@@ -56,6 +57,18 @@ Holon Knowledge Graphs for structured long-term memory. NVRAM for cognitive stat
 
 Centralized AI routing behind a single permission gate. Ships with Anthropic, OpenAI, Google Gemini, Inception Labs, and MiniMax as cloud providers, plus Ollama for local inference on your own hardware. Easily extendable — adding a new API provider or local LLM requires implementing one interface.
 
+### Lua Scripting
+
+Scripts are first-class citizens on the action bus, not a bolted-on automation layer. A script is an identity with permissions, and the actions it can dispatch are exactly the actions its permissions allow — the same gating model as agents and users.
+
+Two modes are supported. **App Scripts** run with their own identity in the `lua.*` namespace, subscribe to bus events, and can automate or observe anything their permissions permit. **Strategy Scripts** replace an agent's cognition entirely: the `on_turn(ctx)` hook intercepts the pipeline after context assembly, giving the script full control to modify the system prompt, return a direct response, or abort the turn. The same script can't do both at once — you pick the mode per script.
+
+Embedded Lua 5.2 via LuaJ on Desktop (JVM). Sandboxed — no direct filesystem, no `os`/`io`/`require`, no bytecode injection. All I/O goes through the action bus, where the normal permission gates apply. Currently at preliminary level; scope will expand toward 1.0.
+
+### Token Compression
+
+Built-in strategies to reduce system prompt overhead: TOON-style encoding, abbreviations, terse action descriptions, and compact message headers. Turn them on selectively to trade verbosity for context budget, or leave them off for maximum legibility in logs.
+
 ---
 
 ## Agent Capabilities
@@ -66,18 +79,14 @@ Agents have access to a catalog of nearly 100 application actions - filesystem o
 
 Filesystem access ranges from a read-only sandboxed work folder to full OS file read/write - the operator decides per agent. Chain-of-thought reasoning runs on private cognition sessions invisible to other participants.
 
-## More Features
+---
+
+## Even More Features!
 
 - **Automatic backups.** Application state is backed up automatically.
 - **Sentinels.** Guard processes monitor and assist agents during tool use, catching errors and enforcing constraints before actions reach the bus.
 
 ---
-
-## Planned for 1.0: LUA scripting support for app and agents. DONE DRAFT LEVEL
-Can Run scripts on app level. Scripts are identities that can access all app according to their permisssions.
-
-## Planned for 1.0: Token compression strategies. DONE
-Uses TOON, abbreviations, terse descriptions, compact headers, etc.
 
 ## Planned for 1.1: Fractal Multi-Agent Cognition
 
@@ -90,6 +99,8 @@ The next milestone adds an ensemble architecture where sub-agents - Critic, Time
 | `01-System-architecture.md` | Layers, action bus, dispatch model, lifecycle, feature contracts |
 | `02-Unit-testing.md` | Five-tier testing strategy, test infrastructure, assertion patterns |
 | `03-Identities-and-permissions.md` | Identity tree, permission system, resolution, management UI |
+| `04-Lua-scripting.md` | Embedded Lua 5.2 runtime, `raam.*` API, sandbox model, lifecycle hooks, app/strategy script modes |
+| `05-External-strategy-protocol.md` | Action-based protocol for registering external cognitive strategies |
 | `MultiAgent_Consciousness_Architecture.md` | Fractal cognitive architecture vision and implementation roadmap |
 
 ## Codebase
