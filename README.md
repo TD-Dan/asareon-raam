@@ -34,7 +34,7 @@ Every action passes through identity verification, authorization, and permission
 
 ### Multi-Agent, Multi-Session
 
-Unlimited agents collaborate across unlimited sessions. Agents and users share the same conversational surface. The system is built from the ground up for concurrent multi-agent operation, not bolted on as an afterthought.
+Unlimited agents collaborate across unlimited sessions. Agents and users share the same conversational surface. The system is built from the ground up for concurrent multi-agent operation, not bolted on as an afterthought: agents can participate in multiple sessions at the same time.
 
 ### Agent Native
 
