@@ -63,7 +63,30 @@ Every trailing action has one of three emphasis levels. Emphasis communicates se
 
 **Prominent is for destinations, not actions.** Use it for buttons that open a secondary view ("Permissions", "System Resources", "Import Holons"), not for buttons that perform an action with side effects.
 
-There is deliberately no "Primary" tier at this stage — the app has only one true commit CTA today ("Execute Turn"), which is fine as a plain primary-coloured button. A primary tier will be introduced when a second clear use case emerges.
+**There is no "Primary" tier in the header.** Commit CTAs do not belong in the trailing action row of a top bar — they belong at the bottom-right of the view, in the footer. See **View Footer** below.
+
+
+## View Footer
+
+A view that presents a draft or edit the user must explicitly commit ends in a footer: a bottom-anchored row with a top divider, `surfaceContainer` tone, and standard screen-edge padding. The footer has two zones:
+
+- **Leading** (left) — optional info/meta. Examples: a token-count estimate for "Execute Turn", an unsaved-changes indicator.
+- **Actions** (right-aligned) — one or two `FooterButton`s. Composed Cancel-then-Confirm so Cancel sits left of Confirm (M3 affirmative-on-the-right).
+
+Views without a commit step do not have a footer. Views with a commit step always use `ViewFooter` — a plain `BottomAppBar` with hand-rolled buttons is not an acceptable substitute.
+
+### Footer Action Emphasis Tiers
+
+Footer actions have two emphasis levels. Like the header tiers, emphasis communicates semantics, not just visual weight.
+
+| Tier | Meaning | Rendering |
+|---|---|---|
+| **Confirm** | The one true commit CTA of the view | Filled `Button` with `primary` / `onPrimary` |
+| **Cancel** | Dismissive partner to a Confirm | `TextButton` with neutral `onSurface` |
+
+Labels are caller-provided verbatim. Confirm is not auto-labelled "Confirm"; use the wording that reads correctly in context ("Execute Turn", "Send", "Save"). Cancel may be labelled "Cancel", "Discard", or "Discard draft" depending on what dismissal actually does.
+
+Because Confirm uses the `primary` role, it carries the active identity's tint for free — the same way Create and Prominent derive from the overridable primary in the header.
 
 
 ## Secondary Destinations
@@ -140,6 +163,5 @@ Because secondary and tertiary derive from the identity-overridable primary, bot
 ## Non-Goals for This Version
 
 - **M3 Expressive.** Deferred — shapes, motion, emphasised type are not yet adopted.
-- **A Primary emphasis tier.** Not yet — only one callsite would use it. Will be revisited when a second emerges.
 - **SidePane unification.** The left panes of SessionView (workspace), AgentManagerView (resources), and the ribbon itself are not yet consolidated into a shared adaptive component. Tracked in `TODO.md`.
 - **Screenshot / visual regression tests.** Pure layout logic (action overflow, ribbon slot math) has unit-test coverage; visual rendering is verified by manual smoke tests.
