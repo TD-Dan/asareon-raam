@@ -463,7 +463,8 @@ private fun HolonEditView(
                 value = payloadText,
                 onValueChange = { payloadText = it; isPayloadValid = true },
                 syntax = SyntaxMode.JSON,
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                inputTag = "holon-edit-payload"
             )
             if (!isPayloadValid) {
                 Text("Invalid JSON format in payload.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
@@ -475,7 +476,8 @@ private fun HolonEditView(
                 value = executeText,
                 onValueChange = { executeText = it; isExecuteValid = true },
                 syntax = SyntaxMode.JSON,
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                inputTag = "holon-edit-execute"
             )
             if (!isExecuteValid) {
                 Text("Invalid JSON format in execute.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
