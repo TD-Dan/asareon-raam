@@ -5,6 +5,7 @@ import asareon.raam.feature.agent.*
 import kotlinx.serialization.json.JsonNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -96,24 +97,29 @@ class VanillaStrategyT1LogicTest {
             gatheredContextKeys = emptySet()
         )
 
-        val prompt = VanillaStrategy.buildPrompt(context, JsonNull).renderForTest()
+        val builder = VanillaStrategy.buildPrompt(context, JsonNull)
 
-        assertTrue(prompt.contains("You are HelpBot."))
-        assertTrue(prompt.contains("YOUR IDENTITY AND ROLE"))
+        val identity = builder.findSection("YOUR IDENTITY AND ROLE")
+        assertNotNull(identity, "identity section should be emitted")
+        assertTrue(identity.content.contains("HelpBot"),
+            "identity content should echo the injected agent name")
     }
 
     @Test
     fun `buildPrompt should include system instructions when provided`() {
+        val sentinel = "SENTINEL_SYSINSTR_${kotlin.random.Random.nextInt()}"
         val context = AgentTurnContext(
             agentName = "HelpBot",
-            resolvedResources = mapOf("system_instruction" to "Always be polite."),
+            resolvedResources = mapOf("system_instruction" to sentinel),
             gatheredContextKeys = emptySet()
         )
 
-        val prompt = VanillaStrategy.buildPrompt(context, JsonNull).renderForTest()
+        val builder = VanillaStrategy.buildPrompt(context, JsonNull)
 
-        assertTrue(prompt.contains("SYSTEM INSTRUCTIONS"))
-        assertTrue(prompt.contains("Always be polite."))
+        val instructions = builder.findSection("SYSTEM INSTRUCTIONS")
+        assertNotNull(instructions, "instructions section should be emitted when resource provided")
+        assertTrue(instructions.content.contains(sentinel),
+            "instructions content should echo the injected resource verbatim")
     }
 
     @Test
@@ -124,9 +130,10 @@ class VanillaStrategyT1LogicTest {
             gatheredContextKeys = emptySet()
         )
 
-        val prompt = VanillaStrategy.buildPrompt(context, JsonNull).renderForTest()
+        val builder = VanillaStrategy.buildPrompt(context, JsonNull)
 
-        assertTrue(!prompt.contains("SYSTEM INSTRUCTIONS"))
+        assertNull(builder.findSection("SYSTEM INSTRUCTIONS"),
+            "instructions section should be omitted when no resource is provided")
     }
 
     // =========================================================================
