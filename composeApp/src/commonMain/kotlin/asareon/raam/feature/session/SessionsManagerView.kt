@@ -23,6 +23,7 @@ import androidx.compose.ui.zIndex
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.ui.theme.spacing
@@ -222,11 +223,11 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
             }),
             actions = listOf(
                 HeaderAction(
-                    id = "new-session",
-                    label = "New Session",
+                    id = "create-session",
+                    label = "Create Session",
                     icon = Icons.Default.Add,
                     priority = 30,
-                    prominent = true,
+                    emphasis = HeaderActionEmphasis.Create,
                     onClick = {
                         store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
                     },

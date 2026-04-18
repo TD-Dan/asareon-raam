@@ -93,10 +93,10 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     // --- 1. Creation & Deletion (Lifecycle) ---
 
     @Test
-    fun `clicking 'New Agent' button dispatches AGENT_CREATE action`() {
+    fun `clicking Create Agent button dispatches AGENT_CREATE action`() {
         setViewState(AgentRuntimeState())
 
-        composeTestRule.onNodeWithText("New Agent").performClick()
+        composeTestRule.onNodeWithText("Create Agent").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CREATE }
         assertNotNull(action)

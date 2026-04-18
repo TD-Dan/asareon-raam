@@ -54,10 +54,10 @@ class SessionFeatureT1SessionManagerViewTest {
     }
 
     @Test
-    fun `clicking new session button dispatches SESSION_CREATE`() {
+    fun `clicking create session button dispatches SESSION_CREATE`() {
         setViewState(SessionState())
 
-        composeTestRule.onNodeWithText("New Session").performClick()
+        composeTestRule.onNodeWithText("Create Session").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
         assertNotNull(action)

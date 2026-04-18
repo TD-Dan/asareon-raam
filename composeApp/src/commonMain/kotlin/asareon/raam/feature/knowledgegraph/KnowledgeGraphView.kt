@@ -24,6 +24,7 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.util.PlatformDependencies
@@ -141,7 +142,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                             label = "Create Persona",
                             icon = Icons.Default.Add,
                             priority = 30,
-                            prominent = true,
+                            emphasis = HeaderActionEmphasis.Create,
                             onClick = {
                                 store.dispatch(
                                     "knowledgegraph",
@@ -157,7 +158,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                             label = "Import Holons",
                             icon = Icons.Default.Download,
                             priority = 20,
-                            prominent = true,
+                            emphasis = HeaderActionEmphasis.Prominent,
                             onClick = { setViewMode(KnowledgeGraphViewMode.IMPORT) },
                         ),
                         HeaderAction(

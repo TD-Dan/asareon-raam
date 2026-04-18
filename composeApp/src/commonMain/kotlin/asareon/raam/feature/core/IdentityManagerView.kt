@@ -35,6 +35,7 @@ import asareon.raam.core.resolveDisplayColor
 import asareon.raam.ui.components.ColorPicker
 import asareon.raam.ui.components.colorToHex
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import kotlinx.serialization.json.buildJsonObject
@@ -115,10 +116,11 @@ fun IdentityManagerView(store: Store) {
                 }),
                 actions = listOf(
                     HeaderAction(
-                        id = "add-identity",
-                        label = "Add identity",
+                        id = "create-identity",
+                        label = "Create Identity",
                         icon = Icons.Default.Add,
                         priority = 30,
+                        emphasis = HeaderActionEmphasis.Create,
                         onClick = { showAddDialog = true },
                     ),
                     HeaderAction(
@@ -126,7 +128,7 @@ fun IdentityManagerView(store: Store) {
                         label = "Permissions",
                         icon = Icons.Default.Lock,
                         priority = 20,
-                        prominent = true,
+                        emphasis = HeaderActionEmphasis.Prominent,
                         onClick = { showingPermissions = true },
                     ),
                     HeaderAction(

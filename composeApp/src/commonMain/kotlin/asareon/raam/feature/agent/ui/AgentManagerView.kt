@@ -40,6 +40,7 @@ import asareon.raam.ui.components.IconRegistry
 import asareon.raam.ui.components.colorToHex
 import asareon.raam.ui.components.hexToColor
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.util.PlatformDependencies
@@ -104,11 +105,11 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
                 }),
                 actions = listOf(
                     HeaderAction(
-                        id = "new-agent",
-                        label = "New Agent",
+                        id = "create-agent",
+                        label = "Create Agent",
                         icon = Icons.Default.Add,
                         priority = 30,
-                        prominent = true,
+                        emphasis = HeaderActionEmphasis.Create,
                         onClick = {
                             store.dispatch(
                                 "agent",
@@ -124,7 +125,7 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
                         label = "System Resources",
                         icon = Icons.Default.SettingsSystemDaydream,
                         priority = 20,
-                        prominent = true,
+                        emphasis = HeaderActionEmphasis.Prominent,
                         onClick = { setTab(1) },
                     ),
                     HeaderAction(
