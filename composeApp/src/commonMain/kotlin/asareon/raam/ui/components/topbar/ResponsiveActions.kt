@@ -1,5 +1,6 @@
 package asareon.raam.ui.components.topbar
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -10,14 +11,17 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import asareon.raam.ui.theme.spacing
 
 /** Width reserved per plain `IconButton` (and the kebab itself). M3 touch-target. */
 val HeaderActionSlotWidth = 48.dp
@@ -114,7 +118,11 @@ fun ResponsiveActions(
     if (actions.isEmpty()) return
     val layout = computeHeaderActionLayout(actions, maxVisibleSlots)
 
-    Row(modifier = modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.inner),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         layout.visible.forEach { action ->
             if (action.prominent) {
                 ProminentActionButton(action)
