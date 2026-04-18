@@ -1650,6 +1650,7 @@
       "broadcast": false,
       "targeted": false,
       "hidden": true,
+      "response": true,
       "payload_schema": {
         "type": "object",
         "properties": {

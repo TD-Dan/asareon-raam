@@ -429,6 +429,24 @@ class AgentRuntimeFeatureT2ContractTest {
                     )
                 },
                 setup = ::registerIdentities
+            ),
+            HappyCase(
+                label = "REGISTER_EXTERNAL_STRATEGY",
+                actionName = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("strategyId", "agent.strategy.test-external")
+                    put("displayName", "Test External Strategy")
+                    put("featureHandle", "test-feature")
+                }
+            ),
+            HappyCase(
+                label = "UNREGISTER_EXTERNAL_STRATEGY",
+                actionName = ActionRegistry.Names.AGENT_UNREGISTER_EXTERNAL_STRATEGY,
+                originator = "core",
+                payload = buildJsonObject {
+                    put("strategyId", "agent.strategy.test-external")
+                }
             )
         )
     }
@@ -566,6 +584,24 @@ class AgentRuntimeFeatureT2ContractTest {
                     put("resourceId", "nonexistent-resource-id")
                 },
                 buildState = { AgentRuntimeState(resources = testBuiltInResources()) }
+            ),
+            FailureCase(
+                label = "REGISTER_EXTERNAL_STRATEGY (missing strategyId)",
+                actionName = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                originator = "core",
+                payload = buildJsonObject {
+                    // intentionally missing strategyId
+                    put("displayName", "Broken")
+                    put("featureHandle", "test-feature")
+                }
+            ),
+            FailureCase(
+                label = "UNREGISTER_EXTERNAL_STRATEGY (missing strategyId)",
+                actionName = ActionRegistry.Names.AGENT_UNREGISTER_EXTERNAL_STRATEGY,
+                originator = "core",
+                payload = buildJsonObject {
+                    // intentionally empty — missing strategyId
+                }
             )
         )
     }
@@ -689,8 +725,10 @@ class AgentRuntimeFeatureT2ContractTest {
         val featureDescriptor = ActionRegistry.features[featureHandle]
             ?: throw AssertionError("Feature '$featureHandle' not found in ActionRegistry.")
 
+        // Response-class actions complete a prior request; the receiver is not obliged
+        // to acknowledge with ACTION_RESULT, so they're exempt from command contract coverage.
         val publicActions = featureDescriptor.actions.values
-            .filter { it.public }
+            .filter { it.public && !it.response }
             .map { it.fullName }
             .toSet()
 

@@ -388,7 +388,7 @@ class FileSystemFeatureT2ContractTest {
             ?: throw AssertionError("Feature '$featureHandle' not found in ActionRegistry.")
 
         val publicActions = featureDescriptor.actions.values
-            .filter { it.public }
+            .filter { it.public && !it.response }
             .map { it.fullName }
             .toSet()
 

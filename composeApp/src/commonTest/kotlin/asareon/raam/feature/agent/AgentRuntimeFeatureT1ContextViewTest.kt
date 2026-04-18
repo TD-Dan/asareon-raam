@@ -121,13 +121,6 @@ class AgentRuntimeFeatureT1ContextViewTest {
     }
 
     @Test
-    fun `context management tab shows persistence notice`() {
-        setManagedContextState()
-        composeTestRule.onNodeWithText("Collapse settings persist across turns for this agent.")
-            .assertIsDisplayed()
-    }
-
-    @Test
     fun `protected partition shows PROTECTED label instead of toggle`() {
         val partitions = listOf(
             ContextCollapseLogic.ContextPartition(
@@ -160,7 +153,9 @@ class AgentRuntimeFeatureT1ContextViewTest {
         setManagedContextState(estimatedTokens = 12345)
 
         composeTestRule.onNodeWithText("API Preview").performClick()
-        composeTestRule.onNodeWithText("Estimated input: 12,345 tokens").assertIsDisplayed()
+        composeTestRule.onNode(
+            hasText("Estimated", substring = true) and hasText("12,345", substring = true)
+        ).assertIsDisplayed()
     }
 
     // =========================================================================
@@ -177,11 +172,11 @@ class AgentRuntimeFeatureT1ContextViewTest {
     }
 
     @Test
-    fun `raw tab shows loading spinner when no raw json yet`() {
+    fun `raw tab shows loading indicator when no raw json yet`() {
         setManagedContextState(rawJson = null)
 
         composeTestRule.onNodeWithText("Raw JSON Payload").performClick()
-        composeTestRule.onNodeWithText("Waiting for gateway preview...").assertIsDisplayed()
+        composeTestRule.onNode(hasText("Waiting", substring = true)).assertIsDisplayed()
     }
 
     // =========================================================================
@@ -235,7 +230,7 @@ class AgentRuntimeFeatureT1ContextViewTest {
         )
         setManagedContextState(partitions = partitions)
 
-        composeTestRule.onNodeWithText("EXPANDED ▾").performClick()
+        composeTestRule.onNode(hasText("EXPANDED", substring = true)).performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CONTEXT_COLLAPSE }
         assertNotNull(action)

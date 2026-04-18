@@ -1280,14 +1280,24 @@ class AgentRuntimeFeature(
     // ========================================================================
 
     private fun handleRegisterExternalStrategy(action: Action, store: Store) {
-        val payload = action.payload ?: return
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
+        val payload = action.payload ?: run {
+            platformDependencies.log(LogLevel.ERROR, identity.handle, "REGISTER_EXTERNAL_STRATEGY: missing payload")
+            publishActionResult(store, correlationId, ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                success = false, error = "Missing payload")
+            return
+        }
         val strategyId = payload["strategyId"]?.jsonPrimitive?.contentOrNull ?: run {
             platformDependencies.log(LogLevel.ERROR, identity.handle, "REGISTER_EXTERNAL_STRATEGY: missing strategyId")
+            publishActionResult(store, correlationId, ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                success = false, error = "Missing strategyId")
             return
         }
         val displayName = payload["displayName"]?.jsonPrimitive?.contentOrNull ?: strategyId
         val featureHandle = payload["featureHandle"]?.jsonPrimitive?.contentOrNull ?: run {
             platformDependencies.log(LogLevel.ERROR, identity.handle, "REGISTER_EXTERNAL_STRATEGY: missing featureHandle")
+            publishActionResult(store, correlationId, ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                success = false, error = "Missing featureHandle")
             return
         }
 
@@ -1347,11 +1357,17 @@ class AgentRuntimeFeature(
                 targetRecipient = originator
             ))
         }
+
+        publishActionResult(store, correlationId, ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+            success = true, summary = "Registered external strategy '$strategyId'.")
     }
 
     private fun handleUnregisterExternalStrategy(action: Action, store: Store) {
+        val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
         val strategyId = action.payload?.get("strategyId")?.jsonPrimitive?.contentOrNull ?: run {
             platformDependencies.log(LogLevel.ERROR, identity.handle, "UNREGISTER_EXTERNAL_STRATEGY: missing strategyId")
+            publishActionResult(store, correlationId, ActionRegistry.Names.AGENT_UNREGISTER_EXTERNAL_STRATEGY,
+                success = false, error = "Missing strategyId")
             return
         }
         // CognitiveStrategyRegistry doesn't have an unregister method yet —
@@ -1360,6 +1376,8 @@ class AgentRuntimeFeature(
         // get() fallback behavior.
         platformDependencies.log(LogLevel.INFO, identity.handle,
             "External strategy unregister requested: $strategyId (not yet implemented in registry)")
+        publishActionResult(store, correlationId, ActionRegistry.Names.AGENT_UNREGISTER_EXTERNAL_STRATEGY,
+            success = true, summary = "Unregister requested for strategy '$strategyId'.")
     }
 
     /**

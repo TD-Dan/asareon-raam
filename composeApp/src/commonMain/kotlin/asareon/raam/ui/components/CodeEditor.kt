@@ -59,7 +59,8 @@ fun CodeEditor(
     modifier: Modifier = Modifier,
     readOnly: Boolean = false,
     syntax: SyntaxMode = SyntaxMode.NONE,
-    bordered: Boolean = true
+    bordered: Boolean = true,
+    inputTag: String = "code_editor_input"
 ) {
     val depthColors = listOf(
         MaterialTheme.colorScheme.primary,
@@ -139,7 +140,7 @@ fun CodeEditor(
                         BasicTextField(
                             value = value,
                             onValueChange = { if (!readOnly) onValueChange(it) },
-                            modifier = Modifier.testTag("code_editor_input"),
+                            modifier = Modifier.testTag(inputTag),
                             readOnly = readOnly,
                             singleLine = false,
                             textStyle = TextStyle(
@@ -169,7 +170,7 @@ fun CodeEditor(
                     onValueChange = { if (!readOnly) onValueChange(it) },
                     modifier = Modifier
                         .weight(1f)
-                        .testTag("code_editor_input"),
+                        .testTag(inputTag),
                     readOnly = readOnly,
                     singleLine = false,
                     textStyle = TextStyle(

@@ -172,6 +172,7 @@ tasks.register("generateActionRegistry") {
                         val broadcastFlag = obj["broadcast"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val targetedFlag = obj["targeted"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val hiddenFlag = obj["hidden"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                        val responseFlag = obj["response"]?.jsonPrimitive?.content?.toBoolean() ?: false
 
                         // Validate: targeted + broadcast is forbidden
                         if (targetedFlag && broadcastFlag) {
@@ -185,6 +186,14 @@ tasks.register("generateActionRegistry") {
                             throw GradleException(
                                 "Action '$actionName' in ${manifestFile.path} has hidden=true but public=false. " +
                                         "Hidden is only meaningful on public actions (non-public actions are already feature-restricted)."
+                            )
+                        }
+
+                        // Validate: response + broadcast is nonsense — responses complete a specific request
+                        if (responseFlag && broadcastFlag) {
+                            throw GradleException(
+                                "Action '$actionName' in ${manifestFile.path} has both response=true and broadcast=true. " +
+                                        "A response completes a specific request — it can't also be a broadcast."
                             )
                         }
 
@@ -241,6 +250,7 @@ tasks.register("generateActionRegistry") {
                             "broadcast" to broadcastFlag,
                             "targeted" to targetedFlag,
                             "hidden" to hiddenFlag,
+                            "response" to responseFlag,
                             "payloadFields" to payloadFields,
                             "requiredFields" to requiredFields,
                             "requiredPermissions" to reqPerms
@@ -352,6 +362,7 @@ tasks.register("generateActionRegistry") {
                 |                    broadcast = ${action["broadcast"]},
                 |                    targeted = ${action["targeted"]},
                 |                    hidden = ${action["hidden"]},
+                |                    response = ${action["response"]},
                 |                    payloadFields = $fieldsStr,
                 |                    requiredFields = $reqFieldsStr,
                 |                    autoFillRules = $autoFillStr,
@@ -425,21 +436,22 @@ tasks.register("generateActionRegistry") {
             |        val broadcast: Boolean,
             |        val targeted: Boolean,
             |        val hidden: Boolean = false,
+            |        val response: Boolean = false,
             |        val payloadFields: List<PayloadField>,
             |        val requiredFields: List<String>,
             |        val autoFillRules: Map<String, String> = emptyMap(),
             |        val requiredPermissions: List<String>? = null
             |    ) {
-            |        /** A Command is any action public to all originators. */
-            |        val isCommand: Boolean get() = public
+            |        /** A Command is a public action the receiver is expected to acknowledge via ACTION_RESULT. Responses are not commands. */
+            |        val isCommand: Boolean get() = public && !response
             |        /** An Event is a restricted-origin broadcast (feature announces something happened). */
             |        val isEvent: Boolean get() = !public && broadcast
             |        /** An Internal action is restricted to the owning feature only. */
-            |        val isInternal: Boolean get() = !public && !broadcast && !targeted
-            |        /** A Response is a restricted-origin targeted delivery (reply to a requester). */
-            |        val isResponse: Boolean get() = !public && targeted
+            |        val isInternal: Boolean get() = !public && !broadcast && !targeted && !response
+            |        /** A Response completes a specific prior request. Can be private+targeted (default) or explicitly declared response=true (for public response protocols). */
+            |        val isResponse: Boolean get() = response || (!public && targeted)
             |        /** A hidden action is public but not discoverable by users or agents. Feature-to-feature only. */
-            |        val isHiddenCommand: Boolean get() = public && hidden
+            |        val isHiddenCommand: Boolean get() = public && hidden && !response
             |    }
             |
             |    data class FeatureDescriptor(

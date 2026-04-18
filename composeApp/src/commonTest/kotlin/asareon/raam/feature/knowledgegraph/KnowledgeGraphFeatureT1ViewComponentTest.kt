@@ -93,7 +93,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         harness.store.processedActions.clear()
 
         val newPayloadString = """{"key":"new"}"""
-        composeTestRule.onNodeWithText("Payload").performTextReplacement(newPayloadString)
+        composeTestRule.onNodeWithTag("holon-edit-payload").performTextReplacement(newPayloadString)
 
         composeTestRule.waitForIdle()
 
@@ -120,14 +120,16 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         composeTestRule.waitForIdle()
         harness.store.processedActions.clear()
 
-        composeTestRule.onNodeWithText("Payload").performTextInput("{ \"key\": ")
+        composeTestRule.onNodeWithTag("holon-edit-payload").performTextInput("{ \"key\": ")
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText("Save Changes").performClick()
         composeTestRule.waitForIdle()
 
         assertTrue(harness.store.processedActions.none { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT })
-        composeTestRule.onNodeWithText("Invalid JSON format in payload.").assertExists()
+        composeTestRule.onNode(
+            hasText("Invalid", substring = true) and hasText("payload", substring = true)
+        ).assertExists()
     }
 
     @Test
