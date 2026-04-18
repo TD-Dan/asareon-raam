@@ -21,6 +21,8 @@ import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.fileDragSource
+import asareon.raam.ui.components.sidepane.SidePane
+import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.util.FileEntry
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
@@ -47,12 +49,39 @@ fun WorkspacePane(
     val selectedFile = sessionState.selectedWorkspaceFile
     val previewContent = sessionState.workspaceFilePreview
 
-    Column(modifier = modifier.fillMaxHeight()) {
-        // ── Header ────────────────────────────────────────────────────────
-        WorkspacePaneHeader(store, session)
+    val headerActions = listOf(
+        HeaderAction(
+            id = "refresh-workspace",
+            label = "Refresh",
+            icon = Icons.Default.Refresh,
+            priority = 10,
+            onClick = {
+                store.dispatch("session", Action(
+                    ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
+                    buildJsonObject { put("session", session.identity.localHandle) }
+                ))
+            },
+        ),
+        HeaderAction(
+            id = "open-workspace-folder",
+            label = "Open workspace folder",
+            icon = Icons.Default.FolderOpen,
+            priority = 0,
+            onClick = {
+                val uuid = session.identity.uuid ?: return@HeaderAction
+                store.dispatch("session", Action(
+                    ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+                    buildJsonObject { put("path", "$uuid/workspace") }
+                ))
+            },
+        ),
+    )
 
-        HorizontalDivider()
-
+    SidePane(
+        title = "Session Files",
+        modifier = modifier,
+        actions = headerActions,
+    ) {
         if (selectedFile != null && previewContent != null) {
             // ── File preview mode ─────────────────────────────────────────
             FilePreview(
@@ -91,64 +120,6 @@ fun WorkspacePane(
                     modifier = Modifier.weight(1f)
                 )
             }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Header
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun WorkspacePaneHeader(store: Store, session: Session) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "Session Files",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(1f)
-        )
-
-        // Refresh workspace file list
-        IconButton(
-            onClick = {
-                store.dispatch("session", Action(
-                    ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
-                    buildJsonObject { put("session", session.identity.localHandle) }
-                ))
-            },
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription = "Refresh",
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        // Open in OS file manager
-        IconButton(
-            onClick = {
-                val uuid = session.identity.uuid ?: return@IconButton
-                store.dispatch("session", Action(
-                    ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
-                    buildJsonObject { put("path", "$uuid/workspace") }
-                ))
-            },
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                Icons.Default.FolderOpen,
-                contentDescription = "Open in file manager",
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
