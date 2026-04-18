@@ -39,6 +39,9 @@ import asareon.raam.ui.components.ColorPicker
 import asareon.raam.ui.components.IconRegistry
 import asareon.raam.ui.components.colorToHex
 import asareon.raam.ui.components.hexToColor
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.put
@@ -63,7 +66,6 @@ private fun AgentInstance.withKnowledgeGraphId(kgId: String?): AgentInstance {
     return copy(strategyConfig = updatedConfig)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
@@ -75,34 +77,87 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
         store.dispatch("agent", Action(ActionRegistry.Names.GATEWAY_REQUEST_AVAILABLE_MODELS))
     }
 
-    Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(title = { Text("Agent Manager") })
-                TabRow(selectedTabIndex = agentState?.activeManagerTab ?: 0) {
-                    Tab(
-                        selected = agentState?.activeManagerTab == 0,
-                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 0) })) },
-                        text = { Text("Agents") },
-                        icon = { Icon(Icons.Default.Group, "Agents") }
-                    )
-                    Tab(
-                        selected = agentState?.activeManagerTab == 1,
-                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_MANAGER_TAB, buildJsonObject { put("tabIndex", 1) })) },
-                        text = { Text("System Resources") },
-                        icon = { Icon(Icons.Default.SettingsSystemDaydream, "Resources") }
+    // System Resources is a secondary destination, not a peer tab — the
+    // existing activeManagerTab state (0 = Agents, 1 = Resources) still drives
+    // which subview is showing, so state rehydration after restart keeps working.
+    val showingResources = agentState?.activeManagerTab == 1
+    val setTab: (Int) -> Unit = { index ->
+        store.dispatch(
+            "agent",
+            Action(
+                ActionRegistry.Names.AGENT_SET_MANAGER_TAB,
+                buildJsonObject { put("tabIndex", index) },
+            ),
+        )
+    }
+
+    // Hoisted from AgentListView so the header's expand/collapse toggle and
+    // the agent cards below share the same state.
+    var globalShowExtendedInfo by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize()) {
+        if (!showingResources) {
+            RaamTopBarHeader(
+                title = "Agents",
+                actions = listOf(
+                    HeaderAction(
+                        id = "new-agent",
+                        label = "New Agent",
+                        icon = Icons.Default.Add,
+                        priority = 30,
+                        prominent = true,
+                        onClick = {
+                            store.dispatch(
+                                "agent",
+                                Action(
+                                    ActionRegistry.Names.AGENT_CREATE,
+                                    buildJsonObject { put("name", "New Agent") },
+                                ),
+                            )
+                        },
+                    ),
+                    HeaderAction(
+                        id = "view-resources",
+                        label = "System Resources",
+                        icon = Icons.Default.SettingsSystemDaydream,
+                        priority = 20,
+                        prominent = true,
+                        onClick = { setTab(1) },
+                    ),
+                    HeaderAction(
+                        id = "toggle-agent-details",
+                        label = if (globalShowExtendedInfo) "Collapse all details"
+                            else "Expand all details",
+                        icon = if (globalShowExtendedInfo) Icons.Default.VisibilityOff
+                            else Icons.Default.Visibility,
+                        priority = 10,
+                        onClick = { globalShowExtendedInfo = !globalShowExtendedInfo },
+                    ),
+                ),
+            )
+            Box(Modifier.fillMaxSize()) {
+                if (agentState == null) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Loading...") }
+                } else {
+                    AgentListView(
+                        agentState = agentState,
+                        store = store,
+                        platformDependencies = platformDependencies,
+                        showExtendedInfo = globalShowExtendedInfo,
                     )
                 }
             }
-        }
-    ) { paddingValues ->
-        Box(Modifier.padding(paddingValues).fillMaxSize()) {
-            if (agentState == null) {
-                Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Loading...") }
-            } else {
-                when (agentState.activeManagerTab) {
-                    0 -> AgentListView(agentState, store, platformDependencies)
-                    1 -> AgentResourcesView(agentState, store)
+        } else {
+            RaamTopBarHeader(
+                title = "System Resources",
+                subtitle = "Agents",
+                leading = HeaderLeading.Back(onClick = { setTab(0) }),
+            )
+            Box(Modifier.fillMaxSize()) {
+                if (agentState == null) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Loading...") }
+                } else {
+                    AgentResourcesView(agentState, store)
                 }
             }
         }
@@ -115,7 +170,8 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
 private fun AgentListView(
     agentState: AgentRuntimeState,
     store: Store,
-    platformDependencies: PlatformDependencies
+    platformDependencies: PlatformDependencies,
+    showExtendedInfo: Boolean,
 ) {
     var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
     val editingAgentId = agentState.editingAgentId
@@ -138,49 +194,25 @@ private fun AgentListView(
         )
     }
 
-    Column(Modifier.fillMaxSize()) {
-        var globalShowExtendedInfo by remember { mutableStateOf(false) }
-
-        Row(Modifier.fillMaxWidth().padding(16.dp), Arrangement.End, Alignment.CenterVertically) {
-            // Global eye toggle — expand/collapse all agent details at once
-            IconButton(onClick = { globalShowExtendedInfo = !globalShowExtendedInfo }) {
-                Icon(
-                    imageVector = if (globalShowExtendedInfo) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                    contentDescription = if (globalShowExtendedInfo) "Collapse All Details" else "Expand All Details",
-                    tint = if (globalShowExtendedInfo) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+    if (agentState.agents.isEmpty()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No agents configured.") }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(agentState.agents.values.toList(), key = { it.identity.uuid ?: "" }) { agent ->
+                AgentCard(
+                    agent = agent,
+                    isEditing = agent.identityUUID == editingAgentId,
+                    agentState = agentState,
+                    store = store,
+                    onDeleteRequest = { agentToDelete = it },
+                    onEditRequest = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) })) },
+                    platformDependencies = platformDependencies,
+                    showExtendedInfo = showExtendedInfo
                 )
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = {
-                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CREATE, buildJsonObject {
-                    put("name", "New Agent")
-                }))
-            }) {
-                Icon(Icons.Default.Add, "Create"); Spacer(Modifier.width(8.dp)); Text("New Agent")
-            }
-        }
-
-        if (agentState.agents.isEmpty()) {
-            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("No agents configured.") }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(agentState.agents.values.toList(), key = { it.identity.uuid ?: "" }) { agent ->
-                    AgentCard(
-                        agent = agent,
-                        isEditing = agent.identityUUID == editingAgentId,
-                        agentState = agentState,
-                        store = store,
-                        onDeleteRequest = { agentToDelete = it },
-                        onEditRequest = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) })) },
-                        platformDependencies = platformDependencies,
-                        showExtendedInfo = globalShowExtendedInfo
-                    )
-                }
             }
         }
     }
