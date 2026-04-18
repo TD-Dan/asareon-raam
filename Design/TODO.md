@@ -15,26 +15,6 @@
 
 - Use unified composable for the list cards in identities, agents, sessions. Allow ordering the lists everywhere, not just sessions.
 
-## SidePane unification (large)
-Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `GlobalActionRibbon` into a shared `SidePane` component with:
-
-- **Adjustable width** via a draggable gutter. Persist per-pane width in settings.
-- **Adaptive stacking** on narrow displays: side-by-side panes stack vertically when the window width crosses a breakpoint (M3 adaptive-layout guidance).
-- **Consistent pane header chrome** — title + trailing kebab for pane-local actions (currently `AgentResourcesView`'s left pane has its own inline "Resources" title + "+" button; that pattern would move into the shared component).
-- **Consistent background tone** (`surfaceContainerLow`).
-
-### Remaining follow-ups
-- **Script rename cascade.** `IdentityFieldsSection(nameEditable = false)` is used in Lua script Edit mode because the rename chain (listen for `CORE_RETURN_UPDATE_IDENTITY`, rename the `.lua` file, update `state.scripts` map) is not yet implemented in `LuaFeature`. When it lands, drop the `nameEditable = false` and delete the note in `06-UI-system.md#Rename-vs-visual-edits`.
-- **Send button in SessionView message input.** Icon-only, different visual axis — may need a `FooterIconButton` sibling or remain as-is. Decide when the composer gets its next pass.
-
-## Consistency sweep (small)
-Walk every view once more for:
-
-- Tooltip label wording (hover-tooltip text vs kebab-entry text — should match)
-- Contextual affordance labels ("Open workspace folder" used in two places — verify same wording)
-- Icon choices for common concepts ("external open" vs "folder show/hide" semantics)
-- `contentDescription` strings (accessibility) — currently not audited
-
 
 # ONBOARDING
 
@@ -195,6 +175,7 @@ BUG: gocnitivepipeline 969: should error not default
 - add LUA scripting Documentation
 - fix lua strategy pipeline issues
 - Lua Strategies are currently not showing anywhere! Should be a resource!
+- script rename hardening
 
 ---
 
