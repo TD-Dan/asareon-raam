@@ -65,17 +65,12 @@ fun GlobalActionRibbon(
     }
     val defaultViewKey = coreState?.defaultViewKey ?: "feature.session.main"
 
-    // Collect all structured entries from all features, sorted by priority.
+    // Collect all structured entries from all features (sort happens in
+    // computeRibbonLayout so the ordering is testable in isolation).
     val structuredEntries = features
         .asSequence()
         .mapNotNull { it.composableProvider }
         .flatMap { it.ribbonEntries(store, activeViewKey).asSequence() }
-        .withIndex()
-        .sortedWith(
-            compareByDescending<IndexedValue<RibbonEntry>> { it.value.priority }
-                .thenBy { it.index }
-        )
-        .map { it.value }
         .toList()
 
     BoxWithConstraints(
@@ -86,15 +81,10 @@ fun GlobalActionRibbon(
     ) {
         // Compute how many structured entries fit. Overflow spills into a
         // dedicated overflow icon that lives at the end of the structured list.
-        val availableHeight = maxHeight
-        val slotBudget = ((availableHeight - RibbonChromeHeight) / RibbonSlotHeight)
+        val slotBudget = ((maxHeight - RibbonChromeHeight) / RibbonSlotHeight)
             .toInt()
             .coerceAtLeast(0)
-        val allFit = structuredEntries.size <= slotBudget
-        val visibleCount = if (allFit) structuredEntries.size
-            else (slotBudget - 1).coerceAtLeast(0)
-        val visibleEntries = structuredEntries.take(visibleCount)
-        val overflowEntries = structuredEntries.drop(visibleCount)
+        val layout = computeRibbonLayout(structuredEntries, slotBudget)
 
         Column(
             modifier = Modifier
@@ -119,11 +109,11 @@ fun GlobalActionRibbon(
             }
 
             // --- Structured ribbon entries (stacked from top) ---
-            visibleEntries.forEach { entry ->
+            layout.visible.forEach { entry ->
                 RibbonIconButton(entry)
             }
-            if (overflowEntries.isNotEmpty()) {
-                RibbonOverflowButton(overflowEntries)
+            if (layout.overflowVisible) {
+                RibbonOverflowButton(layout.overflow)
             }
 
             // --- Legacy: un-migrated features still use @Composable RibbonContent ---
