@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Token
 import androidx.compose.material.icons.filled.UnfoldLess
@@ -37,6 +36,8 @@ import asareon.raam.feature.agent.ContextAssemblyResult
 import asareon.raam.feature.agent.ContextCollapseLogic
 import asareon.raam.feature.agent.ContextDelimiters
 import asareon.raam.ui.components.hslToColor
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.roundToInt
@@ -55,7 +56,6 @@ private fun formatTokenCount(count: Int): String =
 
 private const val GOLDEN_ANGLE = 137.508f
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManageContextView(store: Store) {
     val appState by store.state.collectAsState()
@@ -85,58 +85,25 @@ fun ManageContextView(store: Store) {
     // Local state for content viewer dialog
     var viewingContent by remember { mutableStateOf<Pair<String, String>?>(null) } // title → content
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Manage Context: ${agent.identity.name}") },
-                navigationIcon = {
-                    IconButton(onClick = onDiscard) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            BottomAppBar {
-                // Token estimate
-                val tokens = statusInfo.managedContextEstimatedTokens
-                    ?: managedPartitions?.totalChars?.let { it / ContextDelimiters.CHARS_PER_TOKEN }
-                if (tokens != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Token, contentDescription = "Tokens",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(4.dp))
-                        Text("~${formatTokenCount(tokens)} tokens",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                Button(onClick = onDiscard,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
-                    Text("Cancel")
-                }
-                Spacer(Modifier.width(16.dp))
-                Button(onClick = onExecute) { Text("Execute Turn") }
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Context Management", "API Preview", "Raw JSON Payload")
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        RaamTopBarHeader(
+            title = "Manage Context",
+            subtitle = agent.identity.name,
+            leading = HeaderLeading.Back(onClick = onDiscard),
+        )
+
+        TabRow(selectedTabIndex = selectedTab) {
+            tabs.forEachIndexed { index, title ->
+                Tab(selected = selectedTab == index,
+                    onClick = { selectedTab = index },
+                    text = { Text(title) })
             }
         }
-    ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            var selectedTab by remember { mutableStateOf(0) }
-            val tabs = listOf("Context Management", "API Preview", "Raw JSON Payload")
 
-            TabRow(selectedTabIndex = selectedTab) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) })
-                }
-            }
-
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (selectedTab) {
                 0 -> ContextManagementPane(
                     agentId = agentId,
@@ -150,6 +117,33 @@ fun ManageContextView(store: Store) {
                 1 -> ApiPreviewPane(managedContext, statusInfo, store)
                 2 -> RawJsonPane(statusInfo, store)
             }
+        }
+
+        BottomAppBar {
+            // Token estimate
+            val tokens = statusInfo.managedContextEstimatedTokens
+                ?: managedPartitions?.totalChars?.let { it / ContextDelimiters.CHARS_PER_TOKEN }
+            if (tokens != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Icon(Icons.Default.Token, contentDescription = "Tokens",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(4.dp))
+                    Text("~${formatTokenCount(tokens)} tokens",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onDiscard,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
+                Text("Cancel")
+            }
+            Spacer(Modifier.width(16.dp))
+            Button(onClick = onExecute) { Text("Execute Turn") }
         }
     }
 
