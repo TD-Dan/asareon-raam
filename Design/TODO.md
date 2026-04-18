@@ -10,8 +10,6 @@
 
 - self contained "USB Stick" distributions in addition to installers
 
-- Need a pre loaded state view that shows live log stream while app is loading
-
 
 # UI SYSTEM
 
