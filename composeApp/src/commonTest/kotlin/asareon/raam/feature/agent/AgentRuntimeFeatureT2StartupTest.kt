@@ -96,8 +96,10 @@ class AgentRuntimeFeatureT2StartupTest {
 
     @Test
     fun `should load existing agent config from disk via explicit filename routing`() {
-        // 1. Setup: An agent config file living at "agent-uuid/agent.json"
-        val agentId = "agent-abc"
+        // 1. Setup: An agent config file living at "{uuid}/agent.json".
+        // Directory name MUST be a valid UUID — handleFileSystemListResponse filters
+        // to UUID-named directories (stringIsUUID) to exclude "resources" and other debris.
+        val agentId = "a0000001-0000-0000-0000-000000000001"
         val agentConfigJson = """
             {
                 "identity": {
@@ -180,7 +182,8 @@ class AgentRuntimeFeatureT2StartupTest {
     fun `unknown file path should be ignored without corrupting agent load tracking`() {
         // Setup: The feature expects one agent config. We deliver an unknown file first,
         // then the real agent config. The unknown file should NOT decrement agentLoadCount.
-        val agentId = "agent-xyz"
+        // Directory name MUST be a valid UUID — see handleFileSystemListResponse filter.
+        val agentId = "a0000002-0000-0000-0000-000000000002"
         val agentConfigJson = """{"identity":{"uuid":"$agentId","localHandle":"real-agent","handle":"agent.real-agent","name":"Real Agent","parentHandle":"agent"},"modelProvider":"p","modelName":"m"}"""
 
         val environment = TestEnvironment.create()

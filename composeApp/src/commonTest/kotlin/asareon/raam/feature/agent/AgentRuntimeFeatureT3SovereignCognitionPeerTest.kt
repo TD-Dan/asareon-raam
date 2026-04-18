@@ -66,10 +66,13 @@ class AgentRuntimeFeatureT3SovereignCognitionPeerTest {
             }
         """.trimIndent()
 
-        // [ROBUSTNESS FIX] Write specifically to the relative root so FakePlatformDependencies
-        // listing logic (which likely defaults to listing ".") finds it.
-        val path = "$personaId/$personaId.json"
-        platform.createDirectories(personaId)
+        // KnowledgeGraphFeature dispatches FILESYSTEM_LIST (no path) which FileSystemFeature
+        // resolves against the knowledgegraph sandbox: {APP_ZONE}/knowledgegraph/. Write the
+        // HKG file under that sandbox so the listing discovers the persona directory.
+        val kgSandbox = "${platform.getBasePathFor(asareon.raam.util.BasePath.APP_ZONE)}/knowledgegraph"
+        val personaDir = "$kgSandbox/$personaId"
+        val path = "$personaDir/$personaId.json"
+        platform.createDirectories(personaDir)
         platform.writeFileContent(path, hkgContent)
 
         val privateSessionUUID = "a0000000-0000-0000-0000-000000000001"

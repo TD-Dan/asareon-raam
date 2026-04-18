@@ -236,6 +236,8 @@ class AgentRuntimeFeature(
                 if (store.state.value.identityRegistry.values.any { it.parentHandle == "session" }) {
                     dispatchEnsureInfrastructureForAll(agentState, store)
                 }
+                // Broadcast agent roster so other features can discover agents.
+                broadcastAgentNames(agentState, store)
             }
             ActionRegistry.Names.AGENT_VALIDATE_SOVEREIGN_STATE -> {
                 // Generalized: run ensureInfrastructure for all agents.
@@ -352,6 +354,9 @@ class AgentRuntimeFeature(
                 }
                 saveAgentConfig(agent, store)
                 AgentAvatarLogic.updateAgentAvatars(agentId, store, agentState)
+
+                // Broadcast updated roster so observers refresh subscription views.
+                broadcastAgentNames(agentState, store)
 
                 val sessionIdStr = payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: ""
                 val verb = if (action.name == ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION) "added to" else "removed from"
@@ -1511,6 +1516,30 @@ class AgentRuntimeFeature(
             put("path", "${agent.identityUUID.uuid}/$agentConfigFILENAME")
             put("content", json.encodeToString(agentWithoutNvram))
         }))
+    }
+
+    /**
+     * Broadcasts the current snapshot of all agents (uuid, name, subscribedSessionIds)
+     * so other features can discover agents without cross-feature imports.
+     * Fired on startup after AGENTS_LOADED and whenever subscriptions change.
+     */
+    private fun broadcastAgentNames(agentState: AgentRuntimeState, store: Store) {
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.AGENT_AGENT_NAMES_UPDATED,
+            payload = buildJsonObject {
+                put("agents", buildJsonArray {
+                    agentState.agents.values.forEach { agent ->
+                        add(buildJsonObject {
+                            put("uuid", agent.identityUUID.uuid)
+                            put("name", agent.identity.name)
+                            put("subscribedSessionIds", buildJsonArray {
+                                agent.subscribedSessionIds.forEach { add(it.uuid) }
+                            })
+                        })
+                    }
+                })
+            }
+        ))
     }
 
     private fun saveAgentNvram(agent: AgentInstance, store: Store) {
