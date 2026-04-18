@@ -6,7 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -21,17 +23,7 @@ import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
-import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
-import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
-import asareon.raam.ui.components.footer.FooterActionEmphasis
-import asareon.raam.ui.components.footer.FooterButton
-import asareon.raam.ui.components.footer.ViewFooter
-import asareon.raam.ui.components.sidepane.SidePane
-import asareon.raam.ui.components.sidepane.SidePaneLayout
-import asareon.raam.ui.components.sidepane.SidePanePosition
-import asareon.raam.ui.components.sidepane.rememberSidePaneState
 import asareon.raam.ui.components.topbar.HeaderAction
-import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.util.PlatformDependencies
@@ -67,56 +59,32 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     // --- Deletion Dialogs ---
     kgState.personaIdToDelete?.let { personaId ->
         val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
-        val dismissPersonaDelete: () -> Unit = {
-            store.dispatch(
-                "knowledgegraph",
-                Action(
-                    ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE,
-                    buildJsonObject { put("personaId", JsonNull) },
-                ),
-            )
-        }
-        ConfirmDestructiveDialog(
-            title = "Delete Persona?",
-            message = "Permanently delete '$personaName'? This action cannot be undone.",
-            onConfirm = {
-                store.dispatch(
-                    "knowledgegraph",
-                    Action(
-                        ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA,
-                        buildJsonObject { put("personaId", personaId) },
-                    ),
-                )
-                dismissPersonaDelete()
+        AlertDialog(
+            onDismissRequest = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) },
+            title = { Text("Delete Persona?") },
+            text = { Text("Are you sure you want to permanently delete '$personaName'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) })) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
             },
-            onDismiss = dismissPersonaDelete,
+            dismissButton = { Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) }) { Text("Cancel") } }
         )
     }
     kgState.holonIdToDelete?.let { holonId ->
         val holonName = kgState.holons[holonId]?.header?.name ?: "Unknown Holon"
-        val dismissHolonDelete: () -> Unit = {
-            store.dispatch(
-                "knowledgegraph",
-                Action(
-                    ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE,
-                    buildJsonObject { put("holonId", null as String?) },
-                ),
-            )
-        }
-        ConfirmDestructiveDialog(
-            title = "Delete Holon?",
-            message = "Permanently delete '$holonName'? This will also delete all of its children.",
-            onConfirm = {
-                store.dispatch(
-                    "knowledgegraph",
-                    Action(
-                        ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON,
-                        buildJsonObject { put("holonId", holonId) },
-                    ),
-                )
-                dismissHolonDelete()
+        AlertDialog(
+            onDismissRequest = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) },
+            title = { Text("Delete Holon?") },
+            text = { Text("Are you sure you want to permanently delete '$holonName'? This will also delete all of its children.") },
+            confirmButton = {
+                Button(
+                    onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) })) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
             },
-            onDismiss = dismissHolonDelete,
+            dismissButton = { Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) }) { Text("Cancel") } }
         )
     }
     kgState.holonIdToRename?.let { holonId ->
@@ -173,7 +141,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                             label = "Create Persona",
                             icon = Icons.Default.Add,
                             priority = 30,
-                            emphasis = HeaderActionEmphasis.Create,
+                            prominent = true,
                             onClick = {
                                 store.dispatch(
                                     "knowledgegraph",
@@ -189,7 +157,7 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
                             label = "Import Holons",
                             icon = Icons.Default.Download,
                             priority = 20,
-                            emphasis = HeaderActionEmphasis.Prominent,
+                            prominent = true,
                             onClick = { setViewMode(KnowledgeGraphViewMode.IMPORT) },
                         ),
                         HeaderAction(
@@ -231,7 +199,6 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
     val selectedHolonId = kgState.activeHolonIdForView
     val holonToEditId = kgState.holonIdToEdit
     val selectedHolon = kgState.holons[selectedHolonId]
-    val paneState = rememberSidePaneState()
 
     val availableTypes = remember(kgState.holons) {
         (listOf("All") + kgState.holons.values.map { it.header.type }.distinct().sorted()).toSet()
@@ -239,18 +206,9 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
 
     Column(modifier = modifier.fillMaxSize()) {
         if (kgState.personaRoots.isNotEmpty()) {
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            FlowRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 availableTypes.forEach { type ->
-                    val isSelected = if (type == "All") {
-                        kgState.activeTypeFilters.isEmpty()
-                    } else {
-                        kgState.activeTypeFilters.contains(type)
-                    }
+                    val isSelected = if (type == "All") kgState.activeTypeFilters.isEmpty() else kgState.activeTypeFilters.contains(type)
                     FilterChip(
                         selected = isSelected,
                         onClick = {
@@ -261,85 +219,53 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
                             } else {
                                 kgState.activeTypeFilters + type
                             }
-                            store.dispatch(
-                                "knowledgegraph",
-                                Action(
-                                    ActionRegistry.Names.KNOWLEDGEGRAPH_SET_TYPE_FILTERS,
-                                    buildJsonObject {
-                                        put("types", Json.encodeToJsonElement(newFilters))
-                                    },
-                                ),
-                            )
+                            store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject { put("types", Json.encodeToJsonElement(newFilters)) }))
                         },
-                        label = { Text(type) },
+                        label = { Text(type) }
                     )
                 }
             }
             HorizontalDivider()
         }
 
-        if (kgState.personaRoots.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                when {
-                    kgState.isLoading -> CircularProgressIndicator()
-                    kgState.fatalError != null -> Text(
-                        kgState.fatalError,
-                        color = MaterialTheme.colorScheme.error,
+        Row(Modifier.fillMaxSize()) {
+            if (kgState.personaRoots.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    when {
+                        kgState.isLoading -> CircularProgressIndicator()
+                        kgState.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
+                        else -> Text("No Knowledge Graphs found. Create or import a Persona to begin.")
+                    }
+                }
+            } else {
+                MultiRootTreeView(
+                    kgState = kgState,
+                    store = store,
+                    modifier = Modifier.width(400.dp)
+                )
+                VerticalDivider()
+
+                if (holonToEditId != null) {
+                    HolonEditView(
+                        holon = kgState.holons[holonToEditId],
+                        onDismiss = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", null as String?) })) },
+                        onSave = { holonId, newPayload, newExecute ->
+                            store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject {
+                                put("holonId", holonId)
+                                newPayload?.let { put("payload", it) }
+                                newExecute?.let { put("execute", it) }
+                            }))
+                        },
+                        modifier = Modifier.weight(1f)
                     )
-                    else -> Text("No Knowledge Graphs found. Create or import a Persona to begin.")
+                } else {
+                    HolonDetailView(
+                        holon = selectedHolon,
+                        store = store,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
-        } else {
-            SidePaneLayout(
-                modifier = Modifier.weight(1f),
-                paneState = paneState,
-                panePosition = SidePanePosition.Start,
-                sidePane = {
-                    SidePane(title = "Personas") {
-                        MultiRootTreeView(
-                            kgState = kgState,
-                            store = store,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                },
-                primary = {
-                    if (holonToEditId != null) {
-                        HolonEditView(
-                            holon = kgState.holons[holonToEditId],
-                            onDismiss = {
-                                store.dispatch(
-                                    "knowledgegraph",
-                                    Action(
-                                        ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT,
-                                        buildJsonObject { put("holonId", null as String?) },
-                                    ),
-                                )
-                            },
-                            onSave = { holonId, newPayload, newExecute ->
-                                store.dispatch(
-                                    "knowledgegraph",
-                                    Action(
-                                        ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT,
-                                        buildJsonObject {
-                                            put("holonId", holonId)
-                                            newPayload?.let { put("payload", it) }
-                                            newExecute?.let { put("execute", it) }
-                                        },
-                                    ),
-                                )
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        HolonDetailView(
-                            holon = selectedHolon,
-                            store = store,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                },
-            )
         }
     }
 }
@@ -472,7 +398,6 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
         return
     }
 
-    val isPersona = holon.header.type == "AI_Persona_Root"
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -480,44 +405,19 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
                 title = { Text(holon.header.name, style = MaterialTheme.typography.titleMedium) },
                 actions = {
                     Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
-                    if (!isPersona) {
-                        Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(8.dp))
+                    if (holon.header.type == "AI_Persona_Root") {
+                        Button(
+                            onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", holon.header.id) })) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete Persona") }
+                    } else {
                         OutlinedButton(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
-                    }
-                    // Destructive action lives in the kebab, not inline.
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DangerDropdownMenuItem(
-                                label = if (isPersona) "Delete Persona" else "Delete Holon",
-                                onClick = {
-                                    menuExpanded = false
-                                    if (isPersona) {
-                                        store.dispatch(
-                                            "knowledgegraph",
-                                            Action(
-                                                ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE,
-                                                buildJsonObject { put("personaId", holon.header.id) },
-                                            ),
-                                        )
-                                    } else {
-                                        store.dispatch(
-                                            "knowledgegraph",
-                                            Action(
-                                                ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE,
-                                                buildJsonObject { put("holonId", holon.header.id) },
-                                            ),
-                                        )
-                                    }
-                                },
-                            )
-                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Delete") }
                     }
                 }
             )
@@ -586,13 +486,19 @@ private fun HolonEditView(
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Editing: ${holon.header.name}", style = MaterialTheme.typography.titleMedium)
+            Row {
+                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { validateAndSave() }) { Text("Save Changes") }
+            }
         }
         HorizontalDivider()
 
-        Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
             Text("Payload", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(4.dp))
             CodeEditor(
@@ -618,11 +524,6 @@ private fun HolonEditView(
             if (!isExecuteValid) {
                 Text("Invalid JSON format in execute.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
             }
-        }
-
-        ViewFooter {
-            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = onDismiss)
-            FooterButton(FooterActionEmphasis.Confirm, "Save", onClick = { validateAndSave() })
         }
     }
 }
