@@ -23,6 +23,7 @@ import androidx.compose.ui.zIndex
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.ui.theme.spacing
 import asareon.raam.util.PlatformDependencies
@@ -216,6 +217,9 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
     Column(modifier = Modifier.fillMaxSize()) {
         RaamTopBarHeader(
             title = "Session Manager",
+            leading = HeaderLeading.Back(onClick = {
+                store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+            }),
             actions = listOf(
                 HeaderAction(
                     id = "new-session",

@@ -23,6 +23,9 @@ import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -33,7 +36,6 @@ import kotlinx.serialization.json.put
 
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies) {
     val appState by store.state.collectAsState()
@@ -42,6 +44,16 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     if (kgState == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
+    }
+
+    val setViewMode: (KnowledgeGraphViewMode) -> Unit = { mode ->
+        store.dispatch(
+            "knowledgegraph",
+            Action(
+                ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE,
+                buildJsonObject { put("mode", mode.name) },
+            ),
+        )
     }
 
     // --- Deletion Dialogs ---
@@ -112,40 +124,70 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     }
 
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Knowledge Graph Manager") },
-                actions = {
-                    if (kgState.viewMode == KnowledgeGraphViewMode.INSPECTOR) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Show Summaries", style = MaterialTheme.typography.labelMedium)
-                            Switch(
-                                checked = kgState.showSummariesInTreeView,
-                                onCheckedChange = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES)) },
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.IMPORT.name) })) }
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = "Import Holons")
-                        }
-                        Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_CREATING_PERSONA, buildJsonObject { put("isCreating", true) })) }) {
-                            Text("Create Persona")
-                        }
-                    } else {
-                        IconButton(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_VIEW_MODE, buildJsonObject { put("mode", KnowledgeGraphViewMode.INSPECTOR.name) })) }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close View")
-                        }
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
+    Column(Modifier.fillMaxSize()) {
         when (kgState.viewMode) {
-            KnowledgeGraphViewMode.INSPECTOR -> InspectorPane(kgState, store, Modifier.padding(paddingValues))
-            KnowledgeGraphViewMode.IMPORT -> ImportPane(kgState, store, platformDependencies, Modifier.padding(paddingValues))
+            KnowledgeGraphViewMode.INSPECTOR -> {
+                RaamTopBarHeader(
+                    title = "Knowledge Graphs",
+                    leading = HeaderLeading.Back(onClick = {
+                        store.dispatch(
+                            "core",
+                            Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW),
+                        )
+                    }),
+                    actions = listOf(
+                        HeaderAction(
+                            id = "create-persona",
+                            label = "Create Persona",
+                            icon = Icons.Default.Add,
+                            priority = 30,
+                            prominent = true,
+                            onClick = {
+                                store.dispatch(
+                                    "knowledgegraph",
+                                    Action(
+                                        ActionRegistry.Names.KNOWLEDGEGRAPH_SET_CREATING_PERSONA,
+                                        buildJsonObject { put("isCreating", true) },
+                                    ),
+                                )
+                            },
+                        ),
+                        HeaderAction(
+                            id = "import-holons",
+                            label = "Import Holons",
+                            icon = Icons.Default.Download,
+                            priority = 20,
+                            prominent = true,
+                            onClick = { setViewMode(KnowledgeGraphViewMode.IMPORT) },
+                        ),
+                        HeaderAction(
+                            id = "toggle-summaries",
+                            label = if (kgState.showSummariesInTreeView) "Hide summaries in tree"
+                                else "Show summaries in tree",
+                            icon = if (kgState.showSummariesInTreeView) Icons.Default.Visibility
+                                else Icons.Default.VisibilityOff,
+                            priority = 10,
+                            onClick = {
+                                store.dispatch(
+                                    "knowledgegraph",
+                                    Action(ActionRegistry.Names.KNOWLEDGEGRAPH_TOGGLE_SHOW_SUMMARIES),
+                                )
+                            },
+                        ),
+                    ),
+                )
+                InspectorPane(kgState, store)
+            }
+            KnowledgeGraphViewMode.IMPORT -> {
+                RaamTopBarHeader(
+                    title = "Import Holons",
+                    subtitle = "Knowledge Graphs",
+                    leading = HeaderLeading.Back(onClick = {
+                        setViewMode(KnowledgeGraphViewMode.INSPECTOR)
+                    }),
+                )
+                ImportPane(kgState, store, platformDependencies)
+            }
             KnowledgeGraphViewMode.EXPORT -> { /* TODO */ }
         }
     }

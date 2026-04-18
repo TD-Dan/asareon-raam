@@ -99,6 +99,9 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
         if (!showingResources) {
             RaamTopBarHeader(
                 title = "Agents",
+                leading = HeaderLeading.Back(onClick = {
+                    store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                }),
                 actions = listOf(
                     HeaderAction(
                         id = "new-agent",
