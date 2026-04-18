@@ -31,7 +31,7 @@
   "actions": [
     {
       "action_name": "session.CREATE",
-      "summary": "Creates a new, empty session transcript. If the name exists, a numeric suffix will be added.",
+      "summary": "Creates a new, empty session transcript. If the name exists, a numeric suffix will be added. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied to the session's identity at registration.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -52,6 +52,18 @@
               "null"
             ],
             "description": "If non-null, the identity handle of the owner. The session is private to that identity. Defaults to null."
+          },
+          "displayColor": {
+            "type": ["string", "null"],
+            "description": "Optional '#RRGGBB' display color for the session's identity."
+          },
+          "displayIcon": {
+            "type": ["string", "null"],
+            "description": "Optional Material icon key for the session's identity."
+          },
+          "displayEmoji": {
+            "type": ["string", "null"],
+            "description": "Optional emoji override for the session's identity."
           }
         }
       },
@@ -83,7 +95,7 @@
     },
     {
       "action_name": "session.UPDATE_CONFIG",
-      "summary": "Updates the configuration of an existing session.",
+      "summary": "Updates the configuration of an existing session. displayColor/displayIcon/displayEmoji are optional identity-visual fields propagated to CORE_UPDATE_IDENTITY.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -97,6 +109,18 @@
           "name": {
             "type": "string",
             "description": "The new name for the session. Will be de-duplicated if necessary."
+          },
+          "displayColor": {
+            "type": ["string", "null"],
+            "description": "Optional '#RRGGBB' display color for the session's identity."
+          },
+          "displayIcon": {
+            "type": ["string", "null"],
+            "description": "Optional Material icon key for the session's identity."
+          },
+          "displayEmoji": {
+            "type": ["string", "null"],
+            "description": "Optional emoji override for the session's identity."
           }
         },
         "required": [

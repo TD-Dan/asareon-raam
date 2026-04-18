@@ -78,7 +78,11 @@ data class PendingSessionCreation(
     /** For clones: the localHandle of the source session to copy the ledger from. */
     val cloneSourceLocalHandle: String? = null,
     /** Correlation ID from CommandBot's ACTION_CREATED, for publishing ACTION_RESULT on completion. */
-    val correlationId: String? = null
+    val correlationId: String? = null,
+    /** Optional identity-visual fields passed through to CORE_REGISTER_IDENTITY at creation. */
+    val displayColor: String? = null,
+    val displayIcon: String? = null,
+    val displayEmoji: String? = null,
 )
 
 /**

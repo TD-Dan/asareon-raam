@@ -25,9 +25,22 @@ class SessionFeature(
     override val identity: Identity = Identity(uuid = null, handle = "session", localHandle = "session", name="Session Manager")
 
     // --- Private, serializable data classes for decoding action payloads safely. ---
-    @Serializable private data class CreatePayload(val name: String? = null, val isHidden: Boolean = false, val isPrivateTo: String? = null)
+    @Serializable private data class CreatePayload(
+        val name: String? = null,
+        val isHidden: Boolean = false,
+        val isPrivateTo: String? = null,
+        val displayColor: String? = null,
+        val displayIcon: String? = null,
+        val displayEmoji: String? = null,
+    )
     @Serializable private data class ClonePayload(val session: String)
-    @Serializable private data class UpdateConfigPayload(val session: String, val name: String)
+    @Serializable private data class UpdateConfigPayload(
+        val session: String,
+        val name: String,
+        val displayColor: String? = null,
+        val displayIcon: String? = null,
+        val displayEmoji: String? = null,
+    )
     @Serializable private data class SessionTargetPayload(val session: String)
     @Serializable private data class PostPayload(val session: String, val senderId: String? = null, val message: String? = null, val messageId: String? = null, val metadata: JsonObject? = null, val afterMessageId: String? = null, val doNotClear: Boolean = false)
     @Serializable private data class UpdateMessagePayload(val session: String, val messageId: String, val newContent: String? = null, val newMetadata: JsonObject? = null, val doNotClear: Boolean? = null)
@@ -413,6 +426,9 @@ class SessionFeature(
                         buildJsonObject {
                             put("name", pending.requestedName)
                             put("uuid", pending.uuid)
+                            if (pending.displayColor != null) put("displayColor", pending.displayColor)
+                            if (pending.displayIcon != null) put("displayIcon", pending.displayIcon)
+                            if (pending.displayEmoji != null) put("displayEmoji", pending.displayEmoji)
                         }
                     ))
                 }
@@ -480,13 +496,22 @@ class SessionFeature(
                 val prevSession = (previousState as? SessionState)?.sessions?.get(localHandle)
                 val newSession = sessionState.sessions[localHandle]
 
-                if (prevSession != null && newSession != null && prevSession.identity.name != newSession.identity.name) {
-                    // Name changed — request identity update (handle may change)
+                val identityChanged = prevSession != null && newSession != null && (
+                    prevSession.identity.name != newSession.identity.name ||
+                    prevSession.identity.displayColor != newSession.identity.displayColor ||
+                    prevSession.identity.displayIcon != newSession.identity.displayIcon ||
+                    prevSession.identity.displayEmoji != newSession.identity.displayEmoji
+                )
+                if (identityChanged && prevSession != null && newSession != null) {
+                    // Any identity field changed — propagate to core (handle may change if name changed)
                     store.deferredDispatch(identity.handle, Action(
                         ActionRegistry.Names.CORE_UPDATE_IDENTITY,
                         buildJsonObject {
                             put("handle", prevSession.identity.handle)
                             put("newName", newSession.identity.name)
+                            put("displayColor", newSession.identity.displayColor)
+                            put("displayIcon", newSession.identity.displayIcon)
+                            put("displayEmoji", newSession.identity.displayEmoji)
                         }
                     ))
                 }
@@ -1344,7 +1369,10 @@ class SessionFeature(
                     requestedName = uniqueName,
                     isHidden = decoded.isHidden,
                     isPrivateTo = decoded.isPrivateTo?.let { IdentityHandle(it) },
-                    createdAt = platformDependencies.currentTimeMillis()
+                    createdAt = platformDependencies.currentTimeMillis(),
+                    displayColor = decoded.displayColor,
+                    displayIcon = decoded.displayIcon,
+                    displayEmoji = decoded.displayEmoji,
                 )
                 currentFeatureState.copy(
                     pendingCreations = currentFeatureState.pendingCreations + (uuid to pending)
@@ -1385,7 +1413,10 @@ class SessionFeature(
                         handle = resp.handle ?: return currentFeatureState,
                         name = resp.name ?: pending.requestedName,
                         parentHandle = resp.parentHandle,
-                        registeredAt = platformDependencies.currentTimeMillis()
+                        registeredAt = platformDependencies.currentTimeMillis(),
+                        displayColor = pending.displayColor,
+                        displayIcon = pending.displayIcon,
+                        displayEmoji = pending.displayEmoji,
                     )
 
                     val newSession = if (pending.cloneSourceLocalHandle != null) {
@@ -1474,9 +1505,18 @@ class SessionFeature(
                 val decoded = payload?.let { json.decodeFromJsonElement<UpdateConfigPayload>(it) } ?: return currentFeatureState
                 val localHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
                 val session = currentFeatureState.sessions[localHandle] ?: return currentFeatureState
-                val newName = findUniqueName(decoded.name, currentFeatureState)
+                val newName = if (decoded.name != session.identity.name) {
+                    findUniqueName(decoded.name, currentFeatureState)
+                } else {
+                    decoded.name
+                }
 
-                val updatedIdentity = session.identity.copy(name = newName)
+                val updatedIdentity = session.identity.copy(
+                    name = newName,
+                    displayColor = decoded.displayColor,
+                    displayIcon = decoded.displayIcon,
+                    displayEmoji = decoded.displayEmoji,
+                )
                 val updatedSession = session.copy(identity = updatedIdentity)
                 currentFeatureState.copy(
                     sessions = currentFeatureState.sessions + (localHandle to updatedSession),
