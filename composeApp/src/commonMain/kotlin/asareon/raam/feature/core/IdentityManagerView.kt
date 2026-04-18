@@ -13,9 +13,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -34,6 +34,8 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.core.resolveDisplayColor
 import asareon.raam.ui.components.ColorPicker
 import asareon.raam.ui.components.colorToHex
+import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
+import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -182,6 +184,26 @@ private fun IdentitiesTabContent(
             .sortedBy { it.handle }
     }
 
+    // --- Deletion confirmation dialog ---
+    var identityToDelete by remember { mutableStateOf<Identity?>(null) }
+    identityToDelete?.let { identity ->
+        ConfirmDestructiveDialog(
+            title = "Delete Identity?",
+            message = "Permanently delete '${identity.name}'? This action cannot be undone.",
+            onConfirm = {
+                store.dispatch(
+                    "core",
+                    Action(
+                        ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY,
+                        buildJsonObject { put("id", identity.handle) },
+                    ),
+                )
+                identityToDelete = null
+            },
+            onDismiss = { identityToDelete = null },
+        )
+    }
+
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -212,9 +234,7 @@ private fun IdentitiesTabContent(
                         onSetActive = {
                             store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
-                        onDelete = {
-                            store.dispatch("core", Action(ActionRegistry.Names.CORE_REMOVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
-                        }
+                        onDelete = { identityToDelete = identity }
                     )
                 }
             }
@@ -460,8 +480,23 @@ private fun IdentityRow(
                         IconButton(onClick = { isEditing = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit Identity")
                         }
-                        IconButton(onClick = onDelete) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Identity")
+                        var menuExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DangerDropdownMenuItem(
+                                    label = "Delete",
+                                    onClick = {
+                                        menuExpanded = false
+                                        onDelete()
+                                    },
+                                )
+                            }
                         }
                     }
                 }

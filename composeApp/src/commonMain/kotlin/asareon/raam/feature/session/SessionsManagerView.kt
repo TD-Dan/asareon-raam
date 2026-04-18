@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
+import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -171,20 +173,20 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
     // --- Confirmation Dialogs ---
 
     sessionToDelete?.let { session ->
-        AlertDialog(
-            onDismissRequest = { sessionToDelete = null },
-            title = { Text("Delete Session?") },
-            text = { Text("Are you sure you want to permanently delete '${session.identity.name}'? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", session.identity.localHandle) }))
-                        sessionToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+        ConfirmDestructiveDialog(
+            title = "Delete Session?",
+            message = "Are you sure you want to permanently delete '${session.identity.name}'? This action cannot be undone.",
+            onConfirm = {
+                store.dispatch(
+                    "session",
+                    Action(
+                        ActionRegistry.Names.SESSION_DELETE,
+                        buildJsonObject { put("session", session.identity.localHandle) },
+                    ),
+                )
+                sessionToDelete = null
             },
-            dismissButton = { Button(onClick = { sessionToDelete = null }) { Text("Cancel") } }
+            onDismiss = { sessionToDelete = null },
         )
     }
 
@@ -196,20 +198,22 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         } else {
             "All ${session.ledger.size} message(s) will be removed."
         }
-        AlertDialog(
-            onDismissRequest = { sessionToClear = null },
-            title = { Text("Clear Session?") },
-            text = { Text("Clear '${session.identity.name}'? $detail") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
-                        sessionToClear = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Clear") }
+        ConfirmDestructiveDialog(
+            title = "Clear Session?",
+            message = "Clear '${session.identity.name}'? $detail",
+            confirmLabel = "Clear",
+            icon = Icons.Default.ClearAll,
+            onConfirm = {
+                store.dispatch(
+                    "session",
+                    Action(
+                        ActionRegistry.Names.SESSION_CLEAR,
+                        buildJsonObject { put("session", session.identity.localHandle) },
+                    ),
+                )
+                sessionToClear = null
             },
-            dismissButton = { Button(onClick = { sessionToClear = null }) { Text("Cancel") } }
+            onDismiss = { sessionToClear = null },
         )
     }
 
@@ -454,20 +458,12 @@ private fun SessionManagerCard(
                         leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    DropdownMenuItem(
-                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    DangerDropdownMenuItem(
+                        label = "Delete",
                         onClick = {
                             onDeleteRequest(session)
                             menuExpanded = false
                         },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
                     )
                 }
             }

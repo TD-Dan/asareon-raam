@@ -29,6 +29,7 @@ import asareon.raam.feature.agent.AgentStatusInfo
 import asareon.raam.feature.agent.CognitiveStrategyRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.IconRegistry
+import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.delay
@@ -473,13 +474,13 @@ fun AgentControlCard(
                                     )
                                 }
                                 if (onDeleteRequest != null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Delete Agent") },
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                    DangerDropdownMenuItem(
+                                        label = "Delete Agent",
                                         onClick = {
-                                            onDeleteRequest()
                                             menuExpanded = false
+                                            onDeleteRequest()
                                         },
-                                        leadingIcon = { Icon(Icons.Default.Delete, null) }
                                     )
                                 }
                             }

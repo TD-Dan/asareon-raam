@@ -23,6 +23,8 @@ import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
+import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
+import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -60,32 +62,56 @@ fun KnowledgeGraphView(store: Store, platformDependencies: PlatformDependencies)
     // --- Deletion Dialogs ---
     kgState.personaIdToDelete?.let { personaId ->
         val personaName = kgState.holons[personaId]?.header?.name ?: "Unknown Persona"
-        AlertDialog(
-            onDismissRequest = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) },
-            title = { Text("Delete Persona?") },
-            text = { Text("Are you sure you want to permanently delete '$personaName'? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA, buildJsonObject { put("personaId", personaId) })) },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+        val dismissPersonaDelete: () -> Unit = {
+            store.dispatch(
+                "knowledgegraph",
+                Action(
+                    ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE,
+                    buildJsonObject { put("personaId", JsonNull) },
+                ),
+            )
+        }
+        ConfirmDestructiveDialog(
+            title = "Delete Persona?",
+            message = "Permanently delete '$personaName'? This action cannot be undone.",
+            onConfirm = {
+                store.dispatch(
+                    "knowledgegraph",
+                    Action(
+                        ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_PERSONA,
+                        buildJsonObject { put("personaId", personaId) },
+                    ),
+                )
+                dismissPersonaDelete()
             },
-            dismissButton = { Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", JsonNull) })) }) { Text("Cancel") } }
+            onDismiss = dismissPersonaDelete,
         )
     }
     kgState.holonIdToDelete?.let { holonId ->
         val holonName = kgState.holons[holonId]?.header?.name ?: "Unknown Holon"
-        AlertDialog(
-            onDismissRequest = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) },
-            title = { Text("Delete Holon?") },
-            text = { Text("Are you sure you want to permanently delete '$holonName'? This will also delete all of its children.") },
-            confirmButton = {
-                Button(
-                    onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON, buildJsonObject { put("holonId", holonId) })) },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+        val dismissHolonDelete: () -> Unit = {
+            store.dispatch(
+                "knowledgegraph",
+                Action(
+                    ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE,
+                    buildJsonObject { put("holonId", null as String?) },
+                ),
+            )
+        }
+        ConfirmDestructiveDialog(
+            title = "Delete Holon?",
+            message = "Permanently delete '$holonName'? This will also delete all of its children.",
+            onConfirm = {
+                store.dispatch(
+                    "knowledgegraph",
+                    Action(
+                        ActionRegistry.Names.KNOWLEDGEGRAPH_DELETE_HOLON,
+                        buildJsonObject { put("holonId", holonId) },
+                    ),
+                )
+                dismissHolonDelete()
             },
-            dismissButton = { Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", null as String?) })) }) { Text("Cancel") } }
+            onDismiss = dismissHolonDelete,
         )
     }
     kgState.holonIdToRename?.let { holonId ->
@@ -399,6 +425,7 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
         return
     }
 
+    val isPersona = holon.header.type == "AI_Persona_Root"
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -406,19 +433,44 @@ private fun HolonDetailView(holon: Holon?, store: Store, modifier: Modifier = Mo
                 title = { Text(holon.header.name, style = MaterialTheme.typography.titleMedium) },
                 actions = {
                     Button(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Edit") }
-                    Spacer(Modifier.width(8.dp))
-                    if (holon.header.type == "AI_Persona_Root") {
-                        Button(
-                            onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE, buildJsonObject { put("personaId", holon.header.id) })) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) { Text("Delete Persona") }
-                    } else {
-                        OutlinedButton(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
+                    if (!isPersona) {
                         Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE, buildJsonObject { put("holonId", holon.header.id) })) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) { Text("Delete") }
+                        OutlinedButton(onClick = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_RENAME, buildJsonObject { put("holonId", holon.header.id) })) }) { Text("Rename") }
+                    }
+                    // Destructive action lives in the kebab, not inline.
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DangerDropdownMenuItem(
+                                label = if (isPersona) "Delete Persona" else "Delete Holon",
+                                onClick = {
+                                    menuExpanded = false
+                                    if (isPersona) {
+                                        store.dispatch(
+                                            "knowledgegraph",
+                                            Action(
+                                                ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PERSONA_TO_DELETE,
+                                                buildJsonObject { put("personaId", holon.header.id) },
+                                            ),
+                                        )
+                                    } else {
+                                        store.dispatch(
+                                            "knowledgegraph",
+                                            Action(
+                                                ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_DELETE,
+                                                buildJsonObject { put("holonId", holon.header.id) },
+                                            ),
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             )
