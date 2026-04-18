@@ -2,6 +2,8 @@ package asareon.raam.feature.core
 
 import asareon.raam.core.Action
 import asareon.raam.core.Identity
+import asareon.raam.core.PermissionGrant
+import asareon.raam.core.PermissionLevel
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.fakes.FakePlatformDependencies
 import asareon.raam.test.TestEnvironment
@@ -366,7 +368,20 @@ class CoreFeatureT3PeerTest {
         val harness = TestEnvironment.create()
             .withFeature(CoreFeature(platform))
             .build(platform = platform)
-        seedIdentities(harness.store, "core", "agent")
+        // Seed "agent" with core:identity so its descendants inherit the capability
+        // to register further children (required for the 3rd-level registration below).
+        seedIdentities(harness.store, "core",
+            extraRegistry = mapOf(
+                "agent" to Identity(
+                    uuid = null,
+                    localHandle = "agent",
+                    handle = "agent",
+                    name = "Agent",
+                    parentHandle = null,
+                    permissions = mapOf("core:identity" to PermissionGrant(PermissionLevel.YES))
+                )
+            )
+        )
 
         // ACT: Build a three-level tree:
         //   agent (feature, pre-seeded)

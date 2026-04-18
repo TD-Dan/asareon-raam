@@ -255,16 +255,18 @@ class AgentRuntimeFeatureT1CommandDispatchTest {
     }
 
     // ========================================================================
-    // Sandbox Rewrite + CorrelationId Injection
+    // CorrelationId Injection + Agent Attribution
     // ========================================================================
 
     /**
-     * Verifies that the domain action payload receives sandbox-rewritten paths
-     * AND the injected correlationId — both required for FileSystemFeature to
-     * route the response back to the correct agent with a matchable correlationId.
+     * Verifies the contract at this layer: the domain action payload receives
+     * the injected correlationId, and the original payload fields are preserved
+     * as-is. Path sandboxing is FileSystemFeature's responsibility (via
+     * getSandboxPathFor(originator)), so AgentRuntimeFeature must pass the
+     * clean relative path through unchanged and dispatch as the agent identity.
      */
     @Test
-    fun `ACTION_CREATED injects correlationId and sandbox path into domain action payload`() {
+    fun `ACTION_CREATED injects correlationId and preserves payload for downstream sandbox`() {
         val (feature, store, _) = createTestSetup()
 
         val agentState = AgentRuntimeState(
@@ -274,7 +276,10 @@ class AgentRuntimeFeatureT1CommandDispatchTest {
         val action = actionCreatedPayload(
             actionName = "filesystem.LIST",
             correlationId = "corr-99",
-            actionPayload = buildJsonObject { put("recursive", true) }
+            actionPayload = buildJsonObject {
+                put("path", "notes")
+                put("recursive", true)
+            }
         )
 
         feature.handleSideEffects(action, store, null, agentState)
@@ -284,17 +289,22 @@ class AgentRuntimeFeatureT1CommandDispatchTest {
         }
         assertNotNull(domainAction, "filesystem.LIST should be dispatched.")
 
+        // Dispatched as the agent identity so the Store guard + FileSystemFeature
+        // sandbox resolve to the correct {agentUuid}/workspace/ root.
+        assertTrue(domainAction.originator == agent.identityHandle.handle,
+            "Domain action must be attributed to the agent identity '${agent.identityHandle.handle}'. " +
+                    "Got: '${domainAction.originator}'")
+
         val payload = domainAction.payload!!
 
-        // correlationId should be injected
+        // correlationId must be injected so the targeted response can be matched.
         assertTrue(payload["correlationId"]?.jsonPrimitive?.contentOrNull == "corr-99",
             "correlationId must be injected into the domain action payload for response matching. " +
                     "Payload: $payload")
 
-        // Sandbox path should be rewritten to {agentId}/workspace
-        val path = payload["path"]?.jsonPrimitive?.contentOrNull ?: ""
-        assertTrue(path.contains("agent-1") && path.contains("workspace"),
-            "Path should be sandbox-rewritten to include agent UUID and workspace. " +
-                    "Got: '$path'")
+        // Original path is preserved verbatim — FileSystemFeature sandboxes it.
+        assertTrue(payload["path"]?.jsonPrimitive?.contentOrNull == "notes",
+            "Clean relative path must be preserved for downstream sandbox rewriting. " +
+                    "Payload: $payload")
     }
 }

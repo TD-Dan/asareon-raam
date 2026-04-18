@@ -136,11 +136,15 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             )
 
             // === PHASE 2: GATEWAY SUCCESS RESPONSE ===
+            // SovereignStrategy requires the SUCCESS_CODE token in the response to
+            // transition BOOTING → AWAKE. Without it, the strategy stays in BOOTING.
             harness.store.dispatch("gateway", Action(
                 name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
-                    put("rawContent", "Boot sequence complete. I am now awake and ready to serve.")
+                    put("rawContent",
+                        "${SovereignDefaults.SENTINEL_SUCCESS_TOKEN}: Boot sequence complete. " +
+                                "I am now awake and ready to serve.")
                     put("errorMessage", JsonNull)
                 },
                 targetRecipient = "agent"
@@ -167,7 +171,7 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
     }
 
     @Test
-    fun `sentinel failure halts without posting`() = runTest {
+    fun `sentinel failure stays in BOOTING and posts diagnostic`() = runTest {
         val feature = AgentRuntimeFeature(platform, scope)
 
         val harness = TestEnvironment.create()
@@ -190,36 +194,41 @@ class AgentRuntimeFeatureT2CognitiveCycleTest {
             harness.store.processedActions.clear()
 
             // Simulate a gateway failure response with sentinel failure token
+            val failureContent = "[${SovereignDefaults.SENTINEL_FAILURE_TOKEN}: NO_AGENT_PRESENT]"
             harness.store.dispatch("gateway", Action(
                 name = ActionRegistry.Names.GATEWAY_RETURN_RESPONSE,
                 payload = buildJsonObject {
                     put("correlationId", agentId)
-                    put("rawContent", "[${SovereignDefaults.SENTINEL_FAILURE_TOKEN}: NO_AGENT_PRESENT]")
+                    put("rawContent", failureContent)
                     put("errorMessage", JsonNull)
                 },
                 targetRecipient = "agent"
             ))
 
-            // ASSERT: No state update (remains BOOTING)
+            // ASSERT: No state update — SovereignStrategy keeps phase=BOOTING on failure
             val nvramUpdate = harness.processedActions.find { action ->
                 action.name == ActionRegistry.Names.AGENT_NVRAM_LOADED
             }
             assertNull(nvramUpdate, "Should NOT update NVRAM on sentinel failure")
 
-            // ASSERT: No content post (avatar cards are ok, but no agent response should be posted)
+            // ASSERT: The diagnostic response IS posted so the operator can see what's wrong.
+            // Per SovereignStrategy.postProcessResponse — failure returns PROCEED with
+            // displayHint="BOOTING", not HALT_AND_SILENCE.
             val sessionPost = harness.processedActions.find { action ->
                 action.name == ActionRegistry.Names.SESSION_POST &&
                         action.payload?.containsKey("message") == true
             }
-            assertNull(sessionPost, "Should NOT post to session on sentinel failure")
+            assertNotNull(sessionPost, "Failure diagnostic should be posted to session")
+            assertEquals(agent.identity.handle, sessionPost.payload?.get("senderId")?.jsonPrimitive?.content)
 
-            // ASSERT: Agent status set to IDLE with warning
-            val statusUpdates = harness.processedActions.filter { action ->
+            // ASSERT: Agent status set to IDLE with BOOTING display hint
+            val idleStatus = harness.processedActions.filter { action ->
                 action.name == ActionRegistry.Names.AGENT_SET_STATUS
-            }
-            val idleStatus = statusUpdates.lastOrNull()
-            assertNotNull(idleStatus, "Should update status on sentinel failure")
+            }.lastOrNull()
+            assertNotNull(idleStatus, "Should update status after sentinel failure turn")
             assertEquals("IDLE", idleStatus.payload?.get("status")?.jsonPrimitive?.content)
+            assertEquals("BOOTING", idleStatus.payload?.get("strategyDisplayHint")?.jsonPrimitive?.contentOrNull,
+                "Strategy display hint should reflect the still-BOOTING phase.")
         }
     }
 
