@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
+import asareon.raam.ui.theme.spacing
 import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -210,40 +213,50 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
 
     // --- Layout ---
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // --- Header ---
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("Session Manager", style = MaterialTheme.typography.headlineSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Hidden filter toggle — persisted via Settings feature
-                IconButton(onClick = {
-                    val newValue = !(sessionState?.hideHiddenInManager ?: true)
-                    store.dispatch("session", Action(ActionRegistry.Names.SETTINGS_UPDATE, buildJsonObject {
-                        put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
-                        put("value", newValue.toString())
-                    }))
-                }) {
-                    Icon(
-                        imageVector = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (hideHidden) "Show Hidden Sessions" else "Hide Hidden Sessions",
-                        tint = if (hideHidden) MaterialTheme.colorScheme.inverseOnSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Button(onClick = { store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE)) }) {
-                    Icon(Icons.Default.Add, contentDescription = "Create New Session", modifier = Modifier.padding(end = 8.dp))
-                    Text("New Session")
-                }
-            }
-        }
-        HorizontalDivider()
+    Column(modifier = Modifier.fillMaxSize()) {
+        RaamTopBarHeader(
+            title = "Session Manager",
+            actions = listOf(
+                HeaderAction(
+                    id = "new-session",
+                    label = "New Session",
+                    icon = Icons.Default.Add,
+                    priority = 30,
+                    prominent = true,
+                    onClick = {
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
+                    },
+                ),
+                HeaderAction(
+                    id = "toggle-show-hidden",
+                    label = if (hideHidden) "Show hidden sessions" else "Hide hidden sessions",
+                    icon = if (hideHidden) Icons.Default.VisibilityOff
+                        else Icons.Default.Visibility,
+                    priority = 10,
+                    onClick = {
+                        val newValue = !(sessionState?.hideHiddenInManager ?: true)
+                        store.dispatch(
+                            "session",
+                            Action(
+                                ActionRegistry.Names.SETTINGS_UPDATE,
+                                buildJsonObject {
+                                    put("key", SessionState.SETTING_HIDE_HIDDEN_MANAGER)
+                                    put("value", newValue.toString())
+                                },
+                            ),
+                        )
+                    },
+                ),
+            ),
+        )
 
         // --- Session List ---
+        val listPadding = MaterialTheme.spacing.screenEdge
         if (reorderableList.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(listPadding),
+                contentAlignment = Alignment.Center
+            ) {
                 Text("No sessions found. Create one to begin.")
             }
         } else {
@@ -267,7 +280,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
 
             LazyColumn(
                 state = lazyListState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(horizontal = listPadding),
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

@@ -73,7 +73,7 @@
 
 - 'auto-os(default)/dark/light/' mode switch in settings
 
-- unified identity editor for all identities (name, color, icon etc.)
+- unified identity editor for all identities (name, color, icon etc.). This should also pop up when creating new sessions, agents, scripts, users etc.
 
 ## Bugs
 - BUG: Agent identities are not removed from core when agent is deleted

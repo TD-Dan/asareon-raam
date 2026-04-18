@@ -1,10 +1,14 @@
 package asareon.raam.ui.components.topbar
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,8 +19,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** Width reserved per `IconButton` (and the kebab itself). M3 touch-target. */
+/** Width reserved per plain `IconButton` (and the kebab itself). M3 touch-target. */
 val HeaderActionSlotWidth = 48.dp
+
+/**
+ * Approximate slot-cost of a [HeaderAction.prominent] action — a
+ * `FilledTonalButton` with icon + label takes roughly three icon-button widths.
+ * Used by [computeHeaderActionLayout] to budget how many fit in the bar.
+ */
+private const val ProminentActionSlots = 3
+
+private fun HeaderAction.slotCost(): Int =
+    if (prominent) ProminentActionSlots else 1
 
 /**
  * Pure-data result of splitting a set of [HeaderAction]s into a visible row
@@ -36,6 +50,9 @@ internal data class HeaderActionLayout(
  *  - priority < 0 → always overflow.
  *  - priority ≥ 0 → candidate for visible row; highest priority wins, ties
  *    break by input order.
+ *  - Each action consumes slot(s): 1 for a plain icon button, 3 for a
+ *    prominent one (approximating the width of a labelled
+ *    [FilledTonalButton]).
  *  - If any action would be hidden, one visible slot is reserved for the
  *    kebab; the kebab then holds everything that didn't fit.
  *
@@ -60,10 +77,19 @@ internal fun computeHeaderActionLayout(
         .map { it.value }
 
     val slots = maxVisibleSlots.coerceAtLeast(0)
-    val allFit = candidates.size <= slots && alwaysOverflow.isEmpty()
-    val visibleBudget = if (allFit) slots else (slots - 1).coerceAtLeast(0)
-    val visible = candidates.take(visibleBudget)
-    val overflow = candidates.drop(visibleBudget) + alwaysOverflow
+    val totalCost = candidates.sumOf { it.slotCost() }
+    val allFit = totalCost <= slots && alwaysOverflow.isEmpty()
+    val costBudget = if (allFit) slots else (slots - 1).coerceAtLeast(0)
+
+    val visible = mutableListOf<HeaderAction>()
+    var used = 0
+    for (action in candidates) {
+        val cost = action.slotCost()
+        if (used + cost > costBudget) break
+        visible.add(action)
+        used += cost
+    }
+    val overflow = candidates.drop(visible.size) + alwaysOverflow
 
     return HeaderActionLayout(visible, overflow)
 }
@@ -90,17 +116,37 @@ fun ResponsiveActions(
 
     Row(modifier = modifier) {
         layout.visible.forEach { action ->
-            TooltipIconButton(
-                label = action.label,
-                onClick = action.onClick,
-                enabled = action.enabled,
-            ) {
-                Icon(action.icon, contentDescription = action.label)
+            if (action.prominent) {
+                ProminentActionButton(action)
+            } else {
+                TooltipIconButton(
+                    label = action.label,
+                    onClick = action.onClick,
+                    enabled = action.enabled,
+                ) {
+                    Icon(action.icon, contentDescription = action.label)
+                }
             }
         }
         if (layout.kebabVisible) {
             OverflowKebab(layout.overflow)
         }
+    }
+}
+
+@Composable
+private fun ProminentActionButton(action: HeaderAction) {
+    FilledTonalButton(
+        onClick = action.onClick,
+        enabled = action.enabled,
+    ) {
+        Icon(
+            imageVector = action.icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(action.label)
     }
 }
 

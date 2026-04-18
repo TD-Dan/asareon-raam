@@ -17,12 +17,17 @@ import kotlin.test.assertTrue
  */
 class UiT1ResponsiveActionsTest {
 
-    private fun action(id: String, priority: Int = 0): HeaderAction =
+    private fun action(
+        id: String,
+        priority: Int = 0,
+        prominent: Boolean = false,
+    ): HeaderAction =
         HeaderAction(
             id = id,
             label = id,
             icon = Icons.Default.Add,
             priority = priority,
+            prominent = prominent,
             onClick = {},
         )
 
@@ -179,5 +184,84 @@ class UiT1ResponsiveActionsTest {
         // Overflow = [low_pos (spilled candidate), overflow_neg (always-overflow)].
         assertEquals(listOf("high_pos"), layout.visible.map { it.id })
         assertEquals(listOf("low_pos", "overflow_neg"), layout.overflow.map { it.id })
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Prominent actions (variable slot cost)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun prominent_action_costs_three_slots() {
+        // 5 slots, one prominent (3) + two regulars (2) = 5 total → all fit.
+        val actions = listOf(
+            action("prom", priority = 10, prominent = true),
+            action("a"),
+            action("b"),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 5)
+
+        assertEquals(listOf("prom", "a", "b"), layout.visible.map { it.id })
+        assertFalse(layout.kebabVisible)
+    }
+
+    @Test
+    fun prominent_that_does_not_fit_spills_to_kebab() {
+        // 4 slots, prominent (3) + 2 regulars (2) = 5 total → kebab needed.
+        // costBudget = 3 (one slot reserved for kebab). Prominent fits (3 ≤ 3),
+        // but nothing else does.
+        val actions = listOf(
+            action("prom", priority = 10, prominent = true),
+            action("a", priority = 5),
+            action("b", priority = 5),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 4)
+
+        assertEquals(listOf("prom"), layout.visible.map { it.id })
+        assertEquals(listOf("a", "b"), layout.overflow.map { it.id })
+        assertTrue(layout.kebabVisible)
+    }
+
+    @Test
+    fun prominent_too_wide_for_budget_goes_entirely_to_overflow() {
+        // 2 slots, prominent (3) — can't fit, goes to kebab.
+        val actions = listOf(action("prom", priority = 10, prominent = true))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 2)
+
+        assertTrue(layout.visible.isEmpty())
+        assertEquals(listOf("prom"), layout.overflow.map { it.id })
+        assertTrue(layout.kebabVisible)
+    }
+
+    @Test
+    fun greedy_walk_stops_at_prominent_even_if_smaller_items_would_fit_later() {
+        // Contract: priority order wins over fit-packing. A prominent high-
+        // priority action that doesn't fit stops the walk — we do NOT skip it
+        // to pack smaller lower-priority items. Users shouldn't be surprised
+        // by "Add" appearing but "Permissions" (higher priority) missing.
+        val actions = listOf(
+            action("prom", priority = 10, prominent = true),
+            action("small", priority = 5),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 3)
+
+        // costBudget = 2 (kebab reserved). Prominent (3) > 2 → break.
+        // "small" (1) would fit (1 ≤ 2), but we don't revisit after a break.
+        assertTrue(layout.visible.isEmpty())
+        assertEquals(listOf("prom", "small"), layout.overflow.map { it.id })
+    }
+
+    @Test
+    fun prominent_with_exact_fit_does_not_reserve_kebab() {
+        // 3 slots, single prominent (3) → exact fit, no kebab.
+        val actions = listOf(action("prom", priority = 5, prominent = true))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 3)
+
+        assertEquals(listOf("prom"), layout.visible.map { it.id })
+        assertFalse(layout.kebabVisible)
     }
 }
