@@ -85,6 +85,9 @@ fun Identity.toDraft(): IdentityDraft = IdentityDraft(
  * @param iconCatalog Which IconRegistry keys to show in the grid. Defaults
  *   to [IconRegistry.agentIcons] — callers may pass a narrower set.
  * @param nameLabel Field label for the name input. Defaults to "Name".
+ * @param nameEditable Whether the name field accepts input. Pass `false` for
+ *   asset types whose identity rename requires a side-effect chain that
+ *   isn't implemented yet (e.g. Lua script files on disk).
  */
 @Composable
 fun IdentityFieldsSection(
@@ -93,6 +96,7 @@ fun IdentityFieldsSection(
     modifier: Modifier = Modifier,
     iconCatalog: List<String> = IconRegistry.agentIcons,
     nameLabel: String = "Name",
+    nameEditable: Boolean = true,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -103,6 +107,7 @@ fun IdentityFieldsSection(
             onValueChange = { onDraftChange(draft.copy(name = it)) },
             label = { Text(nameLabel) },
             singleLine = true,
+            enabled = nameEditable,
             modifier = Modifier.fillMaxWidth(),
         )
         ColorRow(draft, onDraftChange)
