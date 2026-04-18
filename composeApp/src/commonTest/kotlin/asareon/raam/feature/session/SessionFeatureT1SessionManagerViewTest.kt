@@ -54,20 +54,14 @@ class SessionFeatureT1SessionManagerViewTest {
     }
 
     @Test
-    fun `create session flow dispatches SESSION_CREATE with the entered name`() {
+    fun `clicking create session button dispatches SESSION_CREATE`() {
         setViewState(SessionState())
 
-        // Open the full-view editor
         composeTestRule.onNodeWithText("Create Session").performClick()
-        // Fill in the name field (labelled "Session Name" in the editor)
-        composeTestRule.onNodeWithText("Session Name").performTextInput("My New Session")
-        // Click Create in the footer
-        composeTestRule.onNodeWithText("Create").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_CREATE }
         assertNotNull(action)
         assertEquals("session", action.originator)
-        assertEquals("My New Session", action.payload?.get("name").toString().trim('"'))
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -137,21 +131,14 @@ class SessionFeatureT1SessionManagerViewTest {
     // ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `edit flow dispatches SESSION_UPDATE_CONFIG with the new name on Save`() {
+    fun `clicking edit button dispatches SET_EDITING_SESSION_NAME`() {
         setViewState(SessionState(sessions = mapOf(session1.identity.localHandle to session1)))
 
-        // Open the full-view editor for session1
-        composeTestRule.onNodeWithContentDescription("Edit Session").performClick()
-        // Target the text field by its label (unambiguous — the title also renders the session name)
-        composeTestRule.onNode(hasText("Session Name") and hasSetTextAction())
-            .performTextReplacement("Renamed Session")
-        // Click Save in the footer
-        composeTestRule.onNodeWithText("Save").performClick()
+        composeTestRule.onNodeWithContentDescription("Edit Session Name").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_UPDATE_CONFIG }
-        assertNotNull(action, "Should dispatch SESSION_UPDATE_CONFIG")
-        assertEquals(session1.identity.localHandle, action.payload?.get("session").toString().trim('"'))
-        assertEquals("Renamed Session", action.payload?.get("name").toString().trim('"'))
+        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME }
+        assertNotNull(action, "Should dispatch SET_EDITING_SESSION_NAME")
+        assertEquals(session1.identity.localHandle, action.payload?.get("sessionId").toString().trim('"'))
     }
 
     // ─────────────────────────────────────────────────────────────

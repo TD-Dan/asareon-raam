@@ -3,6 +3,7 @@ package asareon.raam.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.computeHeaderActionLayout
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -20,14 +21,14 @@ class UiT1ResponsiveActionsTest {
     private fun action(
         id: String,
         priority: Int = 0,
-        prominent: Boolean = false,
+        emphasis: HeaderActionEmphasis = HeaderActionEmphasis.Icon,
     ): HeaderAction =
         HeaderAction(
             id = id,
             label = id,
             icon = Icons.Default.Add,
             priority = priority,
-            prominent = prominent,
+            emphasis = emphasis,
             onClick = {},
         )
 
@@ -194,7 +195,7 @@ class UiT1ResponsiveActionsTest {
     fun prominent_action_costs_three_slots() {
         // 5 slots, one prominent (3) + two regulars (2) = 5 total → all fit.
         val actions = listOf(
-            action("prom", priority = 10, prominent = true),
+            action("prom", priority = 10, emphasis = HeaderActionEmphasis.Prominent),
             action("a"),
             action("b"),
         )
@@ -211,7 +212,7 @@ class UiT1ResponsiveActionsTest {
         // costBudget = 3 (one slot reserved for kebab). Prominent fits (3 ≤ 3),
         // but nothing else does.
         val actions = listOf(
-            action("prom", priority = 10, prominent = true),
+            action("prom", priority = 10, emphasis = HeaderActionEmphasis.Prominent),
             action("a", priority = 5),
             action("b", priority = 5),
         )
@@ -226,7 +227,9 @@ class UiT1ResponsiveActionsTest {
     @Test
     fun prominent_too_wide_for_budget_goes_entirely_to_overflow() {
         // 2 slots, prominent (3) — can't fit, goes to kebab.
-        val actions = listOf(action("prom", priority = 10, prominent = true))
+        val actions = listOf(
+            action("prom", priority = 10, emphasis = HeaderActionEmphasis.Prominent),
+        )
 
         val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 2)
 
@@ -242,7 +245,7 @@ class UiT1ResponsiveActionsTest {
         // to pack smaller lower-priority items. Users shouldn't be surprised
         // by "Add" appearing but "Permissions" (higher priority) missing.
         val actions = listOf(
-            action("prom", priority = 10, prominent = true),
+            action("prom", priority = 10, emphasis = HeaderActionEmphasis.Prominent),
             action("small", priority = 5),
         )
 
@@ -257,11 +260,73 @@ class UiT1ResponsiveActionsTest {
     @Test
     fun prominent_with_exact_fit_does_not_reserve_kebab() {
         // 3 slots, single prominent (3) → exact fit, no kebab.
-        val actions = listOf(action("prom", priority = 5, prominent = true))
+        val actions = listOf(
+            action("prom", priority = 5, emphasis = HeaderActionEmphasis.Prominent),
+        )
 
         val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 3)
 
         assertEquals(listOf("prom"), layout.visible.map { it.id })
+        assertFalse(layout.kebabVisible)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Create emphasis: always sorts first, last to spill
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun create_sorts_first_even_with_lower_priority_than_prominent() {
+        // Create has priority 0 but emphasis beats prominent's priority 100.
+        val actions = listOf(
+            action("prom", priority = 100, emphasis = HeaderActionEmphasis.Prominent),
+            action("create", priority = 0, emphasis = HeaderActionEmphasis.Create),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 10)
+
+        assertEquals(listOf("create", "prom"), layout.visible.map { it.id })
+    }
+
+    @Test
+    fun create_is_last_to_spill_when_bar_narrows() {
+        // 4 slots, kebab reserved → costBudget=3. Create (3) fits first; every
+        // other candidate — prominent AND icons — spills to kebab.
+        val actions = listOf(
+            action("prom", priority = 100, emphasis = HeaderActionEmphasis.Prominent),
+            action("icon_hi", priority = 50),
+            action("create", priority = 0, emphasis = HeaderActionEmphasis.Create),
+            action("icon_lo", priority = 10),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 4)
+
+        assertEquals(listOf("create"), layout.visible.map { it.id })
+        assertEquals(listOf("prom", "icon_hi", "icon_lo"), layout.overflow.map { it.id })
+    }
+
+    @Test
+    fun multiple_create_actions_sort_among_themselves_by_priority() {
+        val actions = listOf(
+            action("c_low", priority = 1, emphasis = HeaderActionEmphasis.Create),
+            action("c_high", priority = 5, emphasis = HeaderActionEmphasis.Create),
+            action("icon", priority = 100),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 10)
+
+        // Both Creates come before the high-priority icon; within Creates,
+        // priority desc so c_high first.
+        assertEquals(listOf("c_high", "c_low", "icon"), layout.visible.map { it.id })
+    }
+
+    @Test
+    fun create_costs_three_slots_like_prominent() {
+        // Same budget math — Create is labelled, so it takes 3 slots.
+        val actions = listOf(action("create", emphasis = HeaderActionEmphasis.Create))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 3)
+
+        assertEquals(listOf("create"), layout.visible.map { it.id })
         assertFalse(layout.kebabVisible)
     }
 }

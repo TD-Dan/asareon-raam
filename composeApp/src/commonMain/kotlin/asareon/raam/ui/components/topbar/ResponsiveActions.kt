@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -27,14 +28,15 @@ import asareon.raam.ui.theme.spacing
 val HeaderActionSlotWidth = 48.dp
 
 /**
- * Approximate slot-cost of a [HeaderAction.prominent] action — a
- * `FilledTonalButton` with icon + label takes roughly three icon-button widths.
- * Used by [computeHeaderActionLayout] to budget how many fit in the bar.
+ * Approximate slot-cost of a labelled `FilledTonalButton` ([HeaderActionEmphasis.Prominent]
+ * or [HeaderActionEmphasis.Create]) — about three icon-button widths.
  */
-private const val ProminentActionSlots = 3
+private const val LabelledButtonSlots = 3
 
-private fun HeaderAction.slotCost(): Int =
-    if (prominent) ProminentActionSlots else 1
+private fun HeaderAction.slotCost(): Int = when (emphasis) {
+    HeaderActionEmphasis.Icon -> 1
+    HeaderActionEmphasis.Prominent, HeaderActionEmphasis.Create -> LabelledButtonSlots
+}
 
 /**
  * Pure-data result of splitting a set of [HeaderAction]s into a visible row
@@ -50,13 +52,15 @@ internal data class HeaderActionLayout(
 }
 
 /**
- * Split [actions] into visible vs. overflow following the priority rules:
+ * Split [actions] into visible vs. overflow:
  *  - priority < 0 → always overflow.
- *  - priority ≥ 0 → candidate for visible row; highest priority wins, ties
- *    break by input order.
- *  - Each action consumes slot(s): 1 for a plain icon button, 3 for a
- *    prominent one (approximating the width of a labelled
- *    [FilledTonalButton]).
+ *  - priority ≥ 0 → candidate for visible row.
+ *  - Sort order: [HeaderActionEmphasis.Create] always sorts before other
+ *    emphases, then by priority desc, then by input order. This puts the
+ *    create-action leftmost in the visible row and makes it the last to
+ *    spill into the kebab when the bar narrows.
+ *  - Slot cost: 1 for an icon-emphasis action, 3 for Prominent or Create
+ *    (approximating the width of a labelled button).
  *  - If any action would be hidden, one visible slot is reserved for the
  *    kebab; the kebab then holds everything that didn't fit.
  *
@@ -75,7 +79,11 @@ internal fun computeHeaderActionLayout(
         .filter { it.priority >= 0 }
         .withIndex()
         .sortedWith(
-            compareByDescending<IndexedValue<HeaderAction>> { it.value.priority }
+            // Create wins first no matter the declared priority.
+            compareByDescending<IndexedValue<HeaderAction>> {
+                if (it.value.emphasis == HeaderActionEmphasis.Create) 1 else 0
+            }
+                .thenByDescending { it.value.priority }
                 .thenBy { it.index }
         )
         .map { it.value }
@@ -99,10 +107,10 @@ internal fun computeHeaderActionLayout(
 }
 
 /**
- * Renders [actions] as a row of `IconButton`s, spilling the lowest-priority
+ * Renders [actions] as a row of buttons, spilling the lowest-priority
  * actions into an overflow kebab when [maxVisibleSlots] is exceeded.
  *
- * See [computeHeaderActionLayout] for the priority rules.
+ * See [computeHeaderActionLayout] for the sort + overflow rules.
  *
  * @param maxVisibleSlots The maximum number of icon-button slots the caller
  *   wants rendered in the row (including the kebab if present). Pass
@@ -124,16 +132,24 @@ fun ResponsiveActions(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         layout.visible.forEach { action ->
-            if (action.prominent) {
-                ProminentActionButton(action)
-            } else {
-                TooltipIconButton(
+            when (action.emphasis) {
+                HeaderActionEmphasis.Icon -> TooltipIconButton(
                     label = action.label,
                     onClick = action.onClick,
                     enabled = action.enabled,
                 ) {
                     Icon(action.icon, contentDescription = action.label)
                 }
+                HeaderActionEmphasis.Prominent -> LabelledActionButton(
+                    action = action,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                HeaderActionEmphasis.Create -> LabelledActionButton(
+                    action = action,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
             }
         }
         if (layout.kebabVisible) {
@@ -143,10 +159,18 @@ fun ResponsiveActions(
 }
 
 @Composable
-private fun ProminentActionButton(action: HeaderAction) {
+private fun LabelledActionButton(
+    action: HeaderAction,
+    containerColor: androidx.compose.ui.graphics.Color,
+    contentColor: androidx.compose.ui.graphics.Color,
+) {
     FilledTonalButton(
         onClick = action.onClick,
         enabled = action.enabled,
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
     ) {
         Icon(
             imageVector = action.icon,

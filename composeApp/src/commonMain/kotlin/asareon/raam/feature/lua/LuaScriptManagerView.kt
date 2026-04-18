@@ -27,6 +27,7 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.ui.theme.spacing
@@ -72,11 +73,11 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
             }),
             actions = listOf(
                 HeaderAction(
-                    id = "new-script",
-                    label = "New Script",
+                    id = "create-script",
+                    label = "Create Script",
                     icon = Icons.Default.Add,
                     priority = 30,
-                    prominent = true,
+                    emphasis = HeaderActionEmphasis.Create,
                     onClick = { showCreateDialog = true },
                 ),
                 HeaderAction(
