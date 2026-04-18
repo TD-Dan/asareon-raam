@@ -293,19 +293,15 @@ class WorkspaceContextFormatterT1Test {
     fun `buildIndexTree renders empty workspace message`() {
         val index = WorkspaceContextFormatter.buildIndexTree(emptyList(), emptyMap())
 
-        assertTrue(index.contains("WORKSPACE_INDEX"))
-        assertTrue(index.contains("Workspace is empty."))
-        assertTrue(index.contains("END OF WORKSPACE_INDEX"))
+        // The empty-workspace contract is simply that the message mentions the workspace is empty.
+        // The WORKSPACE_INDEX / END-OF wrappers are no longer emitted — the tree is embedded
+        // directly into the WORKSPACE_FILES group header by buildFilesSections.
+        assertTrue(index.contains("empty", ignoreCase = true),
+            "Empty workspace output should mention emptiness, got: '$index'")
     }
 
-    @Test
-    fun `buildIndexTree shows summary line with file and directory counts`() {
-        val index = WorkspaceContextFormatter.buildIndexTree(testEntries, emptyMap())
-
-        // 6 files, 3 directories
-        assertTrue(index.contains("6 files"), "Should show file count")
-        assertTrue(index.contains("3 directories"), "Should show directory count")
-    }
+    // (summary-count assertions live under the `buildFilesSections` section below —
+    //  see `buildFilesSections header contains file and directory counts`)
 
     @Test
     fun `buildIndexTree all collapsed shows root entries with COLLAPSED tags`() {
@@ -399,17 +395,8 @@ class WorkspaceContextFormatterT1Test {
         assertTrue(index.contains("    helpers.kt"), "Depth-2 entries should have 4-space indent")
     }
 
-    @Test
-    fun `buildIndexTree shows expanded file count in summary`() {
-        val overrides = mapOf(
-            "ws:src/" to CollapseState.EXPANDED,
-            "ws:src/main.kt" to CollapseState.EXPANDED,
-            "ws:config.yaml" to CollapseState.EXPANDED
-        )
-        val index = WorkspaceContextFormatter.buildIndexTree(testEntries, overrides)
-
-        assertTrue(index.contains("2 files open"), "Should count expanded files in summary")
-    }
+    // (expanded-count assertion lives under the `buildFilesSections` section below —
+    //  see `buildFilesSections header shows expanded file count` at that section)
 
     // =========================================================================
     // buildFilesSections — tree structure

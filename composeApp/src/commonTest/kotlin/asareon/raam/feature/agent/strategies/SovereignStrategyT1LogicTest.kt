@@ -176,86 +176,137 @@ class SovereignStrategyT1LogicTest {
     // 8. buildPrompt
     // =========================================================================
 
-    @Test fun `buildPrompt should include agent name and identity section with PROTECTED badge`() {
+    @Test fun `buildPrompt identity section is emitted as PROTECTED and echoes agent name`() {
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
-        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
-        assertTrue(prompt.contains(agentName)); assertTrue(prompt.contains("YOUR IDENTITY AND ROLE")); assertTrue(prompt.contains("[PROTECTED]"))
+        val builder = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState())
+
+        val identity = builder.findSection("YOUR IDENTITY AND ROLE")
+        assertNotNull(identity, "identity section should be emitted")
+        assertTrue(identity.isProtected, "identity section should be marked PROTECTED")
+        assertTrue(identity.content.contains(agentName), "identity should echo the injected agent name")
     }
 
     @Test fun `buildPrompt should include constitution in PROTECTED section`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "Supreme Law Here", "bootloader" to "B"), gatheredContextKeys = emptySet())
-        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
-        assertTrue(prompt.contains("CONSTITUTION")); assertTrue(prompt.contains("Supreme Law Here"))
+        val sentinel = "SENTINEL_CONSTITUTION_${kotlin.random.Random.nextInt()}"
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to sentinel, "bootloader" to "B"), gatheredContextKeys = emptySet())
+        val builder = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState())
+
+        val constitution = builder.findSection("CONSTITUTION")
+        assertNotNull(constitution, "constitution section should be emitted")
+        assertTrue(constitution.isProtected, "constitution should be PROTECTED")
+        assertTrue(constitution.content.contains(sentinel), "constitution content should echo the injected resource")
     }
 
     @Test fun `buildPrompt should include NVRAM when AWAKE`() {
         val state = buildJsonObject { put("phase", "AWAKE"); put("currentTask", "testing"); put("operationalPosture", "ELEVATED"); put("turnCount", 5) }
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
-        val prompt = SovereignStrategy.buildPrompt(ctx, state).renderForTest()
-        assertTrue(prompt.contains("CONTROL REGISTERS")); assertTrue(prompt.contains("Phase: AWAKE"))
-        assertTrue(prompt.contains("Current Task: testing")); assertTrue(prompt.contains("Turn Count: 5"))
+        val builder = SovereignStrategy.buildPrompt(ctx, state)
+
+        val nvram = builder.findSection("CONTROL REGISTERS (NVRAM)")
+        assertNotNull(nvram, "NVRAM section should be emitted in AWAKE phase")
+        assertTrue(nvram.content.contains("Phase: AWAKE"), "should render phase from state")
+        assertTrue(nvram.content.contains("Current Task: testing"), "should render currentTask from state")
+        assertTrue(nvram.content.contains("Turn Count: 5"), "should render turnCount from state")
     }
 
     @Test fun `buildPrompt should omit NVRAM when BOOTING`() {
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
-        assertFalse(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("CONTROL REGISTERS"))
+        val builder = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState())
+        assertNull(builder.findSection("CONTROL REGISTERS (NVRAM)"),
+            "NVRAM section should be omitted in BOOTING phase")
     }
 
     @Test fun `buildPrompt should include private session routing section`() {
         val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"), gatheredContextKeys = emptySet())
-        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
-        assertTrue(prompt.contains("PRIVATE SESSION ROUTING")); assertTrue(prompt.contains("session.POST"))
+        val builder = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState())
+
+        val routing = builder.findSection("PRIVATE SESSION ROUTING")
+        assertNotNull(routing, "private session routing section should be emitted")
+        assertTrue(routing.content.contains("session.POST"),
+            "routing section should instruct the agent to use session.POST")
     }
 
     @Test fun `buildPrompt should include bootloader only when BOOTING`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "<boot_sentinel_protocol>CHECK</boot_sentinel_protocol>"), gatheredContextKeys = emptySet())
-        assertTrue(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("<boot_sentinel_protocol>"))
-        assertTrue(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("BOOT SENTINEL"))
+        val sentinel = "SENTINEL_BOOTLOADER_${kotlin.random.Random.nextInt()}"
+        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to sentinel), gatheredContextKeys = emptySet())
+
+        val booting = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState())
+        val bootSection = booting.findSection("BOOT SENTINEL")
+        assertNotNull(bootSection, "bootloader should appear as BOOT SENTINEL section when BOOTING")
+        assertTrue(bootSection.content.contains(sentinel),
+            "bootloader section should echo the injected bootloader resource")
+
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
-        assertFalse(SovereignStrategy.buildPrompt(ctx, awake).renderForTest().contains("<boot_sentinel_protocol>"))
-        assertFalse(SovereignStrategy.buildPrompt(ctx, awake).renderForTest().contains("BOOT SENTINEL"))
+        val awakeBuilder = SovereignStrategy.buildPrompt(ctx, awake)
+        assertNull(awakeBuilder.findSection("BOOT SENTINEL"),
+            "bootloader section should be omitted when AWAKE")
     }
 
-    @Test fun `buildPrompt should include HKG navigation when AWAKE and HKG present`() {
+    @Test fun `buildPrompt reserves HKG gathered slot regardless of phase`() {
+        // Strategy contract: HKG slot is always reserved via place("HOLON_KNOWLEDGE_GRAPH").
+        // Whether the pipeline has gathered HKG content, and whether navigation text is
+        // emitted, are pipeline concerns — not this strategy's.
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX"))
-        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
-        assertTrue(prompt.contains("HKG NAVIGATION")); assertTrue(prompt.contains("CONTEXT_UNCOLLAPSE"))
+        val ctx = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
+            gatheredContextKeys = emptySet()
+        )
+        assertTrue(SovereignStrategy.buildPrompt(ctx, awake).hasGathered("HOLON_KNOWLEDGE_GRAPH"),
+            "AWAKE: HKG slot should be reserved")
+        assertTrue(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).hasGathered("HOLON_KNOWLEDGE_GRAPH"),
+            "BOOTING: HKG slot should still be reserved (strategy is phase-agnostic for gathered slots)")
     }
 
-    @Test fun `buildPrompt should omit HKG navigation when BOOTING`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX"))
-        assertFalse(SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest().contains("HKG NAVIGATION"))
-    }
-
-    @Test fun `buildPrompt should place HKG before other gathered contexts`() {
+    @Test fun `buildPrompt places HKG before the everythingElse sink`() {
+        // Strategy orders: sessions() → place(HKG) → everythingElse(). Any unlisted gathered key
+        // (MULTI_AGENT_CONTEXT, AVAILABLE_ACTIONS, etc.) flows through the RemainingGathered sink
+        // and renders after HKG. That's the strategy-level ordering contract.
         val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContextKeys = setOf("AVAILABLE_ACTIONS", "HOLON_KNOWLEDGE_GRAPH_INDEX", "HOLON_KNOWLEDGE_GRAPH_FILES"))
-        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
-        assertTrue(prompt.indexOf("[GATHERED:HOLON_KNOWLEDGE_GRAPH_INDEX]") < prompt.indexOf("[GATHERED:AVAILABLE_ACTIONS]"))
-        assertTrue(prompt.indexOf("[GATHERED:HOLON_KNOWLEDGE_GRAPH_FILES]") < prompt.indexOf("[GATHERED:AVAILABLE_ACTIONS]"))
+        val ctx = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
+            gatheredContextKeys = setOf("AVAILABLE_ACTIONS", "MULTI_AGENT_CONTEXT")
+        )
+        val builder = SovereignStrategy.buildPrompt(ctx, awake)
+
+        val hkgIdx = builder.sections.indexOfFirst {
+            it is PromptSection.GatheredRef && it.key == "HOLON_KNOWLEDGE_GRAPH"
+        }
+        val sinkIdx = builder.sections.indexOfFirst { it is PromptSection.RemainingGathered }
+
+        assertTrue(hkgIdx >= 0, "HKG slot should be present")
+        assertTrue(sinkIdx >= 0, "everythingElse sink should be present")
+        assertTrue(hkgIdx < sinkIdx,
+            "HKG slot (idx=$hkgIdx) should come before the everythingElse sink (idx=$sinkIdx)")
     }
 
-    @Test fun `buildPrompt should include multi-agent context before other gathered contexts`() {
-        val awake = buildJsonObject { put("phase", "AWAKE"); put("turnCount", 1) }
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
-            gatheredContextKeys = setOf("MULTI_AGENT_CONTEXT", "AVAILABLE_ACTIONS"))
-        val prompt = SovereignStrategy.buildPrompt(ctx, awake).renderForTest()
-        assertTrue(prompt.indexOf("[GATHERED:MULTI_AGENT_CONTEXT]") < prompt.indexOf("[GATHERED:AVAILABLE_ACTIONS]"))
-    }
-
-    @Test fun `buildPrompt should include subscribed sessions with PRIVATE and PUBLIC tags`() {
-        val ctx = AgentTurnContext(agentName = agentName, resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
+    @Test fun `buildPrompt reserves SESSIONS slot before HKG`() {
+        // sessions() is called before place("HOLON_KNOWLEDGE_GRAPH") in the strategy.
+        // Subscribed-session formatting (PRIVATE/PUBLIC tags, primary session marker) is
+        // owned by the pipeline's session formatter — not verified here.
+        val ctx = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = mapOf("constitution" to "C", "bootloader" to "B"),
             gatheredContextKeys = emptySet(),
             subscribedSessions = listOf(
                 SessionInfo(uuid = privateSessionUUID, handle = "session.priv", name = "Private", isOutput = true),
                 SessionInfo(uuid = publicSession1, handle = "session.chat", name = "Chat", isOutput = false)
-            ), outputSessionHandle = "session.priv")
-        val prompt = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState()).renderForTest()
-        assertTrue(prompt.contains("SUBSCRIBED SESSIONS")); assertTrue(prompt.contains("[PRIVATE")); assertTrue(prompt.contains("[PUBLIC"))
+            ),
+            outputSessionHandle = "session.priv"
+        )
+        val builder = SovereignStrategy.buildPrompt(ctx, SovereignStrategy.getInitialState())
+
+        val sessionsIdx = builder.sections.indexOfFirst {
+            it is PromptSection.GatheredRef && it.key == "SESSIONS"
+        }
+        val hkgIdx = builder.sections.indexOfFirst {
+            it is PromptSection.GatheredRef && it.key == "HOLON_KNOWLEDGE_GRAPH"
+        }
+        assertTrue(sessionsIdx >= 0, "SESSIONS slot should be reserved")
+        assertTrue(hkgIdx >= 0, "HKG slot should be reserved")
+        assertTrue(sessionsIdx < hkgIdx,
+            "SESSIONS slot (idx=$sessionsIdx) should come before HKG slot (idx=$hkgIdx)")
     }
 
     @Test fun `buildPrompt should say candidate consciousness when BOOTING`() {

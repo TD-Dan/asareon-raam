@@ -262,7 +262,10 @@ class HKGContextFormatterT1Test {
         val headers = HkgContextFormatter.parseHolonHeaders(fullSovereignContext, platform)
         val index = HkgContextFormatter.buildIndexTree(headers, emptyMap(), "Sovereign")
 
-        assertTrue(index.contains("HOLON_KNOWLEDGE_GRAPH_INDEX"))
+        // The header-line summary and the tree body are the real contract.
+        // (An earlier design wrapped this with HOLON_KNOWLEDGE_GRAPH_INDEX begin/end markers —
+        // the tree is now embedded directly into the HOLON_KNOWLEDGE_GRAPH group header by
+        // buildUnifiedSection, so buildIndexTree returns only the tree itself.)
         assertTrue(index.contains("Persona: Sovereign | Total holons: 7"))
 
         // Root should be COLLAPSED (no overrides)
@@ -407,12 +410,16 @@ class HKGContextFormatterT1Test {
             fullSovereignContext, headers, overrides, "Sovereign", platformDependencies = platform
         )
 
-        // The actual JSON content should be present somewhere in the tree
+        // The actual JSON content should be present somewhere in the tree.
+        // Use tolerant matchers: JSON formatting (spaces, indentation) is not part of the
+        // contract — only that the holon's stripped header keeps id, type, and name.
         val allContent = collectContent(unified)
-        assertTrue(allContent.contains("\"id\":\"shared-knowledge\""),
-            "Holon JSON content should be embedded in the section tree")
-        assertTrue(allContent.contains("\"type\":\"Project\""),
-            "Holon type should be present in content")
+        val idFieldRegex = Regex(""""id"\s*:\s*"shared-knowledge"""")
+        val typeFieldRegex = Regex(""""type"\s*:\s*"Project"""")
+        assertTrue(idFieldRegex.containsMatchIn(allContent),
+            "Holon JSON content should include the 'id' field somewhere in the section tree")
+        assertTrue(typeFieldRegex.containsMatchIn(allContent),
+            "Holon JSON content should include the 'type' field somewhere in the section tree")
     }
 
     @Test
