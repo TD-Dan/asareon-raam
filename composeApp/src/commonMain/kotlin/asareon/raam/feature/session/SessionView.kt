@@ -41,6 +41,8 @@ import asareon.raam.feature.core.AppLifecycle
 import asareon.raam.feature.core.CoreState
 import asareon.raam.ui.components.IconRegistry
 import asareon.raam.ui.components.fileDropTargetModifier
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.RaamTopBar
 import asareon.raam.util.PlatformDependencies
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -103,12 +105,89 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
 
     val isWorkspaceOpen = sessionState?.isWorkspacePaneOpen ?: false
 
+    val headerActions = buildList {
+        // Workspace toggle — highest priority, visually primary.
+        add(HeaderAction(
+            id = "toggle-workspace",
+            label = if (isWorkspaceOpen) "Hide files" else "Show files",
+            icon = if (isWorkspaceOpen) Icons.Default.FolderOpen else Icons.Default.Folder,
+            priority = 30,
+            onClick = {
+                store.dispatch(
+                    "session",
+                    Action(ActionRegistry.Names.SESSION_TOGGLE_WORKSPACE_PANE)
+                )
+                if (!isWorkspaceOpen && activeSession != null) {
+                    store.dispatch(
+                        "session",
+                        Action(
+                            ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
+                            buildJsonObject {
+                                put("session", activeSession.identity.localHandle)
+                            },
+                        ),
+                    )
+                }
+            },
+        ))
+        // New session — frequent, floats into visible row when room allows.
+        add(HeaderAction(
+            id = "new-session",
+            label = "New session",
+            icon = Icons.Default.Add,
+            priority = 20,
+            onClick = {
+                store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
+            },
+        ))
+        // Contextual + rare items: stay in the overflow kebab.
+        if (activeSession != null) {
+            add(HeaderAction(
+                id = "open-workspace-folder",
+                label = "Open workspace folder",
+                icon = Icons.Default.OpenInNew,
+                priority = -1,
+                onClick = {
+                    val uuid = activeSession.identity.uuid
+                    if (uuid != null) {
+                        store.dispatch(
+                            "session",
+                            Action(
+                                ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+                                buildJsonObject { put("path", "$uuid/workspace") },
+                            ),
+                        )
+                    }
+                },
+            ))
+        }
+        add(HeaderAction(
+            id = "toggle-show-hidden",
+            label = if (hideHidden) "Show hidden sessions" else "Hide hidden sessions",
+            icon = if (hideHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+            priority = -1,
+            onClick = {
+                val newValue = !hideHidden
+                store.dispatch(
+                    "session",
+                    Action(
+                        ActionRegistry.Names.SETTINGS_UPDATE,
+                        buildJsonObject {
+                            put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
+                            put("value", newValue.toString())
+                        },
+                    ),
+                )
+            },
+        ))
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
 
         // ══════════════════════════════════════════════════════════════════
-        // Tab bar row — tabs + kebab menu + workspace toggle
+        // Top bar — tabs in the center slot, actions right (with overflow)
         // ══════════════════════════════════════════════════════════════════
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        RaamTopBar(actions = headerActions) {
             if (sessions.isNotEmpty()) {
                 // `key` forces ScrollableTabRow to fully recompose (not just
                 // update) when the tab count changes. Without this, its
@@ -117,49 +196,18 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
                 key(sessions.size) {
                     ScrollableTabRow(
                         selectedTabIndex = activeTabIndex,
-                        modifier = Modifier.weight(1f),
-                        edgePadding = 8.dp
+                        edgePadding = 0.dp,
                     ) {
                         sessions.forEach { session ->
-                            SessionTab(store, session, session.identity.localHandle == activeSession?.identity?.localHandle, session.identity.localHandle == sessionState?.editingSessionLocalHandle)
+                            SessionTab(
+                                store,
+                                session,
+                                session.identity.localHandle == activeSession?.identity?.localHandle,
+                                session.identity.localHandle == sessionState?.editingSessionLocalHandle,
+                            )
                         }
                     }
                 }
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-            }
-
-            // ── Session kebab menu (consolidates tab bar actions) ──────────
-            SessionKebabMenu(
-                store = store,
-                sessionState = sessionState,
-                hideHidden = hideHidden,
-                activeSession = activeSession
-            )
-
-            // ── Workspace pane toggle ─────────────────────────────────────
-            IconButton(
-                onClick = {
-                    store.dispatch("session", Action(
-                        ActionRegistry.Names.SESSION_TOGGLE_WORKSPACE_PANE
-                    ))
-                    // Refresh file list when opening
-                    if (!isWorkspaceOpen && activeSession != null) {
-                        store.dispatch("session", Action(
-                            ActionRegistry.Names.SESSION_REFRESH_WORKSPACE,
-                            buildJsonObject {
-                                put("session", activeSession.identity.localHandle)
-                            }
-                        ))
-                    }
-                }
-            ) {
-                Icon(
-                    Icons.Default.FolderOpen,
-                    contentDescription = if (isWorkspaceOpen) "Hide files" else "Show files",
-                    tint = if (isWorkspaceOpen) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -271,89 +319,6 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
 
             // ── Drop zone overlay — covers the entire session area ─────
             DropZoneOverlay(visible = isDragHovering)
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Session Kebab Menu — consolidates tab bar actions into a dropdown
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun SessionKebabMenu(
-    store: Store,
-    sessionState: SessionState?,
-    hideHidden: Boolean,
-    activeSession: Session?
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                Icons.Default.MoreVert,
-                contentDescription = "Session options",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            // New session
-            DropdownMenuItem(
-                text = { Text("New session") },
-                onClick = {
-                    store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
-                    expanded = false
-                },
-                leadingIcon = { Icon(Icons.Default.Add, null) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-            // Toggle hidden session visibility
-            DropdownMenuItem(
-                text = {
-                    Text(if (hideHidden) "Show hidden sessions" else "Hide hidden sessions")
-                },
-                onClick = {
-                    val newValue = !hideHidden
-                    store.dispatch("session", Action(
-                        ActionRegistry.Names.SETTINGS_UPDATE,
-                        buildJsonObject {
-                            put("key", SessionState.SETTING_HIDE_HIDDEN_VIEWER)
-                            put("value", newValue.toString())
-                        }
-                    ))
-                    expanded = false
-                },
-                leadingIcon = {
-                    Icon(
-                        if (hideHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        null
-                    )
-                }
-            )
-
-            // Open workspace folder in OS (only when a session is active)
-            if (activeSession != null) {
-                DropdownMenuItem(
-                    text = { Text("Open workspace folder") },
-                    onClick = {
-                        val uuid = activeSession.identity.uuid
-                        if (uuid != null) {
-                            store.dispatch("session", Action(
-                                ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
-                                buildJsonObject { put("path", "$uuid/workspace") }
-                            ))
-                        }
-                        expanded = false
-                    },
-                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
-                )
-            }
         }
     }
 }
