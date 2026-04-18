@@ -159,7 +159,7 @@ class SessionContextFormatterT1Test {
         val content = SessionContextFormatter.buildSessionContent(session, platform)
 
         assertTrue(content.contains("Alice (user.alice)"), "Should include sender name and ID")
-        assertTrue(content.contains("2026-01-01T00:00:05Z"), "Should format timestamp via platform")
+        assertTrue(content.contains("1970-01-01T00:00:05Z"), "Should format timestamp via platform")
         assertTrue(content.contains("What is 2+2?"), "Should include message content")
     }
 

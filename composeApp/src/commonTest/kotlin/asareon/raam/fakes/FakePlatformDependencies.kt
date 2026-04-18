@@ -205,29 +205,27 @@ open class FakePlatformDependencies(
         return "00000000-0000-4000-a000-$hex"
     }
     override fun formatIsoTimestamp(timestamp: Long): String {
-        // Return a valid ISO 8601 timestamp that normalizeHolonId can parse.
-        // Deterministic per input value — encodes the timestamp into time fields.
-        val totalSeconds = timestamp / 1000
-        val s = (totalSeconds % 60).toInt()
-        val m = ((totalSeconds / 60) % 60).toInt()
-        val h = ((totalSeconds / 3600) % 24).toInt()
-        val days = (totalSeconds / 86400).toInt()
-        // Spread days across a plausible date range starting from 2026-01-01
-        val d = (days % 28) + 1 // 1-28
-        val mo = ((days / 28) % 12) + 1 // 1-12
-        val y = 2026 + (days / 336)
-        return "${y.toString().padStart(4, '0')}-${mo.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}Z"
+        val totalSeconds = floorDivLong(timestamp, 1000L)
+        val totalDays = floorDivLong(totalSeconds, 86400L)
+        val secondsOfDay = (totalSeconds - totalDays * 86400L).toInt()
+        val h = secondsOfDay / 3600
+        val m = (secondsOfDay / 60) % 60
+        val s = secondsOfDay % 60
+        val (y, mo, d) = civilFromDays(totalDays)
+        return "${pad4(y)}-${pad2(mo)}-${pad2(d)}T${pad2(h)}:${pad2(m)}:${pad2(s)}Z"
     }
     override fun parseIsoTimestamp(timestamp: String): Long? {
-        // Support the old fake format for backward compatibility
-        if (timestamp.startsWith("ISO_TIMESTAMP_")) {
-            return timestamp.removePrefix("ISO_TIMESTAMP_").toLongOrNull()
-        }
-        // Support valid ISO 8601 format — return currentTime as approximation
-        if (timestamp.matches(Regex("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z"))) {
-            return currentTime
-        }
-        return null
+        val match = ISO_8601_UTC_REGEX.matchEntire(timestamp) ?: return null
+        val (yStr, moStr, dStr, hStr, mmStr, sStr) = match.destructured
+        val y = yStr.toIntOrNull() ?: return null
+        val mo = moStr.toInt()
+        val d = dStr.toInt()
+        val h = hStr.toInt()
+        val mm = mmStr.toInt()
+        val s = sStr.toInt()
+        if (mo !in 1..12 || d !in 1..31 || h !in 0..23 || mm !in 0..59 || s !in 0..59) return null
+        val days = daysFromCivil(y, mo, d)
+        return (days * 86400L + h * 3600L + mm * 60L + s) * 1000L
     }
     override fun formatDisplayTimestamp(timestamp: Long): String = "DISPLAY_TIMESTAMP_$timestamp"
     override fun copyToClipboard(text: String) { clipboardContent = text }
@@ -289,4 +287,51 @@ open class FakePlatformDependencies(
     override fun getRecentLogs(limit: Int, minLevel: LogLevel): List<LogBufferEntry> {
         return logBuffer.filter { it.level >= minLevel }.takeLast(limit)
     }
+}
+
+private val ISO_8601_UTC_REGEX = Regex("^(-?\\d{4,})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$")
+
+private fun pad2(n: Int): String = if (n in 0..9) "0$n" else n.toString()
+
+private fun pad4(n: Int): String = when {
+    n < 0 -> n.toString()
+    n >= 1000 -> n.toString()
+    n >= 100 -> "0$n"
+    n >= 10 -> "00$n"
+    else -> "000$n"
+}
+
+private fun floorDivLong(a: Long, b: Long): Long {
+    val q = a / b
+    return if ((a xor b) < 0L && q * b != a) q - 1 else q
+}
+
+/**
+ * Howard Hinnant's civil_from_days: converts days-since-epoch (1970-01-01) into a
+ * proleptic Gregorian (year, month, day) triple. Works for any Long in practical range.
+ */
+private fun civilFromDays(days: Long): Triple<Int, Int, Int> {
+    val z = days + 719468L
+    val era = (if (z >= 0L) z else z - 146096L) / 146097L
+    val doe = (z - era * 146097L).toInt() // [0, 146096]
+    val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365 // [0, 399]
+    val y = (era * 400L + yoe.toLong()).toInt()
+    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100) // [0, 365]
+    val mp = (5 * doy + 2) / 153 // [0, 11]
+    val d = doy - (153 * mp + 2) / 5 + 1 // [1, 31]
+    val m = if (mp < 10) mp + 3 else mp - 9 // [1, 12]
+    return Triple(if (m <= 2) y + 1 else y, m, d)
+}
+
+/**
+ * Howard Hinnant's days_from_civil: inverse of [civilFromDays]. Returns days from the
+ * 1970-01-01 epoch for a proleptic Gregorian date.
+ */
+private fun daysFromCivil(y: Int, m: Int, d: Int): Long {
+    val yAdj = if (m <= 2) y - 1 else y
+    val era = (if (yAdj >= 0) yAdj else yAdj - 399) / 400
+    val yoe = yAdj - era * 400 // [0, 399]
+    val doy = (153 * (if (m > 2) m - 3 else m + 9) + 2) / 5 + d - 1 // [0, 365]
+    val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy // [0, 146096]
+    return era.toLong() * 146097L + doe.toLong() - 719468L
 }
