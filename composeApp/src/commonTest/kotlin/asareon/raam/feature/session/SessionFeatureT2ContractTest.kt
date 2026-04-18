@@ -57,15 +57,6 @@ class SessionFeatureT2ContractTest {
 
     private val scope = CoroutineScope(Dispatchers.Unconfined)
 
-    /**
-     * Used only to compute fixture ISO timestamps consistently with how the fake
-     * formats them. LOCK/UNLOCK_MESSAGE resolve entries by (senderId, isoTimestamp)
-     * via FakePlatformDependencies.formatIsoTimestamp — hardcoding a real-world ISO
-     * string would miss when the fake's format isn't a true UTC round-trip.
-     */
-    private val fixturePlatform = FakePlatformDependencies("fixture")
-    private fun iso(millis: Long): String = fixturePlatform.formatIsoTimestamp(millis)
-
     private val testIdentity = Identity(
         uuid = "00000000-0000-4000-a000-000000000001",
         localHandle = "sid-1",
@@ -261,7 +252,7 @@ class SessionFeatureT2ContractTest {
             payload = buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "user")
-                put("timestamp", iso(testEntry.timestamp))
+                put("timestamp", "2025-02-07T18:40:00Z")
             },
             initialState = baseState // entry is unlocked → LOCK flips to locked
         ),
@@ -272,7 +263,7 @@ class SessionFeatureT2ContractTest {
             payload = buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "user")
-                put("timestamp", iso(lockedEntry.timestamp))
+                put("timestamp", "2025-02-07T18:40:00Z")
             },
             initialState = lockedState // entry is locked → UNLOCK flips to unlocked
         )
@@ -399,7 +390,7 @@ class SessionFeatureT2ContractTest {
             payload = buildJsonObject {
                 put("session", "nonexistent")
                 put("senderId", "user")
-                put("timestamp", iso(testEntry.timestamp))
+                put("timestamp", "2025-02-07T18:40:00Z")
             }
         ),
         FailureCase(
@@ -409,7 +400,7 @@ class SessionFeatureT2ContractTest {
             payload = buildJsonObject {
                 put("session", "nonexistent")
                 put("senderId", "user")
-                put("timestamp", iso(testEntry.timestamp))
+                put("timestamp", "2025-02-07T18:40:00Z")
             }
         )
     )
