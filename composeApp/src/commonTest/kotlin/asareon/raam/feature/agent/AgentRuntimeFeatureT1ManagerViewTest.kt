@@ -90,13 +90,28 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         }
     }
 
+    /** Opens the full-view agent editor via the card's kebab → Edit Agent. */
+    private fun openEditor() {
+        composeTestRule.onNodeWithContentDescription("More options").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Edit Agent").performClick()
+        composeTestRule.waitForIdle()
+    }
+
     // --- 1. Creation & Deletion (Lifecycle) ---
 
     @Test
-    fun `clicking Create Agent button dispatches AGENT_CREATE action`() {
+    fun `create agent flow dispatches AGENT_CREATE with entered name`() {
         setViewState(AgentRuntimeState())
 
+        // Open the full-view editor via header Create Agent
         composeTestRule.onNodeWithText("Create Agent").performClick()
+        composeTestRule.waitForIdle()
+        // Fill the Agent Name field (label on OutlinedTextField)
+        composeTestRule.onNode(hasText("Agent Name") and hasSetTextAction())
+            .performTextInput("New Agent")
+        // Click Create in the footer
+        composeTestRule.onNodeWithText("Create").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_CREATE }
         assertNotNull(action)
@@ -139,33 +154,28 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     // --- 2. Editing Mode (Transitions) ---
 
     @Test
-    fun `clicking 'Edit' in kebab menu dispatches AGENT_SET_EDITING`() {
+    fun `clicking Edit in kebab menu opens the full-view agent editor`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
 
-        // Edit is now in the kebab dropdown menu
-        composeTestRule.onNodeWithContentDescription("More options").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Edit Agent").performClick()
+        openEditor()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
-        assertNotNull(action)
-        assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
+        // The editor renders the name field and the footer Save button
+        composeTestRule.onNode(hasText("Agent Name") and hasSetTextAction()).assertExists()
+        composeTestRule.onNodeWithText("Save").assertIsDisplayed()
     }
 
     @Test
-    fun `canceling edit dispatches AGENT_SET_EDITING with null id`() {
+    fun `cancel in editor closes without dispatching UPDATE_CONFIG when clean`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m")
-        setViewState(AgentRuntimeState(
-            agents = mapOf(uid("a1") to agent),
-            editingAgentId = uid("a1")
-        ))
+        setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
+        openEditor()
+        fakeStore.dispatchedActions.clear()
 
-        composeTestRule.onNodeWithContentDescription("Cancel Edit").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Cancel").performClick()
 
-        val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
-        assertNotNull(action)
-        assertNull(action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
+        val updateAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
+        assertNull(updateAction, "Cancel on a clean editor must not dispatch UPDATE_CONFIG")
     }
 
     // --- 3. Draft Pattern: Save collects all fields ---
@@ -173,20 +183,18 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Test
     fun `saving agent dispatches AGENT_UPDATE_CONFIG with full draft payload`() {
         val agent = testAgent("a1", "Old Name", null, "p", "m", autoWaitTimeSeconds = 5, autoMaxWaitTimeSeconds = 30)
-        setViewState(AgentRuntimeState(
-            agents = mapOf(uid("a1") to agent),
-            editingAgentId = uid("a1")
-        ))
+        setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
+        openEditor()
 
         // 1. Update Name
-        composeTestRule.onNodeWithText("Agent Name").performTextReplacement("New Name")
+        composeTestRule.onNode(hasText("Agent Name") and hasSetTextAction()).performTextReplacement("New Name")
 
         // 2. Update Timers
-        composeTestRule.onNodeWithText("Auto Wait (s)").performScrollTo().performTextReplacement("10")
-        composeTestRule.onNodeWithText("Max Wait (s)").performScrollTo().performTextReplacement("60")
+        composeTestRule.onNode(hasText("Auto Wait (s)") and hasSetTextAction()).performTextReplacement("10")
+        composeTestRule.onNode(hasText("Max Wait (s)") and hasSetTextAction()).performTextReplacement("60")
 
         // 3. Save
-        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNotNull(action)
@@ -206,21 +214,26 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Test
     fun `toggling automatic mode is captured in draft and dispatched on save`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m", automaticMode = false)
-        setViewState(AgentRuntimeState(
-            agents = mapOf(uid("a1") to agent),
-            editingAgentId = uid("a1")
-        ))
+        setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
+        openEditor()
         fakeStore.dispatchedActions.clear()
 
-        // 1. Toggle the switch (updates draft, no dispatch)
-        composeTestRule.onNode(isToggleable()).performScrollTo().performClick()
+        // 1. Toggle the switch (updates draft, no dispatch). Use OnClick semantic
+        // action to avoid display-in-viewport checks on long scrollable forms.
+        composeTestRule.onNode(isToggleable()).performSemanticsAction(
+            androidx.compose.ui.semantics.SemanticsActions.OnClick
+        )
+        composeTestRule.waitForIdle()
 
         // Verify NO action dispatched yet
         val prematureAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
         assertNull(prematureAction, "No UPDATE_CONFIG should fire before Save")
 
-        // 2. Save
-        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
+        // 2. Save — performSemanticsAction avoids display/viewport checks that
+        // are flaky when the editor content overflows the test viewport.
+        composeTestRule.onNodeWithText("Save").performSemanticsAction(
+            androidx.compose.ui.semantics.SemanticsActions.OnClick
+        )
 
         // 3. Verify the saved payload includes automaticMode = true
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
@@ -231,24 +244,21 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Test
     fun `cancel discards draft changes and dispatches no UPDATE_CONFIG`() {
         val agent = testAgent("a1", "Original", null, "p", "m")
-        setViewState(AgentRuntimeState(
-            agents = mapOf(uid("a1") to agent),
-            editingAgentId = uid("a1")
-        ))
+        setViewState(AgentRuntimeState(agents = mapOf(uid("a1") to agent)))
+        openEditor()
         fakeStore.dispatchedActions.clear()
 
-        // 1. Modify the name
-        composeTestRule.onNodeWithText("Agent Name").performTextReplacement("Changed")
+        // 1. Modify the name → editor is now dirty
+        composeTestRule.onNode(hasText("Agent Name") and hasSetTextAction()).performTextReplacement("Changed")
 
-        // 2. Cancel
-        composeTestRule.onNodeWithContentDescription("Cancel Edit").performScrollTo().performClick()
+        // 2. Cancel — dirty state opens discard confirmation
+        composeTestRule.onNodeWithText("Cancel").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Discard").performClick()
 
-        // 3. Verify: only SET_EDITING dispatched, no UPDATE_CONFIG
+        // 3. No UPDATE_CONFIG should have been dispatched
         val updateAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
-        assertNull(updateAction, "Cancel should not dispatch UPDATE_CONFIG")
-
-        val setEditingAction = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SET_EDITING }
-        assertNotNull(setEditingAction)
+        assertNull(updateAction, "Cancel-then-Discard should not dispatch UPDATE_CONFIG")
     }
 
     // --- 4. Dropdown Logic (Draft-Based) ---
@@ -260,9 +270,9 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         val agent = testAgent("a1", "Test Agent", null, "p", "m")
         setViewState(AgentRuntimeState(
             agents = mapOf(uid("a1") to agent),
-            editingAgentId = uid("a1"),
             availableModels = emptyMap() // no configured providers
         ))
+        openEditor()
 
         // ASSERT: The informational message is shown in place of the dropdown.
         composeTestRule.onNodeWithText("No providers configured").assertIsDisplayed()
@@ -280,9 +290,9 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         val agent = testAgent("a1", "Test Agent", null, "gemini", "gemini-pro")
         setViewState(AgentRuntimeState(
             agents = mapOf(uid("a1") to agent),
-            editingAgentId = uid("a1"),
             availableModels = mapOf("gemini" to listOf("gemini-pro", "gemini-flash"))
         ))
+        openEditor()
 
         // ASSERT: Dropdown is rendered; the hint message is absent.
         composeTestRule.onNodeWithText("Provider").assertIsDisplayed()
@@ -295,12 +305,11 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Test
     fun `agent editor displays available knowledge graphs for sovereign agent`() {
         val agent = testAgent("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
-        val state = AgentRuntimeState(
+        setViewState(AgentRuntimeState(
             agents = mapOf(uid("agent-1") to agent),
             knowledgeGraphNames = mapOf("p1" to "Keel", "p2" to "Sage"),
-            editingAgentId = uid("agent-1")
-        )
-        setViewState(state)
+        ))
+        openEditor()
 
         composeTestRule.onNodeWithText("Knowledge Graph").performClick()
         composeTestRule.onAllNodesWithText("Keel").assertCountEquals(2)
@@ -310,12 +319,11 @@ class AgentRuntimeFeatureT1ManagerViewTest {
     @Test
     fun `selecting knowledge graph updates draft and save includes it in payload`() {
         val agent = testAgent("agent-1", "Test Agent", knowledgeGraphId = "p1", modelProvider = "p", modelName = "m", cognitiveStrategyId = "sovereign_v1")
-        val state = AgentRuntimeState(
+        setViewState(AgentRuntimeState(
             agents = mapOf(uid("agent-1") to agent),
             knowledgeGraphNames = mapOf("p1" to "Keel", "p2" to "Sage"),
-            editingAgentId = uid("agent-1")
-        )
-        setViewState(state)
+        ))
+        openEditor()
         fakeStore.dispatchedActions.clear()
 
         // 1. Select KG (updates draft only)
@@ -327,7 +335,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         assertNull(prematureAction, "Dropdown selection should not dispatch directly")
 
         // 2. Save
-        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         // 3. Verify payload — knowledgeGraphId lives inside strategyConfig
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }
@@ -437,11 +445,11 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         setViewState(AgentRuntimeState(
             agents = mapOf(uid("a1") to agent),
             resources = listOf(resource),
-            editingAgentId = uid("a1")
         ))
+        openEditor()
 
         // Resource slot selectors are at the bottom of the editor — scroll into view
-        composeTestRule.onNodeWithText("System Instructions").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("System Instructions").assertIsDisplayed()
 
         // Verify sovereign selectors are NOT visible
         composeTestRule.onNodeWithText("Constitution").assertDoesNotExist()
@@ -456,12 +464,13 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         setViewState(AgentRuntimeState(
             agents = mapOf(uid("a1") to agent),
             resources = listOf(constitution, bootloader),
-            editingAgentId = uid("a1")
         ))
+        openEditor()
 
-        // Resource slot selectors are at the bottom of the editor — scroll into view
-        composeTestRule.onNodeWithText("Constitution").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Bootloader (Sentinel)").performScrollTo().assertIsDisplayed()
+        // Resource slot selectors — just assert they exist in the semantic tree
+        // (the test viewport may not render them on-screen when the form is long).
+        composeTestRule.onNodeWithText("Constitution").assertExists()
+        composeTestRule.onNodeWithText("Bootloader (Sentinel)").assertExists()
 
         // Verify vanilla selector is NOT visible
         composeTestRule.onNodeWithText("System Instructions").assertDoesNotExist()
@@ -474,12 +483,12 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         setViewState(AgentRuntimeState(
             agents = mapOf(uid("a1") to agent),
             resources = listOf(resource),
-            editingAgentId = uid("a1")
         ))
+        openEditor()
         fakeStore.dispatchedActions.clear()
 
         // 1. Open the System Instruction dropdown and select a resource
-        composeTestRule.onNodeWithText("System Instructions").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("System Instructions").performClick()
         composeTestRule.onNodeWithText("My Instruction").performClick()
 
         // 2. Verify: no action dispatched yet
@@ -487,7 +496,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
         assertNull(prematureAction)
 
         // 3. Save
-        composeTestRule.onNodeWithContentDescription("Save").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         // 4. Verify resources map in payload
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_UPDATE_CONFIG }

@@ -34,17 +34,22 @@ import asareon.raam.feature.agent.CognitiveStrategy
 import asareon.raam.feature.agent.CognitiveStrategyRegistry
 import asareon.raam.feature.agent.StrategyConfigField
 import asareon.raam.feature.agent.StrategyConfigFieldType
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import asareon.raam.ui.components.CodeEditor
-import asareon.raam.ui.components.ColorPicker
-import asareon.raam.ui.components.IconRegistry
-import asareon.raam.ui.components.colorToHex
 import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
 import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
-import asareon.raam.ui.components.hexToColor
+import asareon.raam.ui.components.footer.FooterActionEmphasis
+import asareon.raam.ui.components.footer.FooterButton
+import asareon.raam.ui.components.footer.ViewFooter
+import asareon.raam.ui.components.identity.IdentityDraft
+import asareon.raam.ui.components.identity.IdentityFieldsSection
+import asareon.raam.ui.components.identity.toDraft
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
+import asareon.raam.ui.theme.spacing
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.put
@@ -98,6 +103,33 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
     // the agent cards below share the same state.
     var globalShowExtendedInfo by remember { mutableStateOf(false) }
 
+    var editTarget by remember { mutableStateOf<AgentEditTarget?>(null) }
+
+    // Cross-view edit request: the session-context agent card dispatches
+    // CORE_SET_ACTIVE_VIEW + AGENT_SET_EDITING(uuid) to reach this view with
+    // a specific agent primed for edit. Consume that signal here, then clear
+    // it so reopening the manager later doesn't re-open the editor.
+    val pendingEditId = agentState?.editingAgentId
+    LaunchedEffect(pendingEditId) {
+        if (pendingEditId != null && editTarget == null) {
+            editTarget = AgentEditTarget.Edit(pendingEditId)
+            store.dispatch("agent", Action(
+                ActionRegistry.Names.AGENT_SET_EDITING,
+                buildJsonObject { put("agentId", pendingEditId.uuid) },
+            ))
+        }
+    }
+
+    if (editTarget != null && agentState != null) {
+        AgentEditorView(
+            store = store,
+            target = editTarget!!,
+            agentState = agentState,
+            onClose = { editTarget = null },
+        )
+        return
+    }
+
     Column(Modifier.fillMaxSize()) {
         if (!showingResources) {
             RaamTopBarHeader(
@@ -112,15 +144,7 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
                         icon = Icons.Default.Add,
                         priority = 30,
                         emphasis = HeaderActionEmphasis.Create,
-                        onClick = {
-                            store.dispatch(
-                                "agent",
-                                Action(
-                                    ActionRegistry.Names.AGENT_CREATE,
-                                    buildJsonObject { put("name", "New Agent") },
-                                ),
-                            )
-                        },
+                        onClick = { editTarget = AgentEditTarget.Create },
                     ),
                     HeaderAction(
                         id = "view-resources",
@@ -150,6 +174,9 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
                         store = store,
                         platformDependencies = platformDependencies,
                         showExtendedInfo = globalShowExtendedInfo,
+                        onEditRequest = { agent ->
+                            agent.identity.uuid?.let { editTarget = AgentEditTarget.Edit(IdentityUUID(it)) }
+                        },
                     )
                 }
             }
@@ -178,9 +205,9 @@ private fun AgentListView(
     store: Store,
     platformDependencies: PlatformDependencies,
     showExtendedInfo: Boolean,
+    onEditRequest: (AgentInstance) -> Unit,
 ) {
     var agentToDelete by remember { mutableStateOf<AgentInstance?>(null) }
-    val editingAgentId = agentState.editingAgentId
 
     agentToDelete?.let { agent ->
         ConfirmDestructiveDialog(
@@ -211,11 +238,10 @@ private fun AgentListView(
             items(agentState.agents.values.toList(), key = { it.identity.uuid ?: "" }) { agent ->
                 AgentCard(
                     agent = agent,
-                    isEditing = agent.identityUUID == editingAgentId,
                     agentState = agentState,
                     store = store,
                     onDeleteRequest = { agentToDelete = it },
-                    onEditRequest = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", agent.identity.uuid) })) },
+                    onEditRequest = { onEditRequest(agent) },
                     platformDependencies = platformDependencies,
                     showExtendedInfo = showExtendedInfo
                 )
@@ -227,7 +253,6 @@ private fun AgentListView(
 @Composable
 private fun AgentCard(
     agent: AgentInstance,
-    isEditing: Boolean,
     agentState: AgentRuntimeState,
     store: Store,
     onDeleteRequest: (AgentInstance) -> Unit,
@@ -239,429 +264,377 @@ private fun AgentCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
-        if (isEditing) {
-            Column(Modifier.padding(16.dp)) {
-                AgentEditorView(agent, agentState, store)
-            }
-        } else {
-            AgentControlCard(
-                agent = agent,
-                agentState = agentState,
-                sessionUUID = null,
-                store = store,
-                platformDependencies = platformDependencies,
-                showExtendedInfoOverride = showExtendedInfo,
-                showManagementActions = true,
-                onEditRequest = onEditRequest,
-                onCloneRequest = {
-                    store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject {
-                        put("agentId", agent.identity.uuid)
-                    }))
-                },
-                onDeleteRequest = { onDeleteRequest(agent) }
-            )
-        }
+        AgentControlCard(
+            agent = agent,
+            agentState = agentState,
+            sessionUUID = null,
+            store = store,
+            platformDependencies = platformDependencies,
+            showExtendedInfoOverride = showExtendedInfo,
+            showManagementActions = true,
+            onEditRequest = onEditRequest,
+            onCloneRequest = {
+                store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CLONE, buildJsonObject {
+                    put("agentId", agent.identity.uuid)
+                }))
+            },
+            onDeleteRequest = { onDeleteRequest(agent) }
+        )
     }
 }
 
 // =============================================================================
-// Agent Editor — Draft Pattern
-// All changes are local until Save. Cancel discards.
+// Agent Editor — Full-view, draft-pattern, IdentityFieldsSection + ViewFooter
+// All changes are local until Save. Cancel prompts to discard if dirty.
 // =============================================================================
+
+/**
+ * Which agent the full-view editor is targeting. [Create] for a fresh agent,
+ * [Edit] wraps the UUID of an existing one.
+ */
+private sealed interface AgentEditTarget {
+    data object Create : AgentEditTarget
+    data class Edit(val uuid: IdentityUUID) : AgentEditTarget
+}
+
+/** Defaults used when the editor opens in Create mode. */
+private fun defaultDraftAgent(): AgentInstance = AgentInstance(
+    identity = Identity(
+        uuid = null,
+        localHandle = "",
+        handle = "",
+        name = "",
+        parentHandle = "agent",
+    ),
+    modelProvider = "gemini",
+    modelName = "gemini-pro",
+    cognitiveStrategyId = CognitiveStrategyRegistry.getDefault().identityHandle,
+    cognitiveState = CognitiveStrategyRegistry.getDefault().getInitialState(),
+    strategyConfig = JsonObject(emptyMap()),
+    subscribedSessionIds = emptyList(),
+    automaticMode = false,
+    autoWaitTimeSeconds = 5,
+    autoMaxWaitTimeSeconds = 30,
+    contextBudgetChars = 50_000,
+    contextMaxBudgetChars = 150_000,
+    contextMaxPartialChars = 20_000,
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AgentEditorView(
-    agent: AgentInstance,
+    store: Store,
+    target: AgentEditTarget,
     agentState: AgentRuntimeState,
-    store: Store
+    onClose: () -> Unit,
 ) {
-    // Draft state: a local copy of the agent. Selectors mutate the draft, not the store.
-    var draftAgent by remember(agent.identity.uuid) { mutableStateOf(agent) }
-    var agentNameInput by remember(agent.identity.uuid) { mutableStateOf(agent.identity.name) }
-    var autoWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoWaitTimeSeconds.toString()) }
-    var autoMaxWaitTimeInput by remember(agent.identity.uuid) { mutableStateOf(agent.autoMaxWaitTimeSeconds.toString()) }
+    // Resolve the source agent (existing for Edit, defaults for Create).
+    val sourceAgent: AgentInstance = when (target) {
+        is AgentEditTarget.Create -> remember(target) { defaultDraftAgent() }
+        is AgentEditTarget.Edit -> agentState.agents[target.uuid] ?: run {
+            // Target was deleted while the editor was open — bail out cleanly.
+            LaunchedEffect(Unit) { onClose() }
+            return
+        }
+    }
 
-    // Context Budget — stored as chars, displayed as approximate tokens (§2.2: ≈4 chars/token)
-    var budgetOptimalTokensInput by remember(agent.identity.uuid) { mutableStateOf((agent.contextBudgetChars / 4).toString()) }
-    var budgetMaxTokensInput by remember(agent.identity.uuid) { mutableStateOf((agent.contextMaxBudgetChars / 4).toString()) }
-    var budgetMaxPartialTokensInput by remember(agent.identity.uuid) { mutableStateOf((agent.contextMaxPartialChars / 4).toString()) }
-
-    // Color: read from identity registry (authoritative), draft locally
+    // Initial identity draft: for Edit, read from the identity registry (authoritative);
+    // for Create, the source agent's (default) identity already holds the draft shape.
     val identityRegistry = store.state.collectAsState().value.identityRegistry
-    val currentIdentity = identityRegistry[agent.identity.handle]
-    var draftColorHex by remember(agent.identity.uuid) { mutableStateOf(currentIdentity?.displayColor) }
-    var showColorPicker by remember { mutableStateOf(false) }
-    val draftColor: Color? = draftColorHex?.let { hexToColor(it) }
+    val initialIdentity = remember(target) {
+        when (target) {
+            is AgentEditTarget.Create -> sourceAgent.identity
+            is AgentEditTarget.Edit -> identityRegistry[sourceAgent.identity.handle] ?: sourceAgent.identity
+        }
+    }
 
-    // Icon: read from identity registry, draft locally
-    var draftIconKey by remember(agent.identity.uuid) { mutableStateOf(currentIdentity?.displayIcon) }
-    var draftIconEmoji by remember(agent.identity.uuid) { mutableStateOf(currentIdentity?.displayEmoji) }
-    var showIconPicker by remember { mutableStateOf(false) }
+    var identityDraft by remember(target) { mutableStateOf(initialIdentity.toDraft()) }
+    var draftAgent by remember(target) { mutableStateOf(sourceAgent) }
+
+    var autoWaitTimeInput by remember(target) { mutableStateOf(sourceAgent.autoWaitTimeSeconds.toString()) }
+    var autoMaxWaitTimeInput by remember(target) { mutableStateOf(sourceAgent.autoMaxWaitTimeSeconds.toString()) }
+    var budgetOptimalTokensInput by remember(target) { mutableStateOf((sourceAgent.contextBudgetChars / 4).toString()) }
+    var budgetMaxTokensInput by remember(target) { mutableStateOf((sourceAgent.contextMaxBudgetChars / 4).toString()) }
+    var budgetMaxPartialTokensInput by remember(target) { mutableStateOf((sourceAgent.contextMaxPartialChars / 4).toString()) }
+
+    val initialDraftAgent = remember(target) { sourceAgent }
+    val initialIdentityDraft = remember(target) { initialIdentity.toDraft() }
+    val initialAutoWait = remember(target) { sourceAgent.autoWaitTimeSeconds.toString() }
+    val initialAutoMaxWait = remember(target) { sourceAgent.autoMaxWaitTimeSeconds.toString() }
+    val initialBudgetOptimal = remember(target) { (sourceAgent.contextBudgetChars / 4).toString() }
+    val initialBudgetMax = remember(target) { (sourceAgent.contextMaxBudgetChars / 4).toString() }
+    val initialBudgetMaxPartial = remember(target) { (sourceAgent.contextMaxPartialChars / 4).toString() }
+
+    val dirty = identityDraft != initialIdentityDraft ||
+        draftAgent != initialDraftAgent ||
+        autoWaitTimeInput != initialAutoWait ||
+        autoMaxWaitTimeInput != initialAutoMaxWait ||
+        budgetOptimalTokensInput != initialBudgetOptimal ||
+        budgetMaxTokensInput != initialBudgetMax ||
+        budgetMaxPartialTokensInput != initialBudgetMaxPartial
+    // Save is gated only by name validity — the agent form has so many fields
+    // that a strict dirty gate risks false negatives (e.g., JsonObject reference
+    // churn on strategy config). `dirty` still drives the discard confirmation.
+    val canSave = identityDraft.name.isNotBlank()
+
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val tryClose = { if (dirty) showDiscardDialog = true else onClose() }
 
     val onDraftChanged: (AgentInstance) -> Unit = { draftAgent = it }
 
-    val onSave = {
-        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_UPDATE_CONFIG, buildJsonObject {
-            put("agentId", agent.identity.uuid)
-            put("name", agentNameInput)
+    val onSave = save@{
+        val payload = buildJsonObject {
+            when (target) {
+                is AgentEditTarget.Edit -> put("agentId", target.uuid.uuid)
+                is AgentEditTarget.Create -> { /* agentId is assigned by the feature */ }
+            }
+            put("name", identityDraft.name)
             put("cognitiveStrategyId", draftAgent.cognitiveStrategyId.handle)
             put("modelProvider", draftAgent.modelProvider)
             put("modelName", draftAgent.modelName)
             put("subscribedSessionIds", buildJsonArray { draftAgent.subscribedSessionIds.forEach { add(it.uuid) } })
-            // outputSessionId — strategy-owned primary session selection
             if (draftAgent.outputSessionId != null) put("outputSessionId", draftAgent.outputSessionId!!.uuid)
             else put("outputSessionId", null as String?)
-            // strategyConfig holds strategy-specific operator configuration (e.g., knowledgeGraphId).
-            // Sent as a generic JSON object — the CRUD logic stores it without inspecting contents.
             put("strategyConfig", draftAgent.strategyConfig)
             put("automaticMode", draftAgent.automaticMode)
             autoWaitTimeInput.toIntOrNull()?.let { put("autoWaitTimeSeconds", it) }
             autoMaxWaitTimeInput.toIntOrNull()?.let { put("autoMaxWaitTimeSeconds", it) }
-            // Context Budget — convert approximate tokens back to chars (§2.2: ≈4 chars/token)
             budgetOptimalTokensInput.toIntOrNull()?.let { put("contextBudgetChars", it * 4) }
             budgetMaxTokensInput.toIntOrNull()?.let { put("contextMaxBudgetChars", it * 4) }
             budgetMaxPartialTokensInput.toIntOrNull()?.let { put("contextMaxPartialChars", it * 4) }
             put("resources", Json.encodeToJsonElement(draftAgent.resources))
-            // displayColor: include when explicitly set or cleared.
-            // TODO: AgentFeature's AGENT_UPDATE_CONFIG handler must propagate this
-            // field to core.UPDATE_IDENTITY so it persists in the identity registry.
-            if (draftColorHex != null) put("displayColor", draftColorHex)
-            else put("displayColor", null as String?)
-            // Icon fields — always include to allow clearing
-            if (draftIconKey != null) put("displayIcon", draftIconKey)
-            else put("displayIcon", null as String?)
-            if (draftIconEmoji != null) put("displayEmoji", draftIconEmoji)
-            else put("displayEmoji", null as String?)
-        }))
-        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
-    }
-    val onCancel = {
-        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_EDITING, buildJsonObject { put("agentId", null as String?) }))
+            put("displayColor", identityDraft.displayColor)
+            put("displayIcon", identityDraft.displayIcon)
+            put("displayEmoji", identityDraft.displayEmoji)
+        }
+        val actionName = when (target) {
+            is AgentEditTarget.Create -> ActionRegistry.Names.AGENT_CREATE
+            is AgentEditTarget.Edit -> ActionRegistry.Names.AGENT_UPDATE_CONFIG
+        }
+        store.dispatch("agent", Action(actionName, payload))
+        onClose()
     }
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.onKeyEvent { event ->
-            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                onCancel()
-                true
-            } else false
-        }
+        modifier = Modifier
+            .fillMaxSize()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    tryClose(); true
+                } else false
+            }
     ) {
-
-        // --- ROW 1: Identity (Name + Strategy) ---
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = agentNameInput,
-                onValueChange = { agentNameInput = it },
-                label = { Text("Agent Name") },
-                modifier = Modifier.weight(1f)
-            )
-            Box(Modifier.weight(1f)) {
-                StrategySelector(draftAgent, onDraftChanged)
-            }
-        }
-
-        // --- ROW 1.5: Display Color ---
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        RaamTopBarHeader(
+            title = when (target) {
+                is AgentEditTarget.Create -> "New Agent"
+                is AgentEditTarget.Edit -> initialIdentity.name.ifBlank { "Edit Agent" }
+            },
+            subtitle = "Agents",
+            leading = HeaderLeading.Back(onClick = { tryClose() }),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = MaterialTheme.spacing.screenEdge,
+                    vertical = MaterialTheme.spacing.itemGap,
+                ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Swatch preview
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(draftColor ?: MaterialTheme.colorScheme.primary)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            IdentityFieldsSection(
+                draft = identityDraft,
+                onDraftChange = { identityDraft = it },
+                nameLabel = "Agent Name",
             )
-            OutlinedButton(onClick = { showColorPicker = !showColorPicker }) {
-                Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (showColorPicker) "Hide color picker" else "Set color")
-            }
-            if (draftColorHex != null) {
-                TextButton(onClick = { draftColorHex = null; showColorPicker = false }) {
-                    Text("Reset to default")
-                }
-            }
-        }
-        AnimatedVisibility(visible = showColorPicker) {
-            ColorPicker(
-                initialColor = draftColor ?: MaterialTheme.colorScheme.primary,
-                onConfirm = { color ->
-                    draftColorHex = colorToHex(color)
-                    showColorPicker = false
-                },
-                onCancel = {
-                    showColorPicker = false
-                }
-            )
-        }
 
-        // --- ROW 1.6: Icon Picker ---
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Current icon preview
-            val previewTint = draftColor ?: MaterialTheme.colorScheme.primary
-            if (draftIconEmoji != null) {
-                Text(draftIconEmoji!!, fontSize = 24.sp, color = previewTint, modifier = Modifier.size(32.dp), textAlign = TextAlign.Center)
-            } else {
-                val iconVector = IconRegistry.resolve(draftIconKey) ?: IconRegistry.defaultAgentIcon
-                Icon(iconVector, contentDescription = null, modifier = Modifier.size(32.dp), tint = previewTint)
-            }
-            OutlinedButton(onClick = { showIconPicker = !showIconPicker }) {
-                Icon(Icons.Default.EmojiEmotions, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (showIconPicker) "Hide icon picker" else "Set icon")
-            }
-            if (draftIconKey != null || draftIconEmoji != null) {
-                TextButton(onClick = { draftIconKey = null; draftIconEmoji = null; showIconPicker = false }) {
-                    Text("Reset to default")
-                }
-            }
-        }
-        AnimatedVisibility(visible = showIconPicker) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceDim, MaterialTheme.shapes.small)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Material Icons", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // --- Strategy selector (identity's sibling at the top of the form) ---
+            StrategySelector(draftAgent, onDraftChanged)
 
-                // Icon grid — FlowRow of tinted icon buttons
-                val iconTint = draftColor ?: MaterialTheme.colorScheme.primary
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    IconRegistry.agentIcons.forEach { key ->
-                        val icon = IconRegistry.resolve(key) ?: return@forEach
-                        val isSelected = draftIconKey == key && draftIconEmoji == null
-                        IconButton(
-                            onClick = { draftIconKey = key; draftIconEmoji = null },
-                            modifier = Modifier.size(40.dp).then(
-                                if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                                else Modifier
-                            )
-                        ) {
-                            Icon(icon, contentDescription = key, tint = iconTint, modifier = Modifier.size(24.dp))
+            // --- Compute (Provider + Model) ---
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) { ProviderSelector(draftAgent, agentState, onDraftChanged) }
+                Box(Modifier.weight(1f)) { ModelSelector(draftAgent, agentState, onDraftChanged) }
+            }
+
+            // --- Subscriptions ---
+            Row(Modifier.fillMaxWidth()) {
+                MultiSessionSelector(draftAgent, agentState, onDraftChanged)
+            }
+
+            // --- Strategy-specific settings ---
+            val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
+                if (CognitiveStrategyRegistry.getAll().isEmpty()) null
+                else CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
+            }
+
+            if (currentStrategy == null) {
+                Text(
+                    "Strategy unavailable — registry not initialised.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+
+            val configFields = remember(currentStrategy) { currentStrategy?.getConfigFields() ?: emptyList() }
+            if (configFields.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text(
+                    "Strategy Settings (${currentStrategy?.displayName ?: "Unknown"})",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+                configFields.forEach { field ->
+                    Row(Modifier.fillMaxWidth()) {
+                        when (field.type) {
+                            StrategyConfigFieldType.KNOWLEDGE_GRAPH ->
+                                KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
+                            StrategyConfigFieldType.OUTPUT_SESSION ->
+                                OutputSessionSelector(draftAgent, agentState, onDraftChanged, field, currentStrategy)
                         }
                     }
                 }
+            }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                // Emoji input
-                Text("Or paste an emoji", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = draftIconEmoji ?: "",
-                        onValueChange = { input ->
-                            if (input.isBlank()) {
-                                draftIconEmoji = null
-                            } else {
-                                // Take first emoji/character cluster
-                                draftIconEmoji = input.take(2) // Most emoji are 1-2 chars
-                                draftIconKey = null
-                            }
-                        },
-                        label = { Text("Emoji") },
-                        singleLine = true,
-                        modifier = Modifier.width(120.dp)
-                    )
-                    if (draftIconEmoji != null) {
-                        Text(draftIconEmoji!!, fontSize = 28.sp, color = draftColor ?: MaterialTheme.colorScheme.primary)
+            // --- Resource slots ---
+            val resourceSlots = remember(currentStrategy) { currentStrategy?.getResourceSlots() ?: emptyList() }
+            if (resourceSlots.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text(
+                    "Resources",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            if (resourceSlots.size == 1) {
+                val slot = resourceSlots.first()
+                ResourceSlotSelector(
+                    label = slot.displayName,
+                    slotKey = slot.slotId,
+                    resourceType = slot.type,
+                    agentState = agentState,
+                    agent = draftAgent,
+                    onUpdate = onDraftChanged,
+                )
+            } else if (resourceSlots.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    resourceSlots.forEach { slot ->
+                        Box(Modifier.weight(1f)) {
+                            ResourceSlotSelector(
+                                label = slot.displayName,
+                                slotKey = slot.slotId,
+                                resourceType = slot.type,
+                                agentState = agentState,
+                                agent = draftAgent,
+                                onUpdate = onDraftChanged,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        // --- ROW 2: Compute (Provider + Model) ---
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.weight(1f)) { ProviderSelector(draftAgent, agentState, onDraftChanged) }
-            Box(Modifier.weight(1f)) { ModelSelector(draftAgent, agentState, onDraftChanged) }
-        }
-
-        // --- ROW 3: Context (Subscriptions) — Unified multi-select for all strategies ---
-        Row(Modifier.fillMaxWidth()) {
-            MultiSessionSelector(draftAgent, agentState, onDraftChanged)
-        }
-
-        // --- ROW 4: Strategy-Specific Settings (polymorphic, driven by strategy.getConfigFields()) ---
-        val currentStrategy = remember(draftAgent.cognitiveStrategyId) {
-            if (CognitiveStrategyRegistry.getAll().isEmpty()) null
-            else CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
-        }
-
-        if (currentStrategy == null) {
-            Text(
-                "Strategy unavailable — registry not initialised.",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
-        }
-
-        val configFields = remember(currentStrategy) { currentStrategy?.getConfigFields() ?: emptyList() }
-
-        if (configFields.isNotEmpty()) {
+            // --- Automatic Mode ---
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Text(
-                "Strategy Settings (${currentStrategy?.displayName ?: "Unknown"})",
+                "Automatic Operation",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = 4.dp),
             )
-
-            configFields.forEach { field ->
-                Row(Modifier.fillMaxWidth()) {
-                    when (field.type) {
-                        StrategyConfigFieldType.KNOWLEDGE_GRAPH ->
-                            KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
-                        StrategyConfigFieldType.OUTPUT_SESSION ->
-                            OutputSessionSelector(draftAgent, agentState, onDraftChanged, field, currentStrategy)
-                    }
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Automatic Mode", style = MaterialTheme.typography.bodyLarge)
+                Switch(
+                    checked = draftAgent.automaticMode,
+                    onCheckedChange = { draftAgent = draftAgent.copy(automaticMode = it) },
+                )
             }
-        }
+            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = autoWaitTimeInput,
+                    onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Auto Wait (s)") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = autoMaxWaitTimeInput,
+                    onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Max Wait (s)") },
+                    modifier = Modifier.weight(1f),
+                )
+            }
 
-        // --- ROW 5: Resource Slots (Strategy-Driven) ---
-        val resourceSlots = remember(currentStrategy) { currentStrategy?.getResourceSlots() ?: emptyList() }
-
-        if (resourceSlots.isNotEmpty()) {
+            // --- Context Budget ---
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Text(
-                "Resources",
+                "Context Budget",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = 4.dp),
             )
-        }
-
-        if (resourceSlots.size == 1) {
-            val slot = resourceSlots.first()
-            ResourceSlotSelector(
-                label = slot.displayName,
-                slotKey = slot.slotId,
-                resourceType = slot.type,
-                agentState = agentState,
-                agent = draftAgent,
-                onUpdate = onDraftChanged
-            )
-        } else if (resourceSlots.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                resourceSlots.forEach { slot ->
-                    Box(Modifier.weight(1f)) {
-                        ResourceSlotSelector(
-                            label = slot.displayName,
-                            slotKey = slot.slotId,
-                            resourceType = slot.type,
-                            agentState = agentState,
-                            agent = draftAgent,
-                            onUpdate = onDraftChanged
-                        )
-                    }
-                }
-            }
-        }
-
-        // --- ROW 6: Auto Mode ---
-        HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text(
-            "Automatic Operation",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("Automatic Mode", style = MaterialTheme.typography.bodyLarge)
-            Switch(
-                checked = draftAgent.automaticMode,
-                onCheckedChange = { draftAgent = draftAgent.copy(automaticMode = it) }
-            )
-        }
-
-        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = autoWaitTimeInput,
-                onValueChange = { autoWaitTimeInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Auto Wait (s)") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = autoMaxWaitTimeInput,
-                onValueChange = { autoMaxWaitTimeInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Max Wait (s)") },
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        // --- ROW 7: Context Budget (§3.2) ---
-        HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text(
-            "Context Budget",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-        Text(
-            "Controls the agent's context window size. Values are approximate tokens (~4 chars/token). " +
+            Text(
+                "Controls the agent's context window size. Values are approximate tokens (~4 chars/token). " +
                     "The system auto-collapses partitions when the maximum is exceeded.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp)
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = budgetOptimalTokensInput,
+                    onValueChange = { budgetOptimalTokensInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Optimal (~tokens)") },
+                    supportingText = { Text("Soft target for best coherence") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = budgetMaxTokensInput,
+                    onValueChange = { budgetMaxTokensInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Maximum (~tokens)") },
+                    supportingText = { Text("Hard ceiling — auto-collapse fires") },
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = budgetMaxPartialTokensInput,
+                    onValueChange = { budgetMaxPartialTokensInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Max Partial (~tokens)") },
+                    supportingText = { Text("Single partition truncation limit") },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        ViewFooter {
+            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = { tryClose() })
+            FooterButton(
+                emphasis = FooterActionEmphasis.Confirm,
+                label = if (target is AgentEditTarget.Create) "Create" else "Save",
+                onClick = { onSave() },
+                enabled = canSave,
+            )
+        }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your unsaved edits will be lost.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onClose()
+                }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) { Text("Keep editing") }
+            },
         )
-
-        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = budgetOptimalTokensInput,
-                onValueChange = { budgetOptimalTokensInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Optimal (~tokens)") },
-                supportingText = { Text("Soft target for best coherence") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = budgetMaxTokensInput,
-                onValueChange = { budgetMaxTokensInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Maximum (~tokens)") },
-                supportingText = { Text("Hard ceiling — auto-collapse fires") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = budgetMaxPartialTokensInput,
-                onValueChange = { budgetMaxPartialTokensInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Max Partial (~tokens)") },
-                supportingText = { Text("Single partition truncation limit") },
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            Arrangement.End,
-            Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onCancel) { Icon(Icons.Default.Cancel, "Cancel Edit") }
-            IconButton(onClick = onSave, enabled = agentNameInput.isNotBlank()) { Icon(Icons.Default.Save, "Save") }
-        }
     }
 }
 
