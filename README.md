@@ -25,7 +25,7 @@ Secure by design, flexible, configurable on the fly, transparent and made for th
 
 ---
 
-<img width="1127" height="1184" alt="image" src="https://github.com/user-attachments/assets/7b1fd325-f6c1-4e1f-b60b-004873431141" />
+<img alt="image" src="https://github.com/TD-Dan/asareon-raam/blob/main/Design/screenshot1.png" />
 
 ---
 
