@@ -70,12 +70,19 @@ interface Feature {
             get() = emptyMap()
 
         /**
-         * Structured ribbon entries contributed by this feature. The
-         * [GlobalActionRibbon] renders entries sorted by [RibbonEntry.priority]
-         * (higher first) and spills low-priority ones into its overflow menu
-         * when vertical space is constrained.
+         * Structured ribbon entries contributed by this feature. The ribbon
+         * renders entries sorted by [RibbonEntry.priority] (higher first) and
+         * spills low-priority ones into its overflow menu when vertical space
+         * is constrained.
+         *
+         * Prefer this over [RibbonContent]. The legacy [RibbonContent] hook
+         * remains for features that need a custom composable (e.g. a badge),
+         * and is rendered below the structured entries.
          */
         fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = emptyList()
+
+        @Composable
+        fun RibbonContent(store: Store, activeViewKey: String?) {}
 
         /**
          * Renders a part of the feature's UI to be embedded inside another view.
@@ -84,6 +91,9 @@ interface Feature {
          */
         @Composable
         fun PartialView(store: Store, partId: String, context: Any? = null) {}
+
+        @Composable
+        fun MenuContent(store: Store, onDismiss: () -> Unit) {}
     }
 }
 

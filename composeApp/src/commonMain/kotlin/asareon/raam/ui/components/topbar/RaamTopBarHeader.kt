@@ -1,40 +1,36 @@
 package asareon.raam.ui.components.topbar
 
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
+import asareon.raam.ui.theme.spacing
 
 /**
- * Visual weight of a [RaamTopBarHeader] / [RaamTopBar]. Two tiers:
- *
- *  - [Primary]: the top bar of a top-level view. Uses `titleLarge` (~22sp)
- *    for the title, `labelMedium` (~12sp) for the subtitle, and the full
- *    `spacing.topBarHeight` (~56dp) min row height.
- *  - [Secondary]: the top bar of a subordinate surface — a side pane, a
- *    supporting pane, a nested section. Uses `titleMedium` (~16sp),
- *    `labelSmall` (~11sp), and a smaller `spacing.secondaryTopBarHeight`
- *    (~42dp, ~75% of primary). Pane chrome reads lighter so the view
- *    top bar remains the dominant horizontal band.
- *
- * Size-only styling: the enum is not a replacement for [HeaderActionEmphasis]
- * and does not affect action buttons.
+ * Minimum width reserved for the title area before actions start spilling
+ * into the overflow kebab. Ensures the title never collapses to nothing on
+ * narrow windows.
  */
-enum class HeaderStyle { Primary, Secondary }
+private val MinTitleWidth = 120.dp
 
 /**
- * Standard-title convenience over [RaamTopBar]. Renders [title] (and optional
- * [subtitle]) in the center slot; delegates leading, actions, and subContent
- * to [RaamTopBar].
+ * The standard header content used by most screens: optional [leading] slot,
+ * [title] (with optional [subtitle]), and a responsive [actions] row with
+ * overflow kebab. [subContent] is rendered by [RaamTopBar] beneath the bar.
  *
- * Use this when the center of the bar is plain text. For a tab row, inline
- * controls alongside the title, or any other custom center content, call
- * [RaamTopBar] directly.
- *
- * [style] picks the typography tier — see [HeaderStyle]. Use [HeaderStyle.Secondary]
- * for side panes and other subordinate surfaces.
+ * For non-standard headers (e.g. tabs-as-title) call [RaamTopBar] directly
+ * and compose your own header layout.
  */
 @Composable
 fun RaamTopBarHeader(
@@ -43,38 +39,64 @@ fun RaamTopBarHeader(
     subtitle: String? = null,
     leading: HeaderLeading = HeaderLeading.None,
     actions: List<HeaderAction> = emptyList(),
-    style: HeaderStyle = HeaderStyle.Primary,
     subContent: @Composable (() -> Unit)? = null,
 ) {
-    val titleStyle: TextStyle = when (style) {
-        HeaderStyle.Primary -> MaterialTheme.typography.titleLarge
-        HeaderStyle.Secondary -> MaterialTheme.typography.titleMedium
-    }
-    val subtitleStyle: TextStyle = when (style) {
-        HeaderStyle.Primary -> MaterialTheme.typography.labelMedium
-        HeaderStyle.Secondary -> MaterialTheme.typography.labelSmall
-    }
-    RaamTopBar(
-        modifier = modifier,
-        leading = leading,
-        actions = actions,
-        style = style,
-        subContent = subContent,
-    ) {
-        Column {
-            Text(
-                text = title,
-                style = titleStyle,
-                maxLines = 1,
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = subtitleStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+    RaamTopBar(modifier = modifier, subContent = subContent) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val rowWidth = maxWidth
+            val leadingReserve = if (leading is HeaderLeading.None) 0.dp else HeaderActionSlotWidth
+            val actionBudget = (rowWidth - leadingReserve - MinTitleWidth).coerceAtLeast(0.dp)
+            val maxSlots = (actionBudget / HeaderActionSlotWidth).toInt()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = MaterialTheme.spacing.tight),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LeadingSlot(leading)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = MaterialTheme.spacing.inner),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1,
+                    )
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                if (actions.isNotEmpty()) {
+                    ResponsiveActions(actions = actions, maxVisibleSlots = maxSlots)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun LeadingSlot(leading: HeaderLeading) {
+    when (leading) {
+        HeaderLeading.None -> Unit
+        is HeaderLeading.Back -> TooltipIconButton(
+            label = "Back",
+            onClick = leading.onClick,
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+        is HeaderLeading.Close -> TooltipIconButton(
+            label = "Close",
+            onClick = leading.onClick,
+        ) {
+            Icon(Icons.Default.Close, contentDescription = "Close")
         }
     }
 }

@@ -37,21 +37,20 @@ import kotlinx.serialization.json.put
 import org.jetbrains.compose.resources.painterResource
 
 /**
- * Vertical cost per ribbon slot: 48 dp IconButton + 8 dp spacedBy gap
- * between consecutive children. The gap is charged per-slot rather than
- * per-pair because it aligns with how much *additional* room each new slot
- * needs below the previous one, making the [maxHeight] / slot division come
- * out to an accurate count that doesn't clip the last icon.
+ * Vertical height reserved per ribbon icon button (M3 touch target).
+ * Used to compute how many structured [RibbonEntry]s fit in available space.
  */
-private val RibbonSlotHeight = 56.dp
+private val RibbonSlotHeight = 48.dp
 
 /**
- * Fixed vertical cost of the non-collapsible ribbon chrome: top + bottom
- * padding (16 dp) plus the home IconButton (48 dp). No spacedBy gap here —
- * the gap below the home button is already absorbed into [RibbonSlotHeight]
- * of the first entry.
+ * Fixed vertical cost of the non-collapsible ribbon chrome: the home button
+ * at the top, the Menu button at the bottom, the vertical padding, and any
+ * legacy `RibbonContent` composables rendered from un-migrated features.
+ *
+ * Conservative estimate — slight under-use of vertical space is preferable to
+ * crowding the menu button off-screen.
  */
-private val RibbonChromeHeight = 64.dp
+private val RibbonChromeHeight = 160.dp
 
 @Composable
 fun GlobalActionRibbon(
@@ -59,18 +58,24 @@ fun GlobalActionRibbon(
     features: List<Feature>,
     activeViewKey: String?
 ) {
+    var isMenuExpanded by remember { mutableStateOf(false) }
     val appState by store.state.collectAsState()
     val coreState = remember(appState.featureStates) {
         appState.featureStates["core"] as? CoreState
     }
     val defaultViewKey = coreState?.defaultViewKey ?: "feature.session.main"
 
-    // Collect all structured entries from all features (sort happens in
-    // computeRibbonLayout so the ordering is testable in isolation).
+    // Collect all structured entries from all features, sorted by priority.
     val structuredEntries = features
         .asSequence()
         .mapNotNull { it.composableProvider }
         .flatMap { it.ribbonEntries(store, activeViewKey).asSequence() }
+        .withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<RibbonEntry>> { it.value.priority }
+                .thenBy { it.index }
+        )
+        .map { it.value }
         .toList()
 
     BoxWithConstraints(
@@ -79,10 +84,17 @@ fun GlobalActionRibbon(
             .width(MaterialTheme.spacing.ribbonWidth)
             .background(MaterialTheme.colorScheme.surfaceContainer)
     ) {
-        val slotBudget = ((maxHeight - RibbonChromeHeight) / RibbonSlotHeight)
+        // Compute how many structured entries fit. Overflow spills into a
+        // dedicated overflow icon that lives at the end of the structured list.
+        val availableHeight = maxHeight
+        val slotBudget = ((availableHeight - RibbonChromeHeight) / RibbonSlotHeight)
             .toInt()
             .coerceAtLeast(0)
-        val layout = computeRibbonLayout(structuredEntries, slotBudget)
+        val allFit = structuredEntries.size <= slotBudget
+        val visibleCount = if (allFit) structuredEntries.size
+            else (slotBudget - 1).coerceAtLeast(0)
+        val visibleEntries = structuredEntries.take(visibleCount)
+        val overflowEntries = structuredEntries.drop(visibleCount)
 
         Column(
             modifier = Modifier
@@ -107,11 +119,37 @@ fun GlobalActionRibbon(
             }
 
             // --- Structured ribbon entries (stacked from top) ---
-            layout.visible.forEach { entry ->
+            visibleEntries.forEach { entry ->
                 RibbonIconButton(entry)
             }
-            if (layout.overflowVisible) {
-                RibbonOverflowButton(layout.overflow)
+            if (overflowEntries.isNotEmpty()) {
+                RibbonOverflowButton(overflowEntries)
+            }
+
+            // --- Legacy: un-migrated features still use @Composable RibbonContent ---
+            features.forEach { feature ->
+                feature.composableProvider?.RibbonContent(
+                    store = store,
+                    activeViewKey = activeViewKey
+                )
+            }
+
+            // --- Application menu (aggregates all features' MenuContent) ---
+            Box {
+                IconButton(onClick = { isMenuExpanded = true }) {
+                    Icon(Icons.Default.Menu, contentDescription = "Application Menu")
+                }
+                DropdownMenu(
+                    expanded = isMenuExpanded,
+                    onDismissRequest = { isMenuExpanded = false }
+                ) {
+                    features.forEach { feature ->
+                        feature.composableProvider?.MenuContent(
+                            store = store,
+                            onDismiss = { isMenuExpanded = false }
+                        )
+                    }
+                }
             }
         }
     }
