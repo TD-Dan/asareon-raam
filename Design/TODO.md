@@ -23,12 +23,6 @@ Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `Gl
 - **Consistent pane header chrome** — title + trailing kebab for pane-local actions (currently `AgentResourcesView`'s left pane has its own inline "Resources" title + "+" button; that pattern would move into the shared component).
 - **Consistent background tone** (`surfaceContainerLow`).
 
-## Footer CTA system — DONE
-Commit CTAs live in `ViewFooter` with `FooterButton(Confirm | Cancel)` — see `06-UI-system.md` "View Footer".
-
-## Identity-asset editor pattern — DONE
-Every identity-asset editor (user, session, agent, Lua script) is a full-view edit surface using the shared `IdentityFieldsSection` + asset-specific content + `ViewFooter`. Create = edit a new instance. Discard-prompt on dirty Cancel. See `06-UI-system.md` "Identity Assets", "Asset Editors", and "Commit Discipline".
-
 ### Remaining follow-ups
 - **Script rename cascade.** `IdentityFieldsSection(nameEditable = false)` is used in Lua script Edit mode because the rename chain (listen for `CORE_RETURN_UPDATE_IDENTITY`, rename the `.lua` file, update `state.scripts` map) is not yet implemented in `LuaFeature`. When it lands, drop the `nameEditable = false` and delete the note in `06-UI-system.md#Rename-vs-visual-edits`.
 - **Send button in SessionView message input.** Icon-only, different visual axis — may need a `FooterIconButton` sibling or remain as-is. Decide when the composer gets its next pass.
