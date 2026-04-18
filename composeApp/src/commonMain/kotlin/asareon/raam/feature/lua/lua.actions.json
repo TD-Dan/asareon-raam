@@ -127,7 +127,7 @@
     },
     {
       "action_name": "lua.CREATE_SCRIPT",
-      "summary": "Create a new Lua script file in the workspace with default template content.",
+      "summary": "Create a new Lua script file in the workspace. If content is omitted the default app-script template is used. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied at identity registration time.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -137,6 +137,22 @@
           "name": {
             "type": "string",
             "description": "Display name for the new script."
+          },
+          "content": {
+            "type": ["string", "null"],
+            "description": "Optional initial script content. If absent or null, the default app-script template is used."
+          },
+          "displayColor": {
+            "type": ["string", "null"],
+            "description": "Optional '#RRGGBB' display color for the script's identity."
+          },
+          "displayIcon": {
+            "type": ["string", "null"],
+            "description": "Optional Material icon key for the script's identity."
+          },
+          "displayEmoji": {
+            "type": ["string", "null"],
+            "description": "Optional emoji override for the script's identity."
           }
         },
         "required": ["name"]

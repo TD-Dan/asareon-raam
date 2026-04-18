@@ -275,12 +275,19 @@ class LuaFeature(
         )
         val handle = "lua.$localHandle"
 
-        // Register script identity
+        // Register script identity. Forward any caller-supplied display fields
+        // so a freshly-created script's identity carries them from the start.
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.CORE_REGISTER_IDENTITY,
             payload = buildJsonObject {
                 put("name", localHandle)
                 put("localHandle", localHandle)
+                payload["displayColor"]?.jsonPrimitive?.contentOrNull
+                    ?.let { put("displayColor", it) }
+                payload["displayIcon"]?.jsonPrimitive?.contentOrNull
+                    ?.let { put("displayIcon", it) }
+                payload["displayEmoji"]?.jsonPrimitive?.contentOrNull
+                    ?.let { put("displayEmoji", it) }
             }
         ))
 
@@ -356,30 +363,42 @@ class LuaFeature(
     // ========================================================================
 
     private fun handleCreateScript(action: Action, store: Store) {
-        val name = action.payload?.get("name")?.jsonPrimitive?.contentOrNull
+        val payload = action.payload ?: return logMissingPayload("CREATE_SCRIPT")
+        val name = payload["name"]?.jsonPrimitive?.contentOrNull
             ?: return logMissingField("CREATE_SCRIPT", "name")
         val localHandle = name.lowercase().replace(Regex("[^a-z0-9-]"), "-")
             .replace(Regex("-+"), "-").trimStart('-').trimEnd('-').ifEmpty { "unnamed" }
         val fileName = "$localHandle.lua"
 
-        val template = LuaScriptTemplates.appScript(name, localHandle)
+        // Honor caller-supplied content; fall back to the app-script template.
+        val content = payload["content"]?.jsonPrimitive?.contentOrNull
+            ?: LuaScriptTemplates.appScript(name, localHandle)
+
+        val displayColor = payload["displayColor"]?.jsonPrimitive?.contentOrNull
+        val displayIcon = payload["displayIcon"]?.jsonPrimitive?.contentOrNull
+        val displayEmoji = payload["displayEmoji"]?.jsonPrimitive?.contentOrNull
 
         // Write via FileSystem feature
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.FILESYSTEM_WRITE,
             payload = buildJsonObject {
                 put("path", fileName)
-                put("content", template)
+                put("content", content)
             }
         ))
 
         // Auto-load the new script (FileSystem WRITE is synchronous within the
-        // Store processing loop — by the time LOAD_SCRIPT is processed, the file exists)
+        // Store processing loop — by the time LOAD_SCRIPT is processed, the file exists).
+        // Identity visuals piggy-back on LOAD_SCRIPT → REGISTER_IDENTITY so the new
+        // script's identity carries them from the moment it's registered.
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.LUA_LOAD_SCRIPT,
             payload = buildJsonObject {
                 put("scriptPath", fileName)
                 put("localHandle", localHandle)
+                if (displayColor != null) put("displayColor", displayColor)
+                if (displayIcon != null) put("displayIcon", displayIcon)
+                if (displayEmoji != null) put("displayEmoji", displayEmoji)
             }
         ))
     }

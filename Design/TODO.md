@@ -12,12 +12,10 @@
 
 - Need a pre loaded state view that shows live log stream while app is loading
 
-- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere — DONE (see 06-UI-system.md). Remaining UI work tracked under `# UI SYSTEM` below.
-
 
 # UI SYSTEM
 
-Design system established — see `06-UI-system.md`. Remaining follow-ups:
+- Use unified composable for the list cards in identities, agents, sessions. Allow ordering the lists everywhere, not just sessions.
 
 ## SidePane unification (large)
 Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `GlobalActionRibbon` into a shared `SidePane` component with:
@@ -99,7 +97,6 @@ No structural changes expected; this is polish.
 
 - 'auto-os(default)/dark/light/' mode switch in settings
 
-- unified identity editor for all identities (name, color, icon etc.). This should also pop up when creating new sessions, agents, scripts, users etc.
 
 ## Bugs
 - BUG: Agent identities are not removed from core when agent is deleted

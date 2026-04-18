@@ -28,6 +28,12 @@ import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
 import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
+import asareon.raam.ui.components.footer.FooterActionEmphasis
+import asareon.raam.ui.components.footer.FooterButton
+import asareon.raam.ui.components.footer.ViewFooter
+import asareon.raam.ui.components.identity.IdentityDraft
+import asareon.raam.ui.components.identity.IdentityFieldsSection
+import asareon.raam.ui.components.identity.toDraft
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -56,15 +62,23 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
     }
 
     var selectedScript by remember { mutableStateOf<String?>(null) }
-    var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
-    var isEditing by remember { mutableStateOf(false) }
-    var editBuffer by remember { mutableStateOf("") }
+    var editTarget by remember { mutableStateOf<ScriptEditTarget?>(null) }
 
     // Auto-select first script if selection is stale
     val scripts = luaState.scripts.values.toList()
     if (selectedScript != null && selectedScript !in luaState.scripts) {
         selectedScript = scripts.firstOrNull()?.handle
+    }
+
+    if (editTarget != null) {
+        ScriptEditorView(
+            store = store,
+            target = editTarget!!,
+            luaState = luaState,
+            onClose = { editTarget = null },
+        )
+        return
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -80,7 +94,7 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                     icon = Icons.Default.Add,
                     priority = 30,
                     emphasis = HeaderActionEmphasis.Create,
-                    onClick = { showCreateDialog = true },
+                    onClick = { editTarget = ScriptEditTarget.Create },
                 ),
                 HeaderAction(
                     id = "open-workspace-folder",
@@ -143,7 +157,6 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                                 isSelected = selectedScript == script.handle,
                                 onSelect = {
                                     selectedScript = script.handle
-                                    isEditing = false
                                 },
                                 onToggle = {
                                     store.dispatch("lua", Action(
@@ -163,31 +176,12 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
             val selected = selectedScript?.let { luaState.scripts[it] }
             if (selected != null) {
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    // Detail header with actions
+                    // Detail header with actions. Edit opens the full-view editor;
+                    // no inline editing in the detail pane anymore.
                     ScriptDetailHeader(
                         script = selected,
-                        isEditing = isEditing,
                         onEdit = {
-                            if (selected.sourceContent != null) {
-                                editBuffer = selected.sourceContent
-                                isEditing = true
-                            }
-                        },
-                        onSave = {
-                            // Never save placeholder text to disk
-                            if (!editBuffer.startsWith("-- <file content unavailable")) {
-                                store.dispatch("lua", Action(
-                                    name = ActionRegistry.Names.LUA_SAVE_SCRIPT,
-                                    payload = buildJsonObject {
-                                        put("scriptHandle", selected.handle)
-                                        put("content", editBuffer)
-                                    }
-                                ))
-                            }
-                            isEditing = false
-                        },
-                        onCancel = {
-                            isEditing = false
+                            editTarget = ScriptEditTarget.Edit(selected.handle)
                         },
                         onClone = {
                             store.dispatch("lua", Action(
@@ -200,21 +194,8 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
 
                     HorizontalDivider()
 
-                    // Script content area
-                    if (isEditing && selected.sourceContent != null) {
-                        CodeEditor(
-                            value = editBuffer,
-                            onValueChange = { editBuffer = it },
-                            syntax = SyntaxMode.LUA,
-                            modifier = Modifier.fillMaxSize().padding(8.dp),
-                            bordered = false
-                        )
-                    } else if (selected.sourceContent == null && isEditing) {
-                        // Shouldn't happen, but safety fallback
-                        isEditing = false
-                    } else {
-                        // Info + console
-                        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                    // Info + console
+                    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                             // Status info
                             ScriptInfoSection(selected, luaState)
 
@@ -303,7 +284,6 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                             }
                         }
                     }
-                }
             } else {
                 // No selection
                 Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
@@ -356,19 +336,6 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
     // ══════════════════════════════════════════════════════════════════════
     // DIALOGS
     // ══════════════════════════════════════════════════════════════════════
-
-    if (showCreateDialog) {
-        CreateScriptDialog(
-            onDismiss = { showCreateDialog = false },
-            onCreate = { name ->
-                store.dispatch("lua", Action(
-                    name = ActionRegistry.Names.LUA_CREATE_SCRIPT,
-                    payload = buildJsonObject { put("name", name) }
-                ))
-                showCreateDialog = false
-            }
-        )
-    }
 
     if (showDeleteDialog != null) {
         val handle = showDeleteDialog!!
@@ -443,10 +410,7 @@ private fun ScriptListRow(
 @Composable
 private fun ScriptDetailHeader(
     script: ScriptInfo,
-    isEditing: Boolean,
     onEdit: () -> Unit,
-    onSave: () -> Unit,
-    onCancel: () -> Unit,
     onClone: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -469,20 +433,9 @@ private fun ScriptDetailHeader(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Edit / Save+Cancel toggle
-            if (isEditing) {
-                IconButton(onClick = onCancel) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel editing")
-                }
-                FilledTonalButton(onClick = onSave) {
-                    Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Save")
-                }
-            } else {
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit script")
-                }
+            // Edit opens the full-view script editor (IdentityFieldsSection + CodeEditor).
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit script")
             }
 
             // Kebab: Clone, divider, Delete
@@ -581,36 +534,165 @@ private fun StatusBadge(status: ScriptStatus) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Create Script Dialog
+// Full-view Script Editor — create or edit a Lua script's identity + body
 // ══════════════════════════════════════════════════════════════════════════════
 
-@Composable
-private fun CreateScriptDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String) -> Unit
-) {
-    var name by remember { mutableStateOf("") }
+/** Which script the full-view editor is targeting. */
+private sealed interface ScriptEditTarget {
+    data object Create : ScriptEditTarget
+    data class Edit(val handle: String) : ScriptEditTarget
+}
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New Lua Script") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Script name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onCreate(name) },
-                enabled = name.isNotBlank()
-            ) { Text("Create") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+/** Slug rule mirroring [LuaFeature.handleCreateScript]. */
+private fun slugifyScriptName(name: String): String =
+    name.lowercase().replace(Regex("[^a-z0-9-]"), "-")
+        .replace(Regex("-+"), "-").trimStart('-').trimEnd('-').ifEmpty { "unnamed" }
+
+@Composable
+private fun ScriptEditorView(
+    store: Store,
+    target: ScriptEditTarget,
+    luaState: LuaState,
+    onClose: () -> Unit,
+) {
+    val appState by store.state.collectAsState()
+    val existing = (target as? ScriptEditTarget.Edit)?.let { luaState.scripts[it.handle] }
+    val existingIdentity = (target as? ScriptEditTarget.Edit)
+        ?.let { appState.identityRegistry[it.handle] }
+
+    val initialIdentity = remember(target) {
+        when (target) {
+            is ScriptEditTarget.Create -> IdentityDraft(name = "")
+            is ScriptEditTarget.Edit -> existingIdentity?.toDraft()
+                ?: IdentityDraft(name = existing?.name ?: "")
         }
-    )
+    }
+    var identityDraft by remember(target) { mutableStateOf(initialIdentity) }
+
+    // Template rendered once on entry — for Create it's the app-script template
+    // with the caller's current name/slug; for Edit it's the file's sourceContent.
+    // We do not auto-regenerate the template as the user types the name; that
+    // would clobber in-progress code edits.
+    val initialCode = remember(target) {
+        when (target) {
+            is ScriptEditTarget.Create -> {
+                val starterName = identityDraft.name.ifBlank { "New Script" }
+                val starterLocalHandle = slugifyScriptName(starterName)
+                LuaScriptTemplates.appScript(starterName, starterLocalHandle)
+            }
+            is ScriptEditTarget.Edit -> existing?.sourceContent ?: ""
+        }
+    }
+    var code by remember(target) { mutableStateOf(initialCode) }
+
+    var showDiscardDialog by remember { mutableStateOf(false) }
+    val dirty = identityDraft != initialIdentity || code != initialCode
+    val canSave = identityDraft.name.isNotBlank()
+
+    val tryClose = { if (dirty) showDiscardDialog = true else onClose() }
+
+    val onSave = {
+        when (target) {
+            is ScriptEditTarget.Create -> {
+                store.dispatch("lua", Action(
+                    name = ActionRegistry.Names.LUA_CREATE_SCRIPT,
+                    payload = buildJsonObject {
+                        put("name", identityDraft.name)
+                        put("content", code)
+                        if (identityDraft.displayColor != null) put("displayColor", identityDraft.displayColor)
+                        if (identityDraft.displayIcon != null) put("displayIcon", identityDraft.displayIcon)
+                        if (identityDraft.displayEmoji != null) put("displayEmoji", identityDraft.displayEmoji)
+                    },
+                ))
+            }
+            is ScriptEditTarget.Edit -> {
+                // Save code separately from identity visuals. Name edits are
+                // deliberately disabled in Edit mode — renaming a script would
+                // require a file-rename side-effect chain not yet implemented.
+                if (code != initialCode && !code.startsWith("-- <file content unavailable")) {
+                    store.dispatch("lua", Action(
+                        name = ActionRegistry.Names.LUA_SAVE_SCRIPT,
+                        payload = buildJsonObject {
+                            put("scriptHandle", target.handle)
+                            put("content", code)
+                        },
+                    ))
+                }
+                val visualsChanged = identityDraft.displayColor != initialIdentity.displayColor ||
+                    identityDraft.displayIcon != initialIdentity.displayIcon ||
+                    identityDraft.displayEmoji != initialIdentity.displayEmoji
+                if (visualsChanged) {
+                    store.dispatch("core", Action(
+                        name = ActionRegistry.Names.CORE_UPDATE_IDENTITY,
+                        payload = buildJsonObject {
+                            put("handle", target.handle)
+                            // Pass the current name unchanged so core doesn't rescope the handle.
+                            put("newName", identityDraft.name)
+                            put("displayColor", identityDraft.displayColor)
+                            put("displayIcon", identityDraft.displayIcon)
+                            put("displayEmoji", identityDraft.displayEmoji)
+                        },
+                    ))
+                }
+            }
+        }
+        onClose()
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        RaamTopBarHeader(
+            title = when (target) {
+                is ScriptEditTarget.Create -> "New Script"
+                is ScriptEditTarget.Edit -> existing?.name ?: "Edit Script"
+            },
+            subtitle = "Lua Scripts",
+            leading = HeaderLeading.Back(onClick = { tryClose() }),
+        )
+        IdentityFieldsSection(
+            draft = identityDraft,
+            onDraftChange = { identityDraft = it },
+            nameLabel = "Script Name",
+            nameEditable = target is ScriptEditTarget.Create,
+            modifier = Modifier.padding(
+                horizontal = MaterialTheme.spacing.screenEdge,
+                vertical = MaterialTheme.spacing.itemGap,
+            ),
+        )
+        CodeEditor(
+            value = code,
+            onValueChange = { code = it },
+            syntax = SyntaxMode.LUA,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = MaterialTheme.spacing.screenEdge),
+            bordered = true,
+        )
+        ViewFooter {
+            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = { tryClose() })
+            FooterButton(
+                emphasis = FooterActionEmphasis.Confirm,
+                label = if (target is ScriptEditTarget.Create) "Create" else "Save",
+                onClick = { onSave() },
+                enabled = canSave,
+            )
+        }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your unsaved edits will be lost.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onClose()
+                }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) { Text("Keep editing") }
+            },
+        )
+    }
 }
