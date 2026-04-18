@@ -118,7 +118,7 @@
     },
     {
       "action_name": "core.ADD_USER_IDENTITY",
-      "summary": "Adds a new user identity to the application.",
+      "summary": "Adds a new user identity to the application. displayColor/displayIcon/displayEmoji are optional identity-visual fields set atomically at creation time.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -126,6 +126,15 @@
         "type": "object",
         "properties": {
           "name": {
+            "type": "string"
+          },
+          "displayColor": {
+            "type": "string"
+          },
+          "displayIcon": {
+            "type": "string"
+          },
+          "displayEmoji": {
             "type": "string"
           }
         },

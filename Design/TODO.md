@@ -27,13 +27,8 @@ Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `Gl
 - **Consistent pane header chrome** — title + trailing kebab for pane-local actions (currently `AgentResourcesView`'s left pane has its own inline "Resources" title + "+" button; that pattern would move into the shared component).
 - **Consistent background tone** (`surfaceContainerLow`).
 
-## Primary CTA emphasis tier (small)
-Extend `HeaderActionEmphasis` with a fourth tier for "commit / submit" CTAs (distinct from `Create` which is for new-asset creation). Renders as `Button` with `primary` / `onPrimary`. Use cases today:
-
-- `ManageContextView` bottom-bar "Execute Turn" (currently a plain `Button` with primary defaults — would switch to `emphasis = Primary`)
-- Potentially the Send button in `SessionView`'s message input
-
-Add the enum value, rendering branch in `ResponsiveActions`, and extend `UiT1ResponsiveActionsTest` with the new sort/overflow behaviour.
+## Footer CTA system — DONE
+Commit CTAs are not a header-action tier. They live in a dedicated `ViewFooter` with `FooterButton(Confirm | Cancel)` — see `06-UI-system.md` "View Footer" section. `ManageContextView` is migrated. Remaining opportunistic migration: audit other views for hand-rolled `BottomAppBar` + `Button` pairs and the `SessionView` message-input Send button (the Send button is icon-only, a different visual axis — may need a `FooterIconButton` sibling or remain as-is).
 
 ## Consistency sweep (small)
 Walk every view once more for:

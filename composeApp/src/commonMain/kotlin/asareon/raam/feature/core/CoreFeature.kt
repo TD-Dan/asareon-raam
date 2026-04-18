@@ -28,7 +28,12 @@ class CoreFeature(
     @Serializable private data class ShowToastPayload(val message: String)
     @Serializable private data class CopyToClipboardPayload(val text: String)
     @Serializable private data class UpdateWindowSizePayload(val width: Int, val height: Int)
-    @Serializable private data class AddUserIdentityPayload(val name: String)
+    @Serializable private data class AddUserIdentityPayload(
+        val name: String,
+        val displayColor: String? = null,
+        val displayIcon: String? = null,
+        val displayEmoji: String? = null,
+    )
     @Serializable private data class IdentityIdPayload(val id: String)
     @Serializable private data class IdentitiesLoadedPayload(val identities: List<Identity>, val activeId: String? = null)
     @Serializable private data class DismissConfirmationPayload(val confirmed: Boolean)
@@ -432,7 +437,10 @@ class CoreFeature(
                     handle = fullHandle,
                     name = payload.name,
                     parentHandle = "core",
-                    registeredAt = platformDependencies.currentTimeMillis()
+                    registeredAt = platformDependencies.currentTimeMillis(),
+                    displayColor = payload.displayColor,
+                    displayIcon = payload.displayIcon,
+                    displayEmoji = payload.displayEmoji,
                 )
                 store.updateIdentityRegistry { it + (fullHandle to newUser) }
 

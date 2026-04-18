@@ -1,22 +1,20 @@
 package asareon.raam.feature.core
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -24,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import asareon.raam.core.Action
@@ -32,14 +29,19 @@ import asareon.raam.core.Identity
 import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.core.resolveDisplayColor
-import asareon.raam.ui.components.ColorPicker
-import asareon.raam.ui.components.colorToHex
 import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
 import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
+import asareon.raam.ui.components.footer.FooterActionEmphasis
+import asareon.raam.ui.components.footer.FooterButton
+import asareon.raam.ui.components.footer.ViewFooter
+import asareon.raam.ui.components.identity.IdentityDraft
+import asareon.raam.ui.components.identity.IdentityFieldsSection
+import asareon.raam.ui.components.identity.toDraft
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
+import asareon.raam.ui.theme.spacing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -87,26 +89,28 @@ private fun formatTimestamp(epochMillis: Long): String {
  * not a peer tab — it's accessed rarely and hierarchically subordinate to
  * the identities it describes.
  */
+/**
+ * Which identity the full-view editor is currently targeting. [Create] means
+ * we're creating a fresh identity; [Edit] wraps the handle of an existing one.
+ */
+private sealed interface UserIdentityEditTarget {
+    data object Create : UserIdentityEditTarget
+    data class Edit(val handle: String) : UserIdentityEditTarget
+}
+
 @Composable
 fun IdentityManagerView(store: Store) {
     var showingPermissions by remember { mutableStateOf(false) }
-    var showAddDialog by remember { mutableStateOf(false) }
     var showAllIdentities by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<UserIdentityEditTarget?>(null) }
 
-    if (showAddDialog) {
-        AddIdentityDialog(
-            onDismiss = { showAddDialog = false },
-            onAdd = { name ->
-                store.dispatch(
-                    "core",
-                    Action(
-                        ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
-                        buildJsonObject { put("name", name) },
-                    ),
-                )
-                showAddDialog = false
-            },
+    if (editTarget != null) {
+        UserIdentityEditorView(
+            store = store,
+            target = editTarget!!,
+            onClose = { editTarget = null },
         )
+        return
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -123,7 +127,7 @@ fun IdentityManagerView(store: Store) {
                         icon = Icons.Default.Add,
                         priority = 30,
                         emphasis = HeaderActionEmphasis.Create,
-                        onClick = { showAddDialog = true },
+                        onClick = { editTarget = UserIdentityEditTarget.Create },
                     ),
                     HeaderAction(
                         id = "view-permissions",
@@ -147,6 +151,7 @@ fun IdentityManagerView(store: Store) {
             IdentitiesTabContent(
                 store = store,
                 showAllIdentities = showAllIdentities,
+                onEdit = { handle -> editTarget = UserIdentityEditTarget.Edit(handle) },
             )
         } else {
             RaamTopBarHeader(
@@ -167,6 +172,7 @@ fun IdentityManagerView(store: Store) {
 private fun IdentitiesTabContent(
     store: Store,
     showAllIdentities: Boolean,
+    onEdit: (handle: String) -> Unit,
 ) {
     val appState by store.state.collectAsState()
     val coreState = appState.featureStates["core"] as? CoreState
@@ -230,10 +236,10 @@ private fun IdentitiesTabContent(
                         identity = identity,
                         isActive = identity.handle == coreState?.activeUserId,
                         showDetails = showAllIdentities,
-                        store = store,
                         onSetActive = {
                             store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_USER_IDENTITY, buildJsonObject { put("id", identity.handle) }))
                         },
+                        onEdit = { onEdit(identity.handle) },
                         onDelete = { identityToDelete = identity }
                     )
                 }
@@ -336,237 +342,195 @@ private fun InternalIdentityRow(identity: Identity) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun IdentityRow(
     identity: Identity,
     isActive: Boolean,
     showDetails: Boolean = false,
-    store: Store,
     onSetActive: () -> Unit,
-    onDelete: () -> Unit
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    var isEditing by remember { mutableStateOf(false) }
-    var editName by remember(identity.name) { mutableStateOf(identity.name) }
-    var showColorPicker by remember { mutableStateOf(false) }
-    // Draft color tracks the picker state; committed on "Use", discarded on "Cancel"
-    var draftColorHex by remember(identity.displayColor) { mutableStateOf(identity.displayColor) }
-
-    val displayColor = identity.resolveDisplayColor()
-    val accentColor = displayColor ?: MaterialTheme.colorScheme.primary
-    val themePrimary = MaterialTheme.colorScheme.primary
-    // Draft accent: when draftColorHex is null (reset to default or never set),
-    // always show theme primary — NOT the persisted identity color.
-    val draftAccent = draftColorHex?.let { hex ->
-        val clean = hex.removePrefix("#")
-        if (clean.length == 6) try {
-            val rgb = clean.toLong(16)
-            androidx.compose.ui.graphics.Color(
-                red = ((rgb shr 16) and 0xFF).toInt() / 255f,
-                green = ((rgb shr 8) and 0xFF).toInt() / 255f,
-                blue = (rgb and 0xFF).toInt() / 255f
-            )
-        } catch (_: Exception) { null } else null
-    } ?: themePrimary
-
-    fun commitEdits() {
-        // Dispatch UPDATE_IDENTITY with extended payload (name + displayColor)
-        store.dispatch("core", Action(ActionRegistry.Names.CORE_UPDATE_IDENTITY, buildJsonObject {
-            put("handle", identity.handle)
-            put("newName", editName)
-            if (draftColorHex != null) put("displayColor", draftColorHex)
-            else put("displayColor", null as String?)
-        }))
-        isEditing = false
-        showColorPicker = false
-    }
-
-    fun cancelEdits() {
-        editName = identity.name
-        draftColorHex = identity.displayColor
-        isEditing = false
-        showColorPicker = false
-    }
+    val accentColor = identity.resolveDisplayColor() ?: MaterialTheme.colorScheme.primary
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        border = if (isActive) BorderStroke(2.dp, draftAccent) else null
+        border = if (isActive) BorderStroke(2.dp, accentColor) else null,
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                .onKeyEvent { event ->
-                    if (isEditing && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                        cancelEdits(); true
-                    } else false
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Color swatch — always visible
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(draftAccent)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(accentColor)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
+                Text(
+                    "ID: ${identity.handle}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (identity.permissions.isNotEmpty()) {
+                    Text(
+                        "${identity.permissions.size} permission(s)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-
-                    if (isEditing) {
-                        // Edit mode: name text field
-                        OutlinedTextField(
-                            value = editName,
-                            onValueChange = { editName = it },
-                            label = { Text("Display Name") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        // Read mode: name + details, double-click enters edit
-                        Column(
-                            modifier = Modifier.weight(1f).combinedClickable(
-                                onClick = {},
-                                onDoubleClick = { isEditing = true }
-                            )
-                        ) {
-                            Text(identity.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-                            Text(
-                                "ID: ${identity.handle}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (identity.permissions.isNotEmpty()) {
-                                Text(
-                                    "${identity.permissions.size} permission(s)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (showDetails) {
-                                identity.parentHandle?.let {
-                                    Text("parent: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                identity.uuid?.let {
-                                    Text("uuid: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Text("localHandle: ${identity.localHandle}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (identity.registeredAt > 0) {
-                                    Text("registeredAt: ${formatTimestamp(identity.registeredAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
                 }
-
-                // Action buttons
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isEditing) {
-                        TextButton(onClick = { cancelEdits() }) { Text("Cancel") }
-                        Spacer(Modifier.width(4.dp))
-                        Button(onClick = { commitEdits() }, enabled = editName.isNotBlank()) { Text("Save") }
-                    } else {
-                        if (isActive) {
-                            FilledTonalButton(onClick = {}) { Text("Active") }
-                        } else {
-                            Button(onClick = onSetActive) { Text("Set Active") }
-                        }
-                        IconButton(onClick = { isEditing = true }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Identity")
-                        }
-                        var menuExpanded by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
-                            ) {
-                                DangerDropdownMenuItem(
-                                    label = "Delete",
-                                    onClick = {
-                                        menuExpanded = false
-                                        onDelete()
-                                    },
-                                )
-                            }
-                        }
+                if (showDetails) {
+                    identity.parentHandle?.let {
+                        Text("parent: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    identity.uuid?.let {
+                        Text("uuid: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("localHandle: ${identity.localHandle}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (identity.registeredAt > 0) {
+                        Text("registeredAt: ${formatTimestamp(identity.registeredAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-
-            // Edit mode: Set color button + color picker
-            AnimatedVisibility(visible = isEditing) {
-                Column(modifier = Modifier.padding(top = 8.dp)) {
-                    if (!showColorPicker) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(onClick = { showColorPicker = true }) {
-                                Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Set color")
-                            }
-                            if (draftColorHex != null) {
-                                TextButton(onClick = { draftColorHex = null }) {
-                                    Text("Reset to default")
-                                }
-                            }
-                        }
-                    }
-
-                    AnimatedVisibility(visible = showColorPicker) {
-                        ColorPicker(
-                            initialColor = draftAccent,
-                            onConfirm = { color ->
-                                draftColorHex = colorToHex(color)
-                                showColorPicker = false
-                            },
-                            onCancel = {
-                                // Discard draft color, revert to persisted
-                                draftColorHex = identity.displayColor
-                                showColorPicker = false
-                            },
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
+            if (isActive) {
+                FilledTonalButton(onClick = {}) { Text("Active") }
+            } else {
+                Button(onClick = onSetActive) { Text("Set Active") }
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Identity")
+            }
+            var menuExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DangerDropdownMenuItem(
+                        label = "Delete",
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                    )
                 }
             }
         }
     }
 }
 
+// ============================================================================
+// Full-view Identity Editor — create/edit a user identity
+// ============================================================================
+
 @Composable
-private fun AddIdentityDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add New Identity") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Display Name") },
-                singleLine = true
-            )
-        },
-        confirmButton = {
-            Button(onClick = { onAdd(name) }, enabled = name.isNotBlank()) {
-                Text("Add")
+private fun UserIdentityEditorView(
+    store: Store,
+    target: UserIdentityEditTarget,
+    onClose: () -> Unit,
+) {
+    val appState by store.state.collectAsState()
+    val existing = (target as? UserIdentityEditTarget.Edit)
+        ?.let { appState.identityRegistry[it.handle] }
+
+    // Snapshot initial draft once per target — further updates to the
+    // registry while we're editing must not clobber the user's in-flight
+    // edits. Keyed only by target (not by existing), intentionally.
+    val initial = remember(target) {
+        existing?.toDraft() ?: IdentityDraft(name = "")
+    }
+    var draft by remember(target) { mutableStateOf(initial) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    val dirty = draft != initial
+    val canSave = draft.name.isNotBlank() && dirty
+
+    val tryClose = {
+        if (dirty) showDiscardDialog = true else onClose()
+    }
+
+    val onSave = save@{
+        when (target) {
+            is UserIdentityEditTarget.Create -> {
+                store.dispatch("core", Action(
+                    ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
+                    buildJsonObject {
+                        put("name", draft.name)
+                        if (draft.displayColor != null) put("displayColor", draft.displayColor)
+                        if (draft.displayIcon != null) put("displayIcon", draft.displayIcon)
+                        if (draft.displayEmoji != null) put("displayEmoji", draft.displayEmoji)
+                    },
+                ))
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            is UserIdentityEditTarget.Edit -> {
+                store.dispatch("core", Action(
+                    ActionRegistry.Names.CORE_UPDATE_IDENTITY,
+                    buildJsonObject {
+                        put("handle", target.handle)
+                        put("newName", draft.name)
+                        put("displayColor", draft.displayColor)
+                        put("displayIcon", draft.displayIcon)
+                        put("displayEmoji", draft.displayEmoji)
+                    },
+                ))
             }
         }
-    )
+        onClose()
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        RaamTopBarHeader(
+            title = when (target) {
+                is UserIdentityEditTarget.Create -> "New Identity"
+                is UserIdentityEditTarget.Edit -> existing?.name ?: "Edit Identity"
+            },
+            subtitle = "Identities",
+            leading = HeaderLeading.Back(onClick = tryClose),
+        )
+        IdentityFieldsSection(
+            draft = draft,
+            onDraftChange = { draft = it },
+            nameLabel = "Display Name",
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = MaterialTheme.spacing.screenEdge,
+                    vertical = MaterialTheme.spacing.itemGap,
+                ),
+        )
+        ViewFooter {
+            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = tryClose)
+            FooterButton(
+                emphasis = FooterActionEmphasis.Confirm,
+                label = if (target is UserIdentityEditTarget.Create) "Create" else "Save",
+                onClick = onSave,
+                enabled = canSave,
+            )
+        }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your unsaved edits will be lost.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onClose()
+                }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) { Text("Keep editing") }
+            },
+        )
+    }
 }
