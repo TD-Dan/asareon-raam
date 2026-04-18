@@ -232,6 +232,14 @@ object WorkspaceContextFormatter {
         canWrite: Boolean = true,
         platformDependencies: PlatformDependencies? = null
     ): PromptSection.Group {
+        // Defensive: if a file is EXPLICITLY marked COLLAPSED in the overrides, drop
+        // its content even if the caller included it. This prevents content from
+        // leaking through when an agent has recently collapsed a file but the pipeline
+        // re-uses a previously-fetched contents map. Absence of an override (→ default
+        // COLLAPSED) is not the same signal — the caller is trusted in that case.
+        val effectiveContents = expandedFileContents.filter { (path, _) ->
+            collapseOverrides["ws:$path"] != CollapseState.COLLAPSED
+        }
         val childrenMap = buildChildrenMap(entries)
 
         // Build root-level children (parentPath == null)
@@ -268,7 +276,7 @@ object WorkspaceContextFormatter {
             key = "WORKSPACE_FILES",
             header = header,
             children = rootEntries.map { entry ->
-                buildEntrySection(entry, entries, childrenMap, expandedFileContents, platformDependencies)
+                buildEntrySection(entry, entries, childrenMap, effectiveContents, platformDependencies)
             },
             isCollapsible = true,
             priority = 10,
