@@ -73,6 +73,8 @@
 
 - 'auto-os(default)/dark/light/' mode switch in settings
 
+- unified identity editor for all identities (name, color, icon etc.)
+
 ## Bugs
 - BUG: Agent identities are not removed from core when agent is deleted
 - BUG: stale identities remain at the core from session, agent, others?

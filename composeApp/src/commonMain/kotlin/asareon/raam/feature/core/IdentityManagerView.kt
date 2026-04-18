@@ -12,10 +12,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -34,6 +34,9 @@ import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.core.resolveDisplayColor
 import asareon.raam.ui.components.ColorPicker
 import asareon.raam.ui.components.colorToHex
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -76,44 +79,77 @@ private fun formatTimestamp(epochMillis: Long): String {
 }
 
 /**
- * Tabbed container for the Identity Manager: "Identities" tab shows user/identity
- * management, "Permissions" tab shows the permission grant matrix (Phase 2.A).
+ * Container for the Identity Manager. The primary view is the list of user
+ * identities; Permissions is a secondary destination reached from the header,
+ * not a peer tab — it's accessed rarely and hierarchically subordinate to
+ * the identities it describes.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IdentityManagerView(store: Store) {
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Identities", "Permissions")
+    var showingPermissions by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showAllIdentities by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text("Identity Manager") },
-                    navigationIcon = {
-                        IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    }
+    if (showAddDialog) {
+        AddIdentityDialog(
+            onDismiss = { showAddDialog = false },
+            onAdd = { name ->
+                store.dispatch(
+                    "core",
+                    Action(
+                        ActionRegistry.Names.CORE_ADD_USER_IDENTITY,
+                        buildJsonObject { put("name", name) },
+                    ),
                 )
-                // Phase 2.A: Tab row for Identities / Permissions
-                TabRow(selectedTabIndex = selectedTab) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            text = { Text(title) }
-                        )
-                    }
-                }
-            }
-        }
-    ) { paddingValues ->
-        Box(Modifier.fillMaxSize().padding(paddingValues)) {
-            when (selectedTab) {
-                0 -> IdentitiesTabContent(store)
-                1 -> PermissionManagerView(store)
-            }
+                showAddDialog = false
+            },
+        )
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        if (!showingPermissions) {
+            RaamTopBarHeader(
+                title = "Identities",
+                leading = HeaderLeading.Back(onClick = {
+                    store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+                }),
+                actions = listOf(
+                    HeaderAction(
+                        id = "add-identity",
+                        label = "Add identity",
+                        icon = Icons.Default.Add,
+                        priority = 30,
+                        onClick = { showAddDialog = true },
+                    ),
+                    HeaderAction(
+                        id = "view-permissions",
+                        label = "Permissions",
+                        icon = Icons.Default.Lock,
+                        priority = 20,
+                        onClick = { showingPermissions = true },
+                    ),
+                    HeaderAction(
+                        id = "toggle-show-all",
+                        label = if (showAllIdentities) "Hide internal identities"
+                            else "Show all identities",
+                        icon = if (showAllIdentities) Icons.Default.Visibility
+                            else Icons.Default.VisibilityOff,
+                        priority = 10,
+                        onClick = { showAllIdentities = !showAllIdentities },
+                    ),
+                ),
+            )
+            IdentitiesTabContent(
+                store = store,
+                showAllIdentities = showAllIdentities,
+            )
+        } else {
+            RaamTopBarHeader(
+                title = "Permissions",
+                subtitle = "Identities",
+                leading = HeaderLeading.Back(onClick = { showingPermissions = false }),
+            )
+            PermissionManagerView(store)
         }
     }
 }
@@ -123,11 +159,12 @@ fun IdentityManagerView(store: Store) {
 // ============================================================================
 
 @Composable
-private fun IdentitiesTabContent(store: Store) {
+private fun IdentitiesTabContent(
+    store: Store,
+    showAllIdentities: Boolean,
+) {
     val appState by store.state.collectAsState()
     val coreState = appState.featureStates["core"] as? CoreState
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showAllIdentities by remember { mutableStateOf(false) }
 
     // Read user identities from the unified identity registry (parentHandle == "core")
     val userIdentities = remember(appState.identityRegistry) {
@@ -142,38 +179,7 @@ private fun IdentitiesTabContent(store: Store) {
             .sortedBy { it.handle }
     }
 
-    if (showAddDialog) {
-        AddIdentityDialog(
-            onDismiss = { showAddDialog = false },
-            onAdd = { name ->
-                store.dispatch("core", Action(ActionRegistry.Names.CORE_ADD_USER_IDENTITY, buildJsonObject { put("name", name) }))
-                showAddDialog = false
-            }
-        )
-    }
-
     Column(Modifier.fillMaxSize()) {
-        // Action bar
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = { showAllIdentities = !showAllIdentities }
-            ) {
-                Icon(
-                    imageVector = if (showAllIdentities) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    contentDescription = "Show all identities",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, "Add Identity"); Spacer(Modifier.width(8.dp)); Text("Add")
-            }
-        }
-
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
