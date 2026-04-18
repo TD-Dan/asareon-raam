@@ -34,6 +34,10 @@ import asareon.raam.ui.components.footer.ViewFooter
 import asareon.raam.ui.components.identity.IdentityDraft
 import asareon.raam.ui.components.identity.IdentityFieldsSection
 import asareon.raam.ui.components.identity.toDraft
+import asareon.raam.ui.components.sidepane.SidePane
+import asareon.raam.ui.components.sidepane.SidePaneLayout
+import asareon.raam.ui.components.sidepane.SidePanePosition
+import asareon.raam.ui.components.sidepane.rememberSidePaneState
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -81,6 +85,8 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
         return
     }
 
+    val paneState = rememberSidePaneState()
+
     Column(modifier = Modifier.fillMaxSize()) {
         RaamTopBarHeader(
             title = "Lua Scripts",
@@ -127,70 +133,66 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
         )
 
         // ══════════════════════════════════════════════════════════════════
-        // MAIN CONTENT: Left list + Right detail
+        // MAIN CONTENT: Scripts list pane + detail primary
         // ══════════════════════════════════════════════════════════════════
-        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            // ── Left Panel: Script List ──
-            Column(
-                modifier = Modifier
-                    .width(280.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    if (scripts.isEmpty()) {
-                        item {
-                            Text(
-                                "No scripts yet.\nClick \"New Script\" to get started.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    } else {
-                        items(scripts, key = { it.handle }) { script ->
-                            ScriptListRow(
-                                script = script,
-                                isSelected = selectedScript == script.handle,
-                                onSelect = {
-                                    selectedScript = script.handle
-                                },
-                                onToggle = {
-                                    store.dispatch("lua", Action(
-                                        name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
-                                        payload = buildJsonObject { put("scriptHandle", script.handle) }
-                                    ))
-                                }
-                            )
+        SidePaneLayout(
+            modifier = Modifier.weight(1f),
+            paneState = paneState,
+            panePosition = SidePanePosition.Start,
+            sidePane = {
+                SidePane(title = "Scripts") {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (scripts.isEmpty()) {
+                            item {
+                                Text(
+                                    "No scripts yet.\nClick \"Create Script\" to get started.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        } else {
+                            items(scripts, key = { it.handle }) { script ->
+                                ScriptListRow(
+                                    script = script,
+                                    isSelected = selectedScript == script.handle,
+                                    onSelect = {
+                                        selectedScript = script.handle
+                                    },
+                                    onToggle = {
+                                        store.dispatch("lua", Action(
+                                            name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
+                                            payload = buildJsonObject { put("scriptHandle", script.handle) }
+                                        ))
+                                    }
+                                )
+                            }
                         }
                     }
                 }
-            }
-
-            VerticalDivider()
-
-            // ── Right Panel: Detail ──
-            val selected = selectedScript?.let { luaState.scripts[it] }
-            if (selected != null) {
-                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    // Detail header with actions. Edit opens the full-view editor;
-                    // no inline editing in the detail pane anymore.
-                    ScriptDetailHeader(
-                        script = selected,
-                        onEdit = {
-                            editTarget = ScriptEditTarget.Edit(selected.handle)
-                        },
-                        onClone = {
-                            store.dispatch("lua", Action(
-                                name = ActionRegistry.Names.LUA_CLONE_SCRIPT,
-                                payload = buildJsonObject { put("scriptHandle", selected.handle) }
-                            ))
-                        },
-                        onDelete = { showDeleteDialog = selected.handle }
-                    )
+            },
+            primary = {
+                val selected = selectedScript?.let { luaState.scripts[it] }
+                if (selected != null) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Detail header with actions. Edit opens the full-view editor;
+                        // no inline editing in the detail pane anymore.
+                        ScriptDetailHeader(
+                            script = selected,
+                            onEdit = {
+                                editTarget = ScriptEditTarget.Edit(selected.handle)
+                            },
+                            onClone = {
+                                store.dispatch("lua", Action(
+                                    name = ActionRegistry.Names.LUA_CLONE_SCRIPT,
+                                    payload = buildJsonObject { put("scriptHandle", selected.handle) }
+                                ))
+                            },
+                            onDelete = { showDeleteDialog = selected.handle }
+                        )
 
                     HorizontalDivider()
 
@@ -286,7 +288,7 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                     }
             } else {
                 // No selection
-                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         "Select a script to view details.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -294,7 +296,8 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                     )
                 }
             }
-        }
+        },
+        )
 
         // ══════════════════════════════════════════════════════════════════
         // FOOTER: Summary line

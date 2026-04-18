@@ -26,8 +26,14 @@ data class Spacing(
     val inner: Dp = 8.dp,
     /** Tightest spacing — chip interiors, micro padding. */
     val tight: Dp = 4.dp,
-    /** Height of the app's standard top bar. */
+    /** Height of the app's standard top bar (primary views). */
     val topBarHeight: Dp = 56.dp,
+    /**
+     * Height of a secondary top bar — the header on a subordinate surface
+     * like a [asareon.raam.ui.components.sidepane.SidePane]. Sized to ~75%
+     * of [topBarHeight] so pane chrome reads lighter than view chrome.
+     */
+    val secondaryTopBarHeight: Dp = 42.dp,
     /** Width of the GlobalActionRibbon. */
     val ribbonWidth: Dp = 50.dp,
 )

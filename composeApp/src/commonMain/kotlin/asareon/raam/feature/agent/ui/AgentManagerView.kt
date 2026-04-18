@@ -185,16 +185,32 @@ fun AgentManagerView(store: Store, platformDependencies: PlatformDependencies) {
                 }
             }
         } else {
+            var showResourceCreateDialog by remember { mutableStateOf(false) }
             RaamTopBarHeader(
                 title = "System Resources",
                 subtitle = "Agents",
                 leading = HeaderLeading.Back(onClick = { setTab(0) }),
+                actions = listOf(
+                    HeaderAction(
+                        id = "create-resource",
+                        label = "Create Resource",
+                        icon = Icons.Default.Add,
+                        priority = 30,
+                        emphasis = HeaderActionEmphasis.Create,
+                        onClick = { showResourceCreateDialog = true },
+                    ),
+                ),
             )
             Box(Modifier.fillMaxSize()) {
                 if (agentState == null) {
                     Box(Modifier.fillMaxSize(), Alignment.Center) { Text("Loading...") }
                 } else {
-                    AgentResourcesView(agentState, store)
+                    AgentResourcesView(
+                        agentState = agentState,
+                        store = store,
+                        showCreateDialog = showResourceCreateDialog,
+                        onDismissCreateDialog = { showResourceCreateDialog = false },
+                    )
                 }
             }
         }
@@ -647,27 +663,17 @@ private fun AgentEditorView(
 @Composable
 private fun AgentResourcesView(
     agentState: AgentRuntimeState,
-    store: Store
+    store: Store,
+    showCreateDialog: Boolean,
+    onDismissCreateDialog: () -> Unit,
 ) {
-    var showCreateDialog by remember { mutableStateOf(false) }
     val paneState = rememberSidePaneState()
-
-    val listActions = listOf(
-        HeaderAction(
-            id = "create-resource",
-            label = "Create Resource",
-            icon = Icons.Default.Add,
-            priority = 100,
-            emphasis = HeaderActionEmphasis.Create,
-            onClick = { showCreateDialog = true },
-        ),
-    )
 
     SidePaneLayout(
         paneState = paneState,
         panePosition = SidePanePosition.Start,
         sidePane = {
-            SidePane(title = "Resources", actions = listActions) {
+            SidePane(title = "Resources") {
                 val grouped = agentState.resources.groupBy { it.type }
                 LazyColumn(Modifier.fillMaxSize()) {
                     AgentResourceType.entries.forEach { type ->
@@ -718,14 +724,14 @@ private fun AgentResourcesView(
 
     if (showCreateDialog) {
         CreateResourceDialog(
-            onDismiss = { showCreateDialog = false },
+            onDismiss = onDismissCreateDialog,
             onConfirm = { name, type, content ->
                 store.dispatch("agent", Action(ActionRegistry.Names.AGENT_CREATE_RESOURCE, buildJsonObject {
                     put("name", name)
                     put("type", type.name)
                     if (content != null) put("initialContent", content)
                 }))
-                showCreateDialog = false
+                onDismissCreateDialog()
             }
         )
     }

@@ -55,9 +55,14 @@ fun RaamTopBar(
     modifier: Modifier = Modifier,
     leading: HeaderLeading = HeaderLeading.None,
     actions: List<HeaderAction> = emptyList(),
+    style: HeaderStyle = HeaderStyle.Primary,
     subContent: @Composable (() -> Unit)? = null,
     headerContent: @Composable () -> Unit,
 ) {
+    val minHeight = when (style) {
+        HeaderStyle.Primary -> MaterialTheme.spacing.topBarHeight
+        HeaderStyle.Secondary -> MaterialTheme.spacing.secondaryTopBarHeight
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -74,7 +79,7 @@ fun RaamTopBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = MaterialTheme.spacing.topBarHeight)
+                        .heightIn(min = minHeight)
                         .padding(horizontal = MaterialTheme.spacing.tight),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

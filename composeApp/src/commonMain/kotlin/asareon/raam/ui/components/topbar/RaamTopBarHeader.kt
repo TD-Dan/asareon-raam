@@ -8,16 +8,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 
 /**
- * Visual weight of a [RaamTopBarHeader]. Two tiers:
+ * Visual weight of a [RaamTopBarHeader] / [RaamTopBar]. Two tiers:
  *
- *  - [Primary]: the title of a top-level view. Uses `titleLarge` (~22sp) for
- *    the title and `labelMedium` (~12sp) for the subtitle. This is the
- *    default and matches the main-view top bar elsewhere in the app.
- *  - [Secondary]: the title of a subordinate surface — a side pane, a
- *    supporting pane, a nested section. Uses `titleMedium` (~16sp) and
- *    `labelSmall` (~11sp). Bar height and trailing-action chrome are
- *    unchanged so seams still align horizontally with a neighbouring
- *    Primary bar.
+ *  - [Primary]: the top bar of a top-level view. Uses `titleLarge` (~22sp)
+ *    for the title, `labelMedium` (~12sp) for the subtitle, and the full
+ *    `spacing.topBarHeight` (~56dp) min row height.
+ *  - [Secondary]: the top bar of a subordinate surface — a side pane, a
+ *    supporting pane, a nested section. Uses `titleMedium` (~16sp),
+ *    `labelSmall` (~11sp), and a smaller `spacing.secondaryTopBarHeight`
+ *    (~42dp, ~75% of primary). Pane chrome reads lighter so the view
+ *    top bar remains the dominant horizontal band.
  *
  * Size-only styling: the enum is not a replacement for [HeaderActionEmphasis]
  * and does not affect action buttons.
@@ -58,6 +58,7 @@ fun RaamTopBarHeader(
         modifier = modifier,
         leading = leading,
         actions = actions,
+        style = style,
         subContent = subContent,
     ) {
         Column {
