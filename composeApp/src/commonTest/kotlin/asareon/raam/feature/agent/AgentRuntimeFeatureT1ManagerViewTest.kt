@@ -423,7 +423,7 @@ class AgentRuntimeFeatureT1ManagerViewTest {
 
         composeTestRule.onNodeWithTag("code_editor_input").performTextClearance()
         composeTestRule.onNodeWithTag("code_editor_input").performTextInput("New Content")
-        composeTestRule.onNodeWithContentDescription("Save").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         val action = fakeStore.dispatchedActions.find { it.name == ActionRegistry.Names.AGENT_SAVE_RESOURCE }
         assertNotNull(action)

@@ -789,72 +789,84 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-            Column {
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).padding(16.dp)) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(resource.name, style = MaterialTheme.typography.titleMedium)
+                        // Rename Icon for non-built-ins
+                        if (!resource.isBuiltIn) {
+                            Spacer(Modifier.width(8.dp))
+                            IconButton(onClick = { showRenameDialog = true }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Edit, "Rename", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                    Text(resource.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(resource.name, style = MaterialTheme.typography.titleMedium)
-                    // Rename Icon for non-built-ins
                     if (!resource.isBuiltIn) {
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(onClick = { showRenameDialog = true }, modifier = Modifier.size(20.dp)) {
-                            Icon(Icons.Default.Edit, "Rename", tint = MaterialTheme.colorScheme.primary)
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DangerDropdownMenuItem(
+                                    label = "Delete Resource",
+                                    onClick = {
+                                        menuExpanded = false
+                                        showDeleteDialog = true
+                                    },
+                                )
+                            }
+                        }
+                    } else {
+                        // Clone Button for Built-ins
+                        FilledTonalButton(onClick = { showCloneDialog = true }) {
+                            Icon(Icons.Default.CopyAll, "Clone to Edit")
+                            Spacer(Modifier.width(4.dp))
+                            Text("Clone")
                         }
                     }
                 }
-                Text(resource.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!resource.isBuiltIn) {
-                    Button(
-                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SAVE_RESOURCE, buildJsonObject {
-                            put("resourceId", resource.id)
-                            put("content", content)
-                        })) },
-                        enabled = hasChanges
-                    ) {
-                        Icon(Icons.Default.Save, "Save")
-                        Spacer(Modifier.width(4.dp))
-                        Text("Save")
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DangerDropdownMenuItem(
-                                label = "Delete Resource",
-                                onClick = {
-                                    menuExpanded = false
-                                    showDeleteDialog = true
-                                },
-                            )
-                        }
-                    }
-                } else {
-                    // Clone Button for Built-ins
-                    FilledTonalButton(onClick = { showCloneDialog = true }) {
-                        Icon(Icons.Default.CopyAll, "Clone to Edit")
-                        Spacer(Modifier.width(4.dp))
-                        Text("Clone")
-                    }
-                }
-            }
+            Spacer(Modifier.height(16.dp))
+
+            CodeEditor(
+                value = content,
+                onValueChange = { content = it },
+                readOnly = resource.isBuiltIn,
+                modifier = Modifier.weight(1f)
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        CodeEditor(
-            value = content,
-            onValueChange = { content = it },
-            readOnly = resource.isBuiltIn,
-            modifier = Modifier.weight(1f)
-        )
+        if (!resource.isBuiltIn) {
+            ViewFooter {
+                FooterButton(
+                    emphasis = FooterActionEmphasis.Confirm,
+                    label = "Save",
+                    enabled = hasChanges,
+                    onClick = {
+                        store.dispatch(
+                            "agent",
+                            Action(
+                                ActionRegistry.Names.AGENT_SAVE_RESOURCE,
+                                buildJsonObject {
+                                    put("resourceId", resource.id)
+                                    put("content", content)
+                                },
+                            ),
+                        )
+                    },
+                )
+            }
+        }
     }
 
     if (showCloneDialog) {

@@ -97,7 +97,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
 
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("Save Changes").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
 
         composeTestRule.waitForIdle()
 
@@ -123,7 +123,7 @@ class KnowledgeGraphFeatureT1ViewComponentTest {
         composeTestRule.onNodeWithTag("holon-edit-payload").performTextInput("{ \"key\": ")
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("Save Changes").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
         composeTestRule.waitForIdle()
 
         assertTrue(harness.store.processedActions.none { it.name == ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT })
