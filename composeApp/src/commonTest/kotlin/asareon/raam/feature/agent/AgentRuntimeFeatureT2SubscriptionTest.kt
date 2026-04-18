@@ -18,8 +18,8 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 /**
- * Tier 2 Integration Tests for agent.ADD_SESSION_SUBSCRIPTION,
- * agent.REMOVE_SESSION_SUBSCRIPTION, and agent.AGENT_NAMES_UPDATED broadcast.
+ * Tier 2 Integration Tests for agent.SET_SESSION_SUBSCRIPTION
+ * (subscribe + unsubscribe) and agent.AGENT_NAMES_UPDATED broadcast.
  *
  * Verifies:
  * 1. Side effects fire correctly (persist, avatar update, names broadcast)
@@ -97,8 +97,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             harness.registerSessionIdentity(testSession2)
 
             harness.store.dispatch("session", Action(
-                ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 buildJsonObject {
+                    put("subscribed", true)
                     put("agentId", agentId1)
                     put("sessionId", sessionUUID2)
                 }
@@ -127,8 +128,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             harness.registerSessionIdentity(testSession1)
 
             harness.store.dispatch("agent", Action(
-                ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 buildJsonObject {
+                    put("subscribed", true)
                     put("agentId", agentId1)
                     put("sessionId", sessionUUID1)
                 }
@@ -137,7 +139,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             val result = harness.processedActions.find {
                 it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
                         it.payload?.get("requestAction")?.jsonPrimitive?.contentOrNull ==
-                        ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION
+                        ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION
             }
             assertNotNull(result, "ACTION_RESULT should be published")
             assertTrue(
@@ -166,8 +168,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             harness.registerSessionIdentity(testSession2)
 
             harness.store.dispatch("agent", Action(
-                ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 buildJsonObject {
+                    put("subscribed", true)
                     put("agentId", agentId1)
                     put("sessionId", sessionUUID2)
                 }
@@ -213,8 +216,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             harness.registerSessionIdentity(testSession2)
 
             harness.store.dispatch("agent", Action(
-                ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION,
+                ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 buildJsonObject {
+                    put("subscribed", false)
                     put("agentId", agentId1)
                     put("sessionId", sessionUUID1)
                 }
@@ -255,8 +259,9 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             harness.registerSessionIdentity(testSession1)
 
             harness.store.dispatch("agent", Action(
-                ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION,
+                ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 buildJsonObject {
+                    put("subscribed", false)
                     put("agentId", agentId1)
                     put("sessionId", sessionUUID1)
                 }
@@ -265,7 +270,7 @@ class AgentRuntimeFeatureT2SubscriptionTest {
             val result = harness.processedActions.find {
                 it.name == ActionRegistry.Names.AGENT_ACTION_RESULT &&
                         it.payload?.get("requestAction")?.jsonPrimitive?.contentOrNull ==
-                        ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION
+                        ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION
             }
             assertNotNull(result)
             assertTrue(result.payload?.get("success")?.jsonPrimitive?.boolean ?: false)

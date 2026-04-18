@@ -13,6 +13,7 @@ import asareon.raam.ui.AppTheme
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -238,7 +239,7 @@ class AgentRuntimeFeatureT1AvatarTest {
     }
 
     @Test
-    fun `clicking Remove from session dispatches REMOVE_SESSION_SUBSCRIPTION`() {
+    fun `clicking Remove from session dispatches SET_SESSION_SUBSCRIPTION with subscribed=false`() {
         val agent = testAgent("a1", "Test Agent", null, "p", "m", subscribedSessionIds = listOf(testSessionUUID))
         renderAgentCard(agent, AgentStatusInfo(status = AgentStatus.IDLE), sessionUUID = testSessionUUID)
 
@@ -247,10 +248,11 @@ class AgentRuntimeFeatureT1AvatarTest {
         composeTestRule.onNodeWithText("Remove from session").performClick()
 
         val action = fakeStore.dispatchedActions.find {
-            it.name == ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION
+            it.name == ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION
         }
-        assertNotNull(action, "AGENT_REMOVE_SESSION_SUBSCRIPTION should be dispatched")
+        assertNotNull(action, "AGENT_SET_SESSION_SUBSCRIPTION should be dispatched")
         assertEquals("a1", action.payload?.get("agentId")?.jsonPrimitive?.contentOrNull)
         assertEquals(testSessionUUID, action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull)
+        assertEquals(false, action.payload?.get("subscribed")?.jsonPrimitive?.booleanOrNull)
     }
 }

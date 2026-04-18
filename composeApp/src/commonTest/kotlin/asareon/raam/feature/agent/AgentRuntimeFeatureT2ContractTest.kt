@@ -249,12 +249,13 @@ class AgentRuntimeFeatureT2ContractTest {
                 setup = ::registerIdentities
             ),
             HappyCase(
-                label = "ADD_SESSION_SUBSCRIPTION",
-                actionName = ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                label = "SET_SESSION_SUBSCRIPTION (subscribe)",
+                actionName = ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 originator = "core",
                 payload = buildJsonObject {
                     put("agentId", AGENT_UUID)
                     put("sessionId", SESSION_2_UUID)
+                    put("subscribed", true)
                 },
                 buildState = {
                     AgentRuntimeState(
@@ -269,12 +270,13 @@ class AgentRuntimeFeatureT2ContractTest {
                 setup = ::registerIdentities
             ),
             HappyCase(
-                label = "REMOVE_SESSION_SUBSCRIPTION",
-                actionName = ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION,
+                label = "SET_SESSION_SUBSCRIPTION (unsubscribe)",
+                actionName = ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 originator = "core",
                 payload = buildJsonObject {
                     put("agentId", AGENT_UUID)
                     put("sessionId", SESSION_UUID)
+                    put("subscribed", false)
                 },
                 buildState = {
                     AgentRuntimeState(
@@ -508,23 +510,13 @@ class AgentRuntimeFeatureT2ContractTest {
                 setup = ::registerIdentities
             ),
             FailureCase(
-                label = "ADD_SESSION_SUBSCRIPTION (agent not found)",
-                actionName = ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                label = "SET_SESSION_SUBSCRIPTION (agent not found)",
+                actionName = ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                 originator = "core",
                 payload = buildJsonObject {
                     put("agentId", AGENT_UUID)
                     put("sessionId", SESSION_2_UUID)
-                },
-                buildState = { AgentRuntimeState(resources = testBuiltInResources()) },
-                setup = ::registerIdentities
-            ),
-            FailureCase(
-                label = "REMOVE_SESSION_SUBSCRIPTION (agent not found)",
-                actionName = ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION,
-                originator = "core",
-                payload = buildJsonObject {
-                    put("agentId", AGENT_UUID)
-                    put("sessionId", SESSION_UUID)
+                    put("subscribed", true)
                 },
                 buildState = { AgentRuntimeState(resources = testBuiltInResources()) },
                 setup = ::registerIdentities

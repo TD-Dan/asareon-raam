@@ -67,7 +67,7 @@ class SessionFeature(
     )
 
     // --- Payload types for agent-facing message targeting ---
-    @Serializable private data class LockMessagePayload(val session: String, val senderId: String, val timestamp: String)
+    @Serializable private data class SetMessageLockPayload(val session: String, val senderId: String, val timestamp: String, val locked: Boolean)
     @Serializable private data class DeleteMessageExtPayload(val session: String, val messageId: String? = null, val senderId: String? = null, val timestamp: String? = null)
 
     // --- Payload for RETURN_REGISTER_IDENTITY (from CoreFeature) ---
@@ -1008,8 +1008,7 @@ class SessionFeature(
                 }
             }
 
-            // --- SLICE 4: LOCK_MESSAGE / UNLOCK_MESSAGE handlers ---
-            ActionRegistry.Names.SESSION_LOCK_MESSAGE, ActionRegistry.Names.SESSION_UNLOCK_MESSAGE -> {
+            ActionRegistry.Names.SESSION_SET_MESSAGE_LOCK -> {
                 val identifier = action.payload?.get("session")?.jsonPrimitive?.contentOrNull
                 val correlationId = action.payload?.get("correlationId")?.jsonPrimitive?.contentOrNull
                 val localHandle = requireSessionId(identifier, sessionState, action.name) ?: run {
@@ -1038,9 +1037,9 @@ class SessionFeature(
 
                 persistSession(localHandle, sessionState, store)
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.SESSION_SESSION_UPDATED, buildJsonObject { put("sessionId", localHandle) }))
-                val verb = if (action.name == ActionRegistry.Names.SESSION_LOCK_MESSAGE) "locked" else "unlocked"
+                val locked = action.payload?.get("locked")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
                 publishActionResult(store, correlationId, action.name, success = true,
-                    summary = "Message $verb")
+                    summary = if (locked) "Message locked" else "Message unlocked")
             }
 
             // ── Workspace pane: REFRESH ───────────────────────────────────
@@ -1616,12 +1615,11 @@ class SessionFeature(
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))
             }
 
-            ActionRegistry.Names.SESSION_LOCK_MESSAGE, ActionRegistry.Names.SESSION_UNLOCK_MESSAGE -> {
-                val decoded = payload?.let { json.decodeFromJsonElement<LockMessagePayload>(it) } ?: return currentFeatureState
+            ActionRegistry.Names.SESSION_SET_MESSAGE_LOCK -> {
+                val decoded = payload?.let { json.decodeFromJsonElement<SetMessageLockPayload>(it) } ?: return currentFeatureState
                 val localHandle = resolveSessionId(decoded.session, currentFeatureState) ?: return currentFeatureState
                 val targetSession = currentFeatureState.sessions[localHandle] ?: return currentFeatureState
 
-                val targetLock = action.name == ActionRegistry.Names.SESSION_LOCK_MESSAGE
                 val result = MessageResolution.resolve(targetSession.ledger, decoded.senderId, decoded.timestamp, platformDependencies)
 
                 if (result.entry == null) {
@@ -1629,7 +1627,7 @@ class SessionFeature(
                 }
 
                 val updatedLedger = targetSession.ledger.map {
-                    if (it.id == result.entry.id) it.copy(isLocked = targetLock) else it
+                    if (it.id == result.entry.id) it.copy(isLocked = decoded.locked) else it
                 }
                 val updatedSession = targetSession.copy(ledger = updatedLedger)
                 currentFeatureState.copy(sessions = currentFeatureState.sessions + (localHandle to updatedSession))

@@ -246,26 +246,28 @@ class SessionFeatureT2ContractTest {
             initialState = baseState
         ),
         HappyCase(
-            label = "LOCK_MESSAGE",
-            actionName = ActionRegistry.Names.SESSION_LOCK_MESSAGE,
+            label = "SET_MESSAGE_LOCK (lock)",
+            actionName = ActionRegistry.Names.SESSION_SET_MESSAGE_LOCK,
             originator = "agent",
             payload = buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "user")
                 put("timestamp", "2025-02-07T18:40:00Z")
+                put("locked", true)
             },
-            initialState = baseState // entry is unlocked → LOCK flips to locked
+            initialState = baseState // entry is unlocked → locks
         ),
         HappyCase(
-            label = "UNLOCK_MESSAGE",
-            actionName = ActionRegistry.Names.SESSION_UNLOCK_MESSAGE,
+            label = "SET_MESSAGE_LOCK (unlock)",
+            actionName = ActionRegistry.Names.SESSION_SET_MESSAGE_LOCK,
             originator = "agent",
             payload = buildJsonObject {
                 put("session", "sid-1")
                 put("senderId", "user")
                 put("timestamp", "2025-02-07T18:40:00Z")
+                put("locked", false)
             },
-            initialState = lockedState // entry is locked → UNLOCK flips to unlocked
+            initialState = lockedState // entry is locked → unlocks
         )
     )
 
@@ -384,23 +386,14 @@ class SessionFeatureT2ContractTest {
             initialState = baseState
         ),
         FailureCase(
-            label = "LOCK_MESSAGE (session not found)",
-            actionName = ActionRegistry.Names.SESSION_LOCK_MESSAGE,
+            label = "SET_MESSAGE_LOCK (session not found)",
+            actionName = ActionRegistry.Names.SESSION_SET_MESSAGE_LOCK,
             originator = "agent",
             payload = buildJsonObject {
                 put("session", "nonexistent")
                 put("senderId", "user")
                 put("timestamp", "2025-02-07T18:40:00Z")
-            }
-        ),
-        FailureCase(
-            label = "UNLOCK_MESSAGE (session not found)",
-            actionName = ActionRegistry.Names.SESSION_UNLOCK_MESSAGE,
-            originator = "agent",
-            payload = buildJsonObject {
-                put("session", "nonexistent")
-                put("senderId", "user")
-                put("timestamp", "2025-02-07T18:40:00Z")
+                put("locked", true)
             }
         )
     )

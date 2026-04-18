@@ -14,12 +14,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Tier 1 Pure Reducer Tests for agent.ADD_SESSION_SUBSCRIPTION
- * and agent.REMOVE_SESSION_SUBSCRIPTION.
+ * Tier 1 Pure Reducer Tests for agent.SET_SESSION_SUBSCRIPTION.
  *
- * These delta actions modify an agent's subscribedSessionIds list
+ * This delta action modifies an agent's subscribedSessionIds list
  * without requiring callers to know the full subscription list,
- * preserving cross-feature decoupling.
+ * preserving cross-feature decoupling. The `subscribed` boolean
+ * decides whether the session is added (true) or removed (false).
  */
 class AgentRuntimeFeatureT1SubscriptionReducerTest {
 
@@ -43,7 +43,7 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
     }
 
     // ========================================================================
-    // ADD_SESSION_SUBSCRIPTION
+    // SET_SESSION_SUBSCRIPTION (subscribed=true)
     // ========================================================================
 
     @Test
@@ -55,7 +55,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         )
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", true)
             put("agentId", agentId)
             put("sessionId", sessionUUID1)
         })
@@ -76,7 +77,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         )
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", true)
             put("agentId", agentId)
             put("sessionId", sessionUUID2)
         })
@@ -98,7 +100,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         )
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", true)
             put("agentId", agentId)
             put("sessionId", sessionUUID1) // Already subscribed
         })
@@ -113,7 +116,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
     fun `ADD_SESSION_SUBSCRIPTION with unknown agent returns state unchanged`() {
         val state = AgentRuntimeState(agents = emptyMap())
 
-        val action = Action(ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", true)
             put("agentId", agentId)
             put("sessionId", sessionUUID1)
         })
@@ -128,7 +132,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         val agent = testAgent(id = agentId, name = "Agent", modelProvider = "p", modelName = "m")
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", true)
             put("agentId", agentId)
             // Missing sessionId
         })
@@ -139,7 +144,7 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
     }
 
     // ========================================================================
-    // REMOVE_SESSION_SUBSCRIPTION
+    // SET_SESSION_SUBSCRIPTION (subscribed=false)
     // ========================================================================
 
     @Test
@@ -151,7 +156,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         )
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", false)
             put("agentId", agentId)
             put("sessionId", sessionUUID1)
         })
@@ -173,7 +179,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         )
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", false)
             put("agentId", agentId)
             put("sessionId", sessionUUID1)
         })
@@ -193,7 +200,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
         )
         val state = AgentRuntimeState(agents = mapOf(uid(agentId) to agent))
 
-        val action = Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", false)
             put("agentId", agentId)
             put("sessionId", sessionUUID3) // Not in subscription list
         })
@@ -207,7 +215,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
     fun `REMOVE_SESSION_SUBSCRIPTION with unknown agent returns state unchanged`() {
         val state = AgentRuntimeState(agents = emptyMap())
 
-        val action = Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", false)
             put("agentId", agentId)
             put("sessionId", sessionUUID1)
         })
@@ -237,7 +246,8 @@ class AgentRuntimeFeatureT1SubscriptionReducerTest {
             uid(agent2Id) to agent2
         ))
 
-        val action = Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+        val action = Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
+            put("subscribed", false)
             put("agentId", agent1Id)
             put("sessionId", sessionUUID1)
         })

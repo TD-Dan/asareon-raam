@@ -90,9 +90,9 @@
       "payload_schema": {
         "type": "object",
         "properties": {
-          "sessionId": {
+          "session": {
             "type": "string",
-            "description": "The session's uuid, localHandle, full handle, or display name of the session to update."
+            "description": "The session's localHandle, full handle, or display name of the session to update."
           },
           "name": {
             "type": "string",
@@ -100,7 +100,8 @@
           }
         },
         "required": [
-          "session"
+          "session",
+          "name"
         ]
       },
       "required_permissions": [
@@ -445,8 +446,8 @@
     },
     {
       "action_name": "session.TOGGLE_MESSAGE_LOCKED",
-      "summary": "Toggles the isLocked flag on a specific ledger entry. A locked message cannot be edited, deleted, or cleared.",
-      "public": true,
+      "summary": "[INTERNAL] Toggles the isLocked flag on a specific ledger entry. UI-only convenience that addresses messages by direct ID. Agents use session.SET_MESSAGE_LOCK instead.",
+      "public": false,
       "broadcast": true,
       "targeted": false,
       "payload_schema": {
@@ -463,10 +464,7 @@
           "sessionId",
           "messageId"
         ]
-      },
-      "required_permissions": [
-        "session:manage"
-      ]
+      }
     },
     {
       "action_name": "session.CLEAR",
@@ -510,8 +508,8 @@
       ]
     },
     {
-      "action_name": "session.LOCK_MESSAGE",
-      "summary": "Locks a message to prevent editing, deletion, or clearing. Targets by senderId + ISO 8601 timestamp.",
+      "action_name": "session.SET_MESSAGE_LOCK",
+      "summary": "Locks or unlocks a message. A locked message cannot be edited, deleted, or cleared. Targets by senderId + ISO 8601 timestamp.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -529,44 +527,17 @@
           "timestamp": {
             "type": "string",
             "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "true to lock the message, false to unlock."
           }
         },
         "required": [
           "session",
           "senderId",
-          "timestamp"
-        ]
-      },
-      "required_permissions": [
-        "session:write"
-      ]
-    },
-    {
-      "action_name": "session.UNLOCK_MESSAGE",
-      "summary": "Unlocks a previously locked message. Targets by senderId + ISO 8601 timestamp.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "session": {
-            "type": "string",
-            "description": "The session's localHandle, full handle, or display name."
-          },
-          "senderId": {
-            "type": "string",
-            "description": "The display name or ID of the message sender."
-          },
-          "timestamp": {
-            "type": "string",
-            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
-          }
-        },
-        "required": [
-          "session",
-          "senderId",
-          "timestamp"
+          "timestamp",
+          "locked"
         ]
       },
       "required_permissions": [

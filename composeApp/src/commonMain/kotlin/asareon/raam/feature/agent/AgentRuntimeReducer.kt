@@ -407,32 +407,22 @@ object AgentRuntimeReducer {
             // ================================================================
             // Delta Session Subscription Actions
             // ================================================================
-            ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION -> {
+            ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION -> {
                 val agentId = action.payload?.agentUUID() ?: return state
                 val sessionIdStr = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
+                val subscribed = action.payload?.get("subscribed")?.jsonPrimitive?.booleanOrNull ?: return state
                 val sessionId = IdentityUUID(sessionIdStr)
                 val agent = state.agents[agentId] ?: return state
-                if (agent.subscribedSessionIds.contains(sessionId)) return state
+                val alreadyMatches = agent.subscribedSessionIds.contains(sessionId) == subscribed
+                if (alreadyMatches) return state
                 val updatedAgent = agent.copy(
-                    subscribedSessionIds = agent.subscribedSessionIds + sessionId
+                    subscribedSessionIds = if (subscribed)
+                        agent.subscribedSessionIds + sessionId
+                    else
+                        agent.subscribedSessionIds - sessionId
                 )
                 // Run strategy validation to repair invariants (e.g., Vanilla auto-assigns
-                // outputSessionId to the first subscription when it was previously null).
-                val strategy = CognitiveStrategyRegistry.get(updatedAgent.cognitiveStrategyId)
-                val validatedAgent = strategy.validateConfig(updatedAgent)
-                state.copy(agents = state.agents + (agentId to validatedAgent))
-            }
-
-            ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION -> {
-                val agentId = action.payload?.agentUUID() ?: return state
-                val sessionIdStr = action.payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: return state
-                val sessionId = IdentityUUID(sessionIdStr)
-                val agent = state.agents[agentId] ?: return state
-                if (!agent.subscribedSessionIds.contains(sessionId)) return state
-                val updatedAgent = agent.copy(
-                    subscribedSessionIds = agent.subscribedSessionIds - sessionId
-                )
-                // Run strategy validation to repair invariants (e.g., Vanilla clears
+                // outputSessionId to the first subscription when previously null, and clears
                 // outputSessionId when it is no longer in subscribedSessionIds).
                 val strategy = CognitiveStrategyRegistry.get(updatedAgent.cognitiveStrategyId)
                 val validatedAgent = strategy.validateConfig(updatedAgent)

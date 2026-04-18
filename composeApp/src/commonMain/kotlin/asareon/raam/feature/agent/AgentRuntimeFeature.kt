@@ -342,8 +342,7 @@ class AgentRuntimeFeature(
                 }
                 publishActionResult(store, correlationId, action.name, true, summary = summary)
             }
-            ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
-            ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION -> {
+            ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION -> {
                 val payload = action.payload
                 val correlationId = payload?.correlationId()
                 val agentId = resolveAgentId(payload, store, correlationId, action.name) ?: return
@@ -359,7 +358,8 @@ class AgentRuntimeFeature(
                 broadcastAgentNames(agentState, store)
 
                 val sessionIdStr = payload?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: ""
-                val verb = if (action.name == ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION) "added to" else "removed from"
+                val subscribed = payload?.get("subscribed")?.jsonPrimitive?.booleanOrNull ?: false
+                val verb = if (subscribed) "added to" else "removed from"
                 publishActionResult(store, correlationId, action.name, true,
                     summary = "Agent '${agent.identity.name}' $verb session '$sessionIdStr'.")
             }
@@ -722,10 +722,11 @@ class AgentRuntimeFeature(
                 //    in the conversation log (the agent can see its own prior actions
                 //    and internal monologue).
                 store.deferredDispatch(identity.handle, Action(
-                    ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                    ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                     buildJsonObject {
                         put("agentId", matchingAgent.identityUUID.uuid)
                         put("sessionId", sessionUUID)
+                        put("subscribed", true)
                     }
                 ))
 
@@ -2173,10 +2174,11 @@ class AgentRuntimeFeature(
                             text = { Text(agent.identity.name, color = agentColor) },
                             onClick = {
                                 store.dispatch(identity.handle, Action(
-                                    ActionRegistry.Names.AGENT_ADD_SESSION_SUBSCRIPTION,
+                                    ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION,
                                     buildJsonObject {
                                         put("agentId", agent.identityUUID.uuid)
                                         put("sessionId", sessionUUID)
+                                        put("subscribed", true)
                                     }
                                 ))
                                 submenuExpanded = false

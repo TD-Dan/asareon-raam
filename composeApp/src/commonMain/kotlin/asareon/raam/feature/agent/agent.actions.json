@@ -1022,8 +1022,8 @@
       }
     },
     {
-      "action_name": "agent.ADD_SESSION_SUBSCRIPTION",
-      "summary": "Adds a session to an agent's subscribed session list. Delta operation \u2014 callers do not need to know the current subscription list.",
+      "action_name": "agent.SET_SESSION_SUBSCRIPTION",
+      "summary": "Subscribes or unsubscribes an agent from a session. Idempotent: re-subscribing an already-subscribed agent (or vice versa) is a no-op.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -1036,7 +1036,11 @@
           },
           "sessionId": {
             "type": "string",
-            "description": "Session UUID to add to the agent's subscribed sessions."
+            "description": "Session UUID to subscribe or unsubscribe."
+          },
+          "subscribed": {
+            "type": "boolean",
+            "description": "true to subscribe, false to unsubscribe."
           },
           "correlationId": {
             "type": [
@@ -1049,42 +1053,8 @@
         },
         "required": [
           "agentId",
-          "sessionId"
-        ]
-      },
-      "required_permissions": [
-        "agent:manage"
-      ]
-    },
-    {
-      "action_name": "agent.REMOVE_SESSION_SUBSCRIPTION",
-      "summary": "Removes a session from an agent's subscribed session list. Delta operation \u2014 callers do not need to know the current subscription list.",
-      "public": true,
-      "broadcast": true,
-      "targeted": false,
-      "payload_schema": {
-        "type": "object",
-        "properties": {
-          "agentId": {
-            "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
-          },
-          "sessionId": {
-            "type": "string",
-            "description": "Session UUID to remove from the agent's subscribed sessions."
-          },
-          "correlationId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
-          }
-        },
-        "required": [
-          "agentId",
-          "sessionId"
+          "sessionId",
+          "subscribed"
         ]
       },
       "required_permissions": [

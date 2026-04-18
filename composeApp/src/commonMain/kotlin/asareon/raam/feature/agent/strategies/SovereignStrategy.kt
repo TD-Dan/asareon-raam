@@ -327,7 +327,7 @@ object SovereignStrategy : CognitiveStrategy {
      *    c. Otherwise → set pending flag, dispatch SESSION_CREATE with `isPrivateTo`.
      *
      * The SESSION_CREATED handler in AgentRuntimeFeature links the session back
-     * via AGENT_UPDATE_CONFIG + ADD_SESSION_SUBSCRIPTION + clear pending flag.
+     * via AGENT_UPDATE_CONFIG + SET_SESSION_SUBSCRIPTION + clear pending flag.
      */
     override fun ensureInfrastructure(agent: AgentInstance, agentState: AgentRuntimeState, store: Store) {
         val kgId = getKnowledgeGraphId(agent) ?: return // Not a Sovereign agent (no KG assigned)

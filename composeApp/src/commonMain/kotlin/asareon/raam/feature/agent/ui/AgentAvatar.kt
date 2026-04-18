@@ -448,9 +448,10 @@ fun AgentControlCard(
                                     DropdownMenuItem(
                                         text = { Text("Remove from session") },
                                         onClick = {
-                                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_REMOVE_SESSION_SUBSCRIPTION, buildJsonObject {
+                                            store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SET_SESSION_SUBSCRIPTION, buildJsonObject {
                                                 put("agentId", agentUuidStr)
                                                 put("sessionId", sessionUUID)
+                                                put("subscribed", false)
                                             }))
                                             menuExpanded = false
                                         },
