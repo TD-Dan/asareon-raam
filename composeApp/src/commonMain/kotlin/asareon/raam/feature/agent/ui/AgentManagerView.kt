@@ -45,6 +45,10 @@ import asareon.raam.ui.components.footer.ViewFooter
 import asareon.raam.ui.components.identity.IdentityDraft
 import asareon.raam.ui.components.identity.IdentityFieldsSection
 import asareon.raam.ui.components.identity.toDraft
+import asareon.raam.ui.components.sidepane.SidePane
+import asareon.raam.ui.components.sidepane.SidePaneLayout
+import asareon.raam.ui.components.sidepane.SidePanePosition
+import asareon.raam.ui.components.sidepane.rememberSidePaneState
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -646,69 +650,71 @@ private fun AgentResourcesView(
     store: Store
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
+    val paneState = rememberSidePaneState()
 
-    Row(Modifier.fillMaxSize()) {
-        // Left Pane: Resource List
-        Column(
-            modifier = Modifier
-                .weight(0.3f)
-                .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-        ) {
-            Row(
-                Modifier.fillMaxWidth().padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Resources", style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { showCreateDialog = true }) {
-                    Icon(Icons.Default.Add, "New Resource")
-                }
-            }
+    val listActions = listOf(
+        HeaderAction(
+            id = "create-resource",
+            label = "Create Resource",
+            icon = Icons.Default.Add,
+            priority = 100,
+            emphasis = HeaderActionEmphasis.Create,
+            onClick = { showCreateDialog = true },
+        ),
+    )
 
-            HorizontalDivider()
-
-            // Group resources by type
-            val grouped = agentState.resources.groupBy { it.type }
-
-            LazyColumn(Modifier.fillMaxSize()) {
-                AgentResourceType.entries.forEach { type ->
-                    val resources = grouped[type] ?: emptyList()
-                    if (resources.isNotEmpty() || type == AgentResourceType.SYSTEM_INSTRUCTION) {
-                        item {
-                            Text(
-                                text = type.name,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp)
-                            )
-                        }
-                        items(resources) { res ->
-                            ResourceListItem(
-                                resource = res,
-                                isSelected = res.id == agentState.editingResourceId,
-                                onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SELECT_RESOURCE, buildJsonObject { put("resourceId", res.id) })) }
-                            )
+    SidePaneLayout(
+        paneState = paneState,
+        panePosition = SidePanePosition.Start,
+        sidePane = {
+            SidePane(title = "Resources", actions = listActions) {
+                val grouped = agentState.resources.groupBy { it.type }
+                LazyColumn(Modifier.fillMaxSize()) {
+                    AgentResourceType.entries.forEach { type ->
+                        val resources = grouped[type] ?: emptyList()
+                        if (resources.isNotEmpty() || type == AgentResourceType.SYSTEM_INSTRUCTION) {
+                            item {
+                                Text(
+                                    text = type.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp)
+                                )
+                            }
+                            items(resources) { res ->
+                                ResourceListItem(
+                                    resource = res,
+                                    isSelected = res.id == agentState.editingResourceId,
+                                    onClick = {
+                                        store.dispatch(
+                                            "agent",
+                                            Action(
+                                                ActionRegistry.Names.AGENT_SELECT_RESOURCE,
+                                                buildJsonObject { put("resourceId", res.id) },
+                                            ),
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-
-        VerticalDivider()
-
-        // Right Pane: Editor
-        Box(Modifier.weight(0.7f).fillMaxHeight()) {
+        },
+        primary = {
             val selectedResource = agentState.resources.find { it.id == agentState.editingResourceId }
             if (selectedResource != null) {
                 ResourceEditor(selectedResource, store)
             } else {
                 Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text("Select a resource to edit.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Select a resource to edit.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-        }
-    }
+        },
+    )
 
     if (showCreateDialog) {
         CreateResourceDialog(

@@ -1,11 +1,9 @@
 package asareon.raam.feature.session
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -41,6 +39,9 @@ import asareon.raam.feature.core.AppLifecycle
 import asareon.raam.feature.core.CoreState
 import asareon.raam.ui.components.IconRegistry
 import asareon.raam.ui.components.fileDropTargetModifier
+import asareon.raam.ui.components.sidepane.SidePaneLayout
+import asareon.raam.ui.components.sidepane.SidePanePosition
+import asareon.raam.ui.components.sidepane.rememberSidePaneState
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.RaamTopBar
 import asareon.raam.util.PlatformDependencies
@@ -60,12 +61,6 @@ import kotlinx.serialization.json.put
  * space, but message cards are capped for readability.
  */
 private val LEDGER_MAX_CONTENT_WIDTH = 720.dp
-
-/** Min width for the workspace pane when open. */
-private val WORKSPACE_PANE_MIN_WIDTH = 260.dp
-
-/** Default width for the workspace pane. */
-private val WORKSPACE_PANE_DEFAULT_WIDTH = 320.dp
 
 /**
  * Derives the ordered, optionally filtered list of sessions from the canonical sessionOrder.
@@ -269,10 +264,8 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
                     val inputMaxHeight = maxHeight / 2
                     Column(Modifier.fillMaxSize()) {
 
-                        // ── Ledger + Workspace row ────────────────────────────
-                        Row(modifier = Modifier.weight(1f)) {
-
-                            // Ledger pane — fills available space, content width-capped
+                        // ── Ledger + Workspace pane ───────────────────────────
+                        val ledgerPane: @Composable () -> Unit = {
                             LedgerPane(
                                 store = store,
                                 activeSession = activeSession,
@@ -280,28 +273,27 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
                                 features = features,
                                 platformDependencies = platformDependencies,
                                 maxContentWidth = LEDGER_MAX_CONTENT_WIDTH,
-                                modifier = Modifier.weight(1f)
                             )
+                        }
 
-                            // Workspace pane — slides in/out from right
-                            AnimatedVisibility(
-                                visible = isWorkspaceOpen,
-                                enter = expandHorizontally(expandFrom = Alignment.Start),
-                                exit = shrinkHorizontally(shrinkTowards = Alignment.Start)
-                            ) {
-                                Row {
-                                    VerticalDivider()
+                        if (isWorkspaceOpen) {
+                            val workspacePaneState = rememberSidePaneState()
+                            SidePaneLayout(
+                                modifier = Modifier.weight(1f),
+                                paneState = workspacePaneState,
+                                panePosition = SidePanePosition.End,
+                                sidePane = {
                                     WorkspacePane(
                                         store = store,
                                         session = activeSession,
                                         sessionState = sessionState!!,
                                         platformDependencies = platformDependencies,
-                                        modifier = Modifier
-                                            .widthIn(min = WORKSPACE_PANE_MIN_WIDTH)
-                                            .width(WORKSPACE_PANE_DEFAULT_WIDTH)
                                     )
-                                }
-                            }
+                                },
+                                primary = { ledgerPane() },
+                            )
+                        } else {
+                            Box(Modifier.weight(1f).fillMaxWidth()) { ledgerPane() }
                         }
 
                         // ── Message input — full width below both panes ───────
