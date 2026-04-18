@@ -109,7 +109,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
         // Workspace toggle — highest priority, visually primary.
         add(HeaderAction(
             id = "toggle-workspace",
-            label = if (isWorkspaceOpen) "Hide files" else "Show files",
+            label = if (isWorkspaceOpen) "Hide files" else "Show Session Files",
             icon = if (isWorkspaceOpen) Icons.Default.FolderOpen else Icons.Default.Folder,
             priority = 30,
             onClick = {

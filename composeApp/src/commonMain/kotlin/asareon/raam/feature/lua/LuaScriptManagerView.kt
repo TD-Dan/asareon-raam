@@ -26,6 +26,8 @@ import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
+import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
+import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -370,27 +372,21 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
 
     if (showDeleteDialog != null) {
         val handle = showDeleteDialog!!
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Delete Script") },
-            text = { Text("This will permanently remove the script file from disk. This action cannot be undone.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.dispatch("lua", Action(
-                            name = ActionRegistry.Names.LUA_DELETE_SCRIPT,
-                            payload = buildJsonObject { put("scriptHandle", handle) }
-                        ))
-                        if (selectedScript == handle) selectedScript = null
-                        showDeleteDialog = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+        ConfirmDestructiveDialog(
+            title = "Delete Script?",
+            message = "This will permanently remove the script file from disk. This action cannot be undone.",
+            onConfirm = {
+                store.dispatch(
+                    "lua",
+                    Action(
+                        name = ActionRegistry.Names.LUA_DELETE_SCRIPT,
+                        payload = buildJsonObject { put("scriptHandle", handle) },
+                    ),
+                )
+                if (selectedScript == handle) selectedScript = null
+                showDeleteDialog = null
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) { Text("Cancel") }
-            }
+            onDismiss = { showDeleteDialog = null },
         )
     }
 }
@@ -472,7 +468,7 @@ private fun ScriptDetailHeader(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             // Edit / Save+Cancel toggle
             if (isEditing) {
                 IconButton(onClick = onCancel) {
@@ -489,28 +485,31 @@ private fun ScriptDetailHeader(
                 }
             }
 
-            // Clone
-            TooltipBox(
-                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text("Clone script") } },
-                state = rememberTooltipState()
-            ) {
-                IconButton(onClick = onClone) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Clone script")
+            // Kebab: Clone, divider, Delete
+            var menuExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
                 }
-            }
-
-            // Delete
-            TooltipBox(
-                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text("Delete script") } },
-                state = rememberTooltipState()
-            ) {
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete script",
-                        tint = MaterialTheme.colorScheme.error
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Clone Script") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                        onClick = {
+                            menuExpanded = false
+                            onClone()
+                        },
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    DangerDropdownMenuItem(
+                        label = "Delete Script",
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
                     )
                 }
             }

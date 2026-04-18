@@ -38,6 +38,8 @@ import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.ColorPicker
 import asareon.raam.ui.components.IconRegistry
 import asareon.raam.ui.components.colorToHex
+import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
+import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.ui.components.hexToColor
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
@@ -181,20 +183,20 @@ private fun AgentListView(
     val editingAgentId = agentState.editingAgentId
 
     agentToDelete?.let { agent ->
-        AlertDialog(
-            onDismissRequest = { agentToDelete = null },
-            title = { Text("Delete Agent?") },
-            text = { Text("Are you sure you want to permanently delete '${agent.identity.name}'? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        store.dispatch("agent", Action(ActionRegistry.Names.AGENT_DELETE, buildJsonObject { put("agentId", agent.identity.uuid) }))
-                        agentToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete") }
+        ConfirmDestructiveDialog(
+            title = "Delete Agent?",
+            message = "Permanently delete '${agent.identity.name}'? This action cannot be undone.",
+            onConfirm = {
+                store.dispatch(
+                    "agent",
+                    Action(
+                        ActionRegistry.Names.AGENT_DELETE,
+                        buildJsonObject { put("agentId", agent.identity.uuid) },
+                    ),
+                )
+                agentToDelete = null
             },
-            dismissButton = { Button(onClick = { agentToDelete = null }) { Text("Cancel") } }
+            onDismiss = { agentToDelete = null },
         )
     }
 
@@ -793,6 +795,26 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
 
     var showCloneDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var menuExpanded by remember(resource.id) { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        ConfirmDestructiveDialog(
+            title = "Delete Resource?",
+            message = "Permanently delete '${resource.name}'? This action cannot be undone.",
+            onConfirm = {
+                store.dispatch(
+                    "agent",
+                    Action(
+                        ActionRegistry.Names.AGENT_DELETE_RESOURCE,
+                        buildJsonObject { put("resourceId", resource.id) },
+                    ),
+                )
+                showDeleteDialog = false
+            },
+            onDismiss = { showDeleteDialog = false },
+        )
+    }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
@@ -810,15 +832,8 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
                 Text(resource.id, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!resource.isBuiltIn) {
-                    Button(
-                        onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_DELETE_RESOURCE, buildJsonObject { put("resourceId", resource.id) })) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.Delete, "Delete")
-                    }
-                    Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { store.dispatch("agent", Action(ActionRegistry.Names.AGENT_SAVE_RESOURCE, buildJsonObject {
                             put("resourceId", resource.id)
@@ -829,6 +844,24 @@ private fun ResourceEditor(resource: AgentResource, store: Store) {
                         Icon(Icons.Default.Save, "Save")
                         Spacer(Modifier.width(4.dp))
                         Text("Save")
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DangerDropdownMenuItem(
+                                label = "Delete Resource",
+                                onClick = {
+                                    menuExpanded = false
+                                    showDeleteDialog = true
+                                },
+                            )
+                        }
                     }
                 } else {
                     // Clone Button for Built-ins
