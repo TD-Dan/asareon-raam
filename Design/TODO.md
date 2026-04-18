@@ -12,7 +12,38 @@
 
 - Need a pre loaded state view that shows live log stream while app is loading
 
-- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere
+- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere — DONE (see 06-UI-system.md). Remaining UI work tracked under `# UI SYSTEM` below.
+
+
+# UI SYSTEM
+
+Design system established — see `06-UI-system.md`. Remaining follow-ups:
+
+## SidePane unification (large)
+Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `GlobalActionRibbon` into a shared `SidePane` component with:
+
+- **Adjustable width** via a draggable gutter. Persist per-pane width in settings.
+- **Adaptive stacking** on narrow displays: side-by-side panes stack vertically when the window width crosses a breakpoint (M3 adaptive-layout guidance).
+- **Consistent pane header chrome** — title + trailing kebab for pane-local actions (currently `AgentResourcesView`'s left pane has its own inline "Resources" title + "+" button; that pattern would move into the shared component).
+- **Consistent background tone** (`surfaceContainerLow`).
+
+## Primary CTA emphasis tier (small)
+Extend `HeaderActionEmphasis` with a fourth tier for "commit / submit" CTAs (distinct from `Create` which is for new-asset creation). Renders as `Button` with `primary` / `onPrimary`. Use cases today:
+
+- `ManageContextView` bottom-bar "Execute Turn" (currently a plain `Button` with primary defaults — would switch to `emphasis = Primary`)
+- Potentially the Send button in `SessionView`'s message input
+
+Add the enum value, rendering branch in `ResponsiveActions`, and extend `UiT1ResponsiveActionsTest` with the new sort/overflow behaviour.
+
+## Consistency sweep (small)
+Walk every view once more for:
+
+- Tooltip label wording (hover-tooltip text vs kebab-entry text — should match)
+- Contextual affordance labels ("Open workspace folder" used in two places — verify same wording)
+- Icon choices for common concepts ("external open" vs "folder show/hide" semantics)
+- `contentDescription` strings (accessibility) — currently not audited
+
+No structural changes expected; this is polish.
 
 
 # ONBOARDING
@@ -171,6 +202,7 @@ BUG: gocnitivepipeline 969: should error not default
 # LUA
 - add LUA scripting Documentation
 - fix lua strategy pipeline issues
+- Lua Strategies are currently not showing anywhere! Should be a resource!
 
 ---
 
