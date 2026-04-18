@@ -145,7 +145,7 @@ fun SessionView(store: Store, features: List<Feature>, platformDependencies: Pla
             add(HeaderAction(
                 id = "open-workspace-folder",
                 label = "Open workspace folder",
-                icon = Icons.Default.OpenInNew,
+                icon = Icons.Default.FolderOpen,
                 priority = -1,
                 onClick = {
                     val uuid = activeSession.identity.uuid
