@@ -6,9 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,6 +23,9 @@ import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
 import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
 import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
+import asareon.raam.ui.components.footer.FooterActionEmphasis
+import asareon.raam.ui.components.footer.FooterButton
+import asareon.raam.ui.components.footer.ViewFooter
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -539,19 +540,13 @@ private fun HolonEditView(
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Editing: ${holon.header.name}", style = MaterialTheme.typography.titleMedium)
-            Row {
-                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = { validateAndSave() }) { Text("Save Changes") }
-            }
         }
         HorizontalDivider()
 
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
             Text("Payload", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(4.dp))
             CodeEditor(
@@ -577,6 +572,11 @@ private fun HolonEditView(
             if (!isExecuteValid) {
                 Text("Invalid JSON format in execute.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
             }
+        }
+
+        ViewFooter {
+            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = onDismiss)
+            FooterButton(FooterActionEmphasis.Confirm, "Save", onClick = { validateAndSave() })
         }
     }
 }

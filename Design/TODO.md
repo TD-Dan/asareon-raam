@@ -31,8 +31,6 @@ Every identity-asset editor (user, session, agent, Lua script) is a full-view ed
 
 ### Remaining follow-ups
 - **Script rename cascade.** `IdentityFieldsSection(nameEditable = false)` is used in Lua script Edit mode because the rename chain (listen for `CORE_RETURN_UPDATE_IDENTITY`, rename the `.lua` file, update `state.scripts` map) is not yet implemented in `LuaFeature`. When it lands, drop the `nameEditable = false` and delete the note in `06-UI-system.md#Rename-vs-visual-edits`.
-- **Hand-rolled footer audit.** Walk remaining views for `BottomAppBar` + raw `Button` pairs and migrate to `ViewFooter`. Known candidates: Knowledge Graph Import wizard, Holon Payload/Execute editor.
-- **Code-editor commit discipline.** The in-place code editors in Agent System Resources and KG Holon payload/execute still use their own Save button chrome. Unify with `ViewFooter` where the containing view presents a draft.
 - **Send button in SessionView message input.** Icon-only, different visual axis — may need a `FooterIconButton` sibling or remain as-is. Decide when the composer gets its next pass.
 
 ## Consistency sweep (small)
