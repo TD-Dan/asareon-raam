@@ -1,14 +1,13 @@
 package asareon.raam.feature.session
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,17 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
-import asareon.raam.ui.components.destructive.ConfirmDestructiveDialog
-import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
-import asareon.raam.ui.components.footer.FooterActionEmphasis
-import asareon.raam.ui.components.footer.FooterButton
-import asareon.raam.ui.components.footer.ViewFooter
-import asareon.raam.ui.components.identity.IdentityDraft
-import asareon.raam.ui.components.identity.IdentityFieldsSection
-import asareon.raam.ui.components.identity.toDraft
 import asareon.raam.ui.components.topbar.HeaderAction
-import asareon.raam.ui.components.topbar.HeaderActionEmphasis
-import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
 import asareon.raam.ui.theme.spacing
 import asareon.raam.util.PlatformDependencies
@@ -158,17 +147,7 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
             hideHidden
         )
     }
-
-    var editTarget by remember { mutableStateOf<SessionEditTarget?>(null) }
-    if (editTarget != null) {
-        SessionEditorView(
-            store = store,
-            target = editTarget!!,
-            currentSessions = sessionState?.sessions ?: emptyMap(),
-            onClose = { editTarget = null },
-        )
-        return
-    }
+    val editingSessionLocalHandle = sessionState?.editingSessionLocalHandle
 
     // --- Drag-reorderable list state ---
     // This is a local mutable copy that the drag gesture manipulates.
@@ -190,20 +169,20 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
     // --- Confirmation Dialogs ---
 
     sessionToDelete?.let { session ->
-        ConfirmDestructiveDialog(
-            title = "Delete Session?",
-            message = "Are you sure you want to permanently delete '${session.identity.name}'? This action cannot be undone.",
-            onConfirm = {
-                store.dispatch(
-                    "session",
-                    Action(
-                        ActionRegistry.Names.SESSION_DELETE,
-                        buildJsonObject { put("session", session.identity.localHandle) },
-                    ),
-                )
-                sessionToDelete = null
+        AlertDialog(
+            onDismissRequest = { sessionToDelete = null },
+            title = { Text("Delete Session?") },
+            text = { Text("Are you sure you want to permanently delete '${session.identity.name}'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_DELETE, buildJsonObject { put("session", session.identity.localHandle) }))
+                        sessionToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
             },
-            onDismiss = { sessionToDelete = null },
+            dismissButton = { Button(onClick = { sessionToDelete = null }) { Text("Cancel") } }
         )
     }
 
@@ -215,22 +194,20 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
         } else {
             "All ${session.ledger.size} message(s) will be removed."
         }
-        ConfirmDestructiveDialog(
-            title = "Clear Session?",
-            message = "Clear '${session.identity.name}'? $detail",
-            confirmLabel = "Clear",
-            icon = Icons.Default.ClearAll,
-            onConfirm = {
-                store.dispatch(
-                    "session",
-                    Action(
-                        ActionRegistry.Names.SESSION_CLEAR,
-                        buildJsonObject { put("session", session.identity.localHandle) },
-                    ),
-                )
-                sessionToClear = null
+        AlertDialog(
+            onDismissRequest = { sessionToClear = null },
+            title = { Text("Clear Session?") },
+            text = { Text("Clear '${session.identity.name}'? $detail") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_CLEAR, buildJsonObject { put("session", session.identity.localHandle) }))
+                        sessionToClear = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Clear") }
             },
-            onDismiss = { sessionToClear = null },
+            dismissButton = { Button(onClick = { sessionToClear = null }) { Text("Cancel") } }
         )
     }
 
@@ -239,17 +216,16 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
     Column(modifier = Modifier.fillMaxSize()) {
         RaamTopBarHeader(
             title = "Session Manager",
-            leading = HeaderLeading.Back(onClick = {
-                store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
-            }),
             actions = listOf(
                 HeaderAction(
-                    id = "create-session",
-                    label = "Create Session",
+                    id = "new-session",
+                    label = "New Session",
                     icon = Icons.Default.Add,
                     priority = 30,
-                    emphasis = HeaderActionEmphasis.Create,
-                    onClick = { editTarget = SessionEditTarget.Create },
+                    prominent = true,
+                    onClick = {
+                        store.dispatch("session", Action(ActionRegistry.Names.SESSION_CREATE))
+                    },
                 ),
                 HeaderAction(
                     id = "toggle-show-hidden",
@@ -359,15 +335,18 @@ fun SessionsManagerView(store: Store, platformDependencies: PlatformDependencies
                             }
                             .shadow(elevation, shape = MaterialTheme.shapes.medium)
                     ) {
-                        SessionManagerCard(
-                            session = session,
-                            store = store,
-                            platformDependencies = platformDependencies,
-                            onEditRequest = { editTarget = SessionEditTarget.Edit(it.identity.localHandle) },
-                            onDeleteRequest = { sessionToDelete = it },
-                            onClearRequest = { sessionToClear = it },
-                            dragHandleModifier = dragHandleModifier
-                        )
+                        if (session.identity.localHandle == editingSessionLocalHandle) {
+                            SessionManagerCardEditor(session, store)
+                        } else {
+                            SessionManagerCard(
+                                session = session,
+                                store = store,
+                                platformDependencies = platformDependencies,
+                                onDeleteRequest = { sessionToDelete = it },
+                                onClearRequest = { sessionToClear = it },
+                                dragHandleModifier = dragHandleModifier
+                            )
+                        }
                     }
                 }
             }
@@ -380,7 +359,6 @@ private fun SessionManagerCard(
     session: Session,
     store: Store,
     platformDependencies: PlatformDependencies,
-    onEditRequest: (Session) -> Unit,
     onDeleteRequest: (Session) -> Unit,
     onClearRequest: (Session) -> Unit,
     dragHandleModifier: Modifier = Modifier
@@ -439,8 +417,11 @@ private fun SessionManagerCard(
                 )
             }
             // Edit Button
-            IconButton(onClick = { onEditRequest(session) }) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit Session")
+            IconButton(onClick = {
+                val payload = buildJsonObject { put("sessionId", session.identity.localHandle) }
+                store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
+            }) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Session Name")
             }
             // Kebab Menu — Clone, Clear, Delete
             Box {
@@ -468,12 +449,20 @@ private fun SessionManagerCard(
                         leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(18.dp)) }
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    DangerDropdownMenuItem(
-                        label = "Delete",
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             onDeleteRequest(session)
                             menuExpanded = false
                         },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     )
                 }
             }
@@ -481,116 +470,46 @@ private fun SessionManagerCard(
     }
 }
 
-// ============================================================================
-// Full-view Session Editor — create or edit a session's identity
-// ============================================================================
-
-/**
- * Which session the full-view editor is targeting. [Create] for a fresh
- * session, [Edit] wraps the localHandle of an existing one.
- */
-private sealed interface SessionEditTarget {
-    data object Create : SessionEditTarget
-    data class Edit(val localHandle: String) : SessionEditTarget
-}
-
 @Composable
-private fun SessionEditorView(
-    store: Store,
-    target: SessionEditTarget,
-    currentSessions: Map<String, Session>,
-    onClose: () -> Unit,
-) {
-    val existing = (target as? SessionEditTarget.Edit)?.let { currentSessions[it.localHandle] }
+private fun SessionManagerCardEditor(session: Session, store: Store) {
+    var name by remember(session.identity.localHandle) { mutableStateOf(session.identity.name) }
 
-    val initial = remember(target) {
-        existing?.identity?.toDraft() ?: IdentityDraft(name = "")
+    val cancelAction = {
+        val payload = buildJsonObject { put("sessionId", null as String?) }
+        store.dispatch("session", Action(ActionRegistry.Names.SESSION_SET_EDITING_SESSION_NAME, payload))
     }
-    var draft by remember(target) { mutableStateOf(initial) }
-    var showDiscardDialog by remember { mutableStateOf(false) }
-
-    val dirty = draft != initial
-    val canSave = draft.name.isNotBlank() && dirty
-
-    val tryClose = {
-        if (dirty) showDiscardDialog = true else onClose()
-    }
-
-    val onSave = {
-        when (target) {
-            is SessionEditTarget.Create -> {
-                store.dispatch("session", Action(
-                    ActionRegistry.Names.SESSION_CREATE,
-                    buildJsonObject {
-                        put("name", draft.name)
-                        if (draft.displayColor != null) put("displayColor", draft.displayColor)
-                        if (draft.displayIcon != null) put("displayIcon", draft.displayIcon)
-                        if (draft.displayEmoji != null) put("displayEmoji", draft.displayEmoji)
-                    },
-                ))
-            }
-            is SessionEditTarget.Edit -> {
-                store.dispatch("session", Action(
-                    ActionRegistry.Names.SESSION_UPDATE_CONFIG,
-                    buildJsonObject {
-                        put("session", target.localHandle)
-                        put("name", draft.name)
-                        put("displayColor", draft.displayColor)
-                        put("displayIcon", draft.displayIcon)
-                        put("displayEmoji", draft.displayEmoji)
-                    },
-                ))
-            }
+    val saveAction = {
+        val payload = buildJsonObject {
+            put("session", session.identity.localHandle)
+            put("name", name)
         }
-        onClose()
+        store.dispatch("session", Action(ActionRegistry.Names.SESSION_UPDATE_CONFIG, payload))
     }
 
-    Column(Modifier.fillMaxSize()) {
-        RaamTopBarHeader(
-            title = when (target) {
-                is SessionEditTarget.Create -> "New Session"
-                is SessionEditTarget.Edit -> existing?.identity?.name ?: "Edit Session"
-            },
-            subtitle = "Session Manager",
-            leading = HeaderLeading.Back(onClick = tryClose),
-        )
-        IdentityFieldsSection(
-            draft = draft,
-            onDraftChange = { draft = it },
-            nameLabel = "Session Name",
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = MaterialTheme.spacing.screenEdge,
-                    vertical = MaterialTheme.spacing.itemGap,
-                ),
-        )
-        ViewFooter {
-            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = tryClose)
-            FooterButton(
-                emphasis = FooterActionEmphasis.Confirm,
-                label = if (target is SessionEditTarget.Create) "Create" else "Save",
-                onClick = onSave,
-                enabled = canSave,
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Session Name") },
+                modifier = Modifier.fillMaxWidth()
             )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                IconButton(onClick = cancelAction) {
+                    Icon(Icons.Default.Cancel, "Cancel Edit")
+                }
+                IconButton(onClick = saveAction) {
+                    Icon(Icons.Default.Save, "Save Name")
+                }
+            }
         }
-    }
-
-    if (showDiscardDialog) {
-        AlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
-            title = { Text("Discard changes?") },
-            text = { Text("Your unsaved edits will be lost.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDiscardDialog = false
-                    onClose()
-                }) { Text("Discard") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDiscardDialog = false }) { Text("Keep editing") }
-            },
-        )
     }
 }

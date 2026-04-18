@@ -126,6 +126,7 @@ fun IdentityManagerView(store: Store) {
                         label = "Permissions",
                         icon = Icons.Default.Lock,
                         priority = 20,
+                        prominent = true,
                         onClick = { showingPermissions = true },
                     ),
                     HeaderAction(

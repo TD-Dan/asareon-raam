@@ -10,30 +10,9 @@
 
 - self contained "USB Stick" distributions in addition to installers
 
+- Need a pre loaded state view that shows live log stream while app is loading
 
-# UI SYSTEM
-
-- Use unified composable for the list cards in identities, agents, sessions. Allow ordering the lists everywhere, not just sessions.
-
-## SidePane unification (large)
-Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `GlobalActionRibbon` into a shared `SidePane` component with:
-
-- **Adjustable width** via a draggable gutter. Persist per-pane width in settings.
-- **Adaptive stacking** on narrow displays: side-by-side panes stack vertically when the window width crosses a breakpoint (M3 adaptive-layout guidance).
-- **Consistent pane header chrome** — title + trailing kebab for pane-local actions (currently `AgentResourcesView`'s left pane has its own inline "Resources" title + "+" button; that pattern would move into the shared component).
-- **Consistent background tone** (`surfaceContainerLow`).
-
-### Remaining follow-ups
-- **Script rename cascade.** `IdentityFieldsSection(nameEditable = false)` is used in Lua script Edit mode because the rename chain (listen for `CORE_RETURN_UPDATE_IDENTITY`, rename the `.lua` file, update `state.scripts` map) is not yet implemented in `LuaFeature`. When it lands, drop the `nameEditable = false` and delete the note in `06-UI-system.md#Rename-vs-visual-edits`.
-- **Send button in SessionView message input.** Icon-only, different visual axis — may need a `FooterIconButton` sibling or remain as-is. Decide when the composer gets its next pass.
-
-## Consistency sweep (small)
-Walk every view once more for:
-
-- Tooltip label wording (hover-tooltip text vs kebab-entry text — should match)
-- Contextual affordance labels ("Open workspace folder" used in two places — verify same wording)
-- Icon choices for common concepts ("external open" vs "folder show/hide" semantics)
-- `contentDescription` strings (accessibility) — currently not audited
+- UI cleanup: consistent headers and layout sizes, default composables for all main elements to use everywhere
 
 
 # ONBOARDING
@@ -94,6 +73,7 @@ Walk every view once more for:
 
 - 'auto-os(default)/dark/light/' mode switch in settings
 
+- unified identity editor for all identities (name, color, icon etc.). This should also pop up when creating new sessions, agents, scripts, users etc.
 
 ## Bugs
 - BUG: Agent identities are not removed from core when agent is deleted
@@ -144,9 +124,6 @@ BUG: gocnitivepipeline 969: should error not default
 - NVRAM needs to be at the end of the context for optimal llm attention.
 - CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
 
-## Context compressor
-- Smart terse actions compression: edit all actions descriptions to contain all key information in first sentence. Drop all subsequent sentenced in terse mode.
-
 
 # GATEWAY
 - streaming support for gateways
@@ -194,7 +171,6 @@ BUG: gocnitivepipeline 969: should error not default
 # LUA
 - add LUA scripting Documentation
 - fix lua strategy pipeline issues
-- Lua Strategies are currently not showing anywhere! Should be a resource!
 
 ---
 
