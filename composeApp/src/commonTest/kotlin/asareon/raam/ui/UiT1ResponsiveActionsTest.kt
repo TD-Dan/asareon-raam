@@ -1,0 +1,183 @@
+package asareon.raam.ui
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.computeHeaderActionLayout
+import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/**
+ * T1 Unit Tests for the pure layout logic behind `ResponsiveActions`.
+ *
+ * Tests `computeHeaderActionLayout` in isolation: no Compose UI, no runtime.
+ * Verifies the priority/overflow contract documented on the function.
+ */
+class UiT1ResponsiveActionsTest {
+
+    private fun action(id: String, priority: Int = 0): HeaderAction =
+        HeaderAction(
+            id = id,
+            label = id,
+            icon = Icons.Default.Add,
+            priority = priority,
+            onClick = {},
+        )
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Edge cases
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun empty_input_produces_empty_layout() {
+        val layout = computeHeaderActionLayout(emptyList(), maxVisibleSlots = 5)
+
+        assertTrue(layout.visible.isEmpty())
+        assertTrue(layout.overflow.isEmpty())
+        assertFalse(layout.kebabVisible)
+    }
+
+    @Test
+    fun zero_slots_pushes_everything_to_overflow() {
+        val actions = listOf(action("a"), action("b"))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 0)
+
+        assertTrue(layout.visible.isEmpty())
+        assertEquals(listOf("a", "b"), layout.overflow.map { it.id })
+        assertTrue(layout.kebabVisible)
+    }
+
+    @Test
+    fun negative_slots_are_clamped_to_zero() {
+        val actions = listOf(action("a"))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = -10)
+
+        assertTrue(layout.visible.isEmpty())
+        assertEquals(listOf("a"), layout.overflow.map { it.id })
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Fit behaviour
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun all_actions_fit_and_no_kebab_is_rendered() {
+        val actions = listOf(action("a"), action("b"), action("c"))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 5)
+
+        assertEquals(listOf("a", "b", "c"), layout.visible.map { it.id })
+        assertTrue(layout.overflow.isEmpty())
+        assertFalse(layout.kebabVisible)
+    }
+
+    @Test
+    fun exact_fit_does_not_reserve_a_kebab_slot() {
+        val actions = listOf(action("a"), action("b"), action("c"))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 3)
+
+        assertEquals(3, layout.visible.size)
+        assertFalse(layout.kebabVisible)
+    }
+
+    @Test
+    fun one_too_many_reserves_kebab_and_hides_two() {
+        // 4 actions, 3 slots → 2 visible + kebab (which counts as a slot),
+        // and 2 actions fall into the overflow.
+        val actions = listOf(action("a"), action("b"), action("c"), action("d"))
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 3)
+
+        assertEquals(listOf("a", "b"), layout.visible.map { it.id })
+        assertEquals(listOf("c", "d"), layout.overflow.map { it.id })
+        assertTrue(layout.kebabVisible)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Priority ordering
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun higher_priority_wins_when_budget_is_tight() {
+        val actions = listOf(
+            action("low", priority = 0),
+            action("high", priority = 10),
+            action("mid", priority = 5),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 2)
+
+        // 2 slots, 3 actions → 1 visible + kebab (1 slot), 2 in overflow.
+        assertEquals(listOf("high"), layout.visible.map { it.id })
+        assertEquals(listOf("mid", "low"), layout.overflow.map { it.id })
+    }
+
+    @Test
+    fun ties_break_by_input_order() {
+        val actions = listOf(
+            action("first", priority = 5),
+            action("second", priority = 5),
+            action("third", priority = 5),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 5)
+
+        assertEquals(listOf("first", "second", "third"), layout.visible.map { it.id })
+    }
+
+    @Test
+    fun priority_reorders_even_when_everything_fits() {
+        // Input order is A, B, C but priorities are 1, 5, 3 → visible order
+        // should reflect sorted priority: B, C, A.
+        val actions = listOf(
+            action("A", priority = 1),
+            action("B", priority = 5),
+            action("C", priority = 3),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 5)
+
+        assertEquals(listOf("B", "C", "A"), layout.visible.map { it.id })
+        assertFalse(layout.kebabVisible)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Negative priority = overflow-only
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun negative_priority_is_always_overflow_even_with_room() {
+        val actions = listOf(
+            action("visible", priority = 0),
+            action("hidden", priority = -1),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 10)
+
+        // Kebab must render because one action is forced into overflow.
+        assertEquals(listOf("visible"), layout.visible.map { it.id })
+        assertEquals(listOf("hidden"), layout.overflow.map { it.id })
+        assertTrue(layout.kebabVisible)
+    }
+
+    @Test
+    fun mixed_priorities_preserve_negative_entries_at_tail_of_overflow() {
+        val actions = listOf(
+            action("overflow_neg", priority = -5),
+            action("low_pos", priority = 0),
+            action("high_pos", priority = 10),
+        )
+
+        val layout = computeHeaderActionLayout(actions, maxVisibleSlots = 2)
+
+        // 2 slots, 3 actions → 1 visible + kebab. high wins the slot.
+        // Overflow = [low_pos (spilled candidate), overflow_neg (always-overflow)].
+        assertEquals(listOf("high_pos"), layout.visible.map { it.id })
+        assertEquals(listOf("low_pos", "overflow_neg"), layout.overflow.map { it.id })
+    }
+}

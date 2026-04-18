@@ -19,29 +19,35 @@ import androidx.compose.ui.unit.dp
 val HeaderActionSlotWidth = 48.dp
 
 /**
- * Renders [actions] as a row of `IconButton`s, spilling the lowest-priority
- * actions into an overflow kebab when [maxVisibleSlots] is exceeded.
- *
- * Priority rules:
- *  - Actions with priority ≥ 0 are candidates for the visible row.
- *  - Actions with priority < 0 always live in the kebab.
- *  - Among candidates, highest priority wins. Ties break by input order.
- *
- * The kebab counts as one visible slot whenever it's rendered. It's rendered
- * whenever at least one action would be hidden.
- *
- * @param maxVisibleSlots The maximum number of icon-button slots the caller
- *   wants rendered in the row (including the kebab if present). Pass
- *   [Int.MAX_VALUE] to disable visible-count clamping (the kebab still appears
- *   if there are any negative-priority actions).
+ * Pure-data result of splitting a set of [HeaderAction]s into a visible row
+ * and an overflow list, given a slot budget. Extracted from [ResponsiveActions]
+ * so the layout logic can be unit-tested without a Compose runtime.
  */
-@Composable
-fun ResponsiveActions(
-    actions: List<HeaderAction>,
-    maxVisibleSlots: Int = Int.MAX_VALUE,
-    modifier: Modifier = Modifier,
+internal data class HeaderActionLayout(
+    val visible: List<HeaderAction>,
+    val overflow: List<HeaderAction>,
 ) {
-    if (actions.isEmpty()) return
+    /** Whether the kebab should render (it counts as one of the visible slots). */
+    val kebabVisible: Boolean get() = overflow.isNotEmpty()
+}
+
+/**
+ * Split [actions] into visible vs. overflow following the priority rules:
+ *  - priority < 0 → always overflow.
+ *  - priority ≥ 0 → candidate for visible row; highest priority wins, ties
+ *    break by input order.
+ *  - If any action would be hidden, one visible slot is reserved for the
+ *    kebab; the kebab then holds everything that didn't fit.
+ *
+ * @param maxVisibleSlots maximum total slots in the visible row, *including*
+ *   the kebab. [Int.MAX_VALUE] disables slot clamping (kebab only appears for
+ *   negative-priority entries). Negative values are coerced to 0.
+ */
+internal fun computeHeaderActionLayout(
+    actions: List<HeaderAction>,
+    maxVisibleSlots: Int,
+): HeaderActionLayout {
+    if (actions.isEmpty()) return HeaderActionLayout(emptyList(), emptyList())
 
     val alwaysOverflow = actions.filter { it.priority < 0 }
     val candidates = actions
@@ -55,14 +61,35 @@ fun ResponsiveActions(
 
     val slots = maxVisibleSlots.coerceAtLeast(0)
     val allFit = candidates.size <= slots && alwaysOverflow.isEmpty()
-    val kebabNeeded = !allFit
-
-    val visibleBudget = if (kebabNeeded) (slots - 1).coerceAtLeast(0) else slots
+    val visibleBudget = if (allFit) slots else (slots - 1).coerceAtLeast(0)
     val visible = candidates.take(visibleBudget)
     val overflow = candidates.drop(visibleBudget) + alwaysOverflow
 
+    return HeaderActionLayout(visible, overflow)
+}
+
+/**
+ * Renders [actions] as a row of `IconButton`s, spilling the lowest-priority
+ * actions into an overflow kebab when [maxVisibleSlots] is exceeded.
+ *
+ * See [computeHeaderActionLayout] for the priority rules.
+ *
+ * @param maxVisibleSlots The maximum number of icon-button slots the caller
+ *   wants rendered in the row (including the kebab if present). Pass
+ *   [Int.MAX_VALUE] to disable visible-count clamping (the kebab still appears
+ *   if there are any negative-priority actions).
+ */
+@Composable
+fun ResponsiveActions(
+    actions: List<HeaderAction>,
+    maxVisibleSlots: Int = Int.MAX_VALUE,
+    modifier: Modifier = Modifier,
+) {
+    if (actions.isEmpty()) return
+    val layout = computeHeaderActionLayout(actions, maxVisibleSlots)
+
     Row(modifier = modifier) {
-        visible.forEach { action ->
+        layout.visible.forEach { action ->
             TooltipIconButton(
                 label = action.label,
                 onClick = action.onClick,
@@ -71,8 +98,8 @@ fun ResponsiveActions(
                 Icon(action.icon, contentDescription = action.label)
             }
         }
-        if (kebabNeeded && overflow.isNotEmpty()) {
-            OverflowKebab(overflow)
+        if (layout.kebabVisible) {
+            OverflowKebab(layout.overflow)
         }
     }
 }
