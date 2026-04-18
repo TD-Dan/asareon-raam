@@ -10,18 +10,21 @@ import kotlin.test.*
 /**
  * Tier 1 Unit Tests for HKGStrategy.
  *
- * HKGStrategy is a reference strategy for testing HKG integration in isolation
- * (Phase C of the Sovereign Stabilization design). It combines Vanilla-style
- * session awareness with HKG context delivery via the two-partition INDEX + FILES view.
+ * HKGStrategy is a reference strategy for testing HKG integration in isolation.
+ * It combines Vanilla-style session awareness with HKG context delivery via a
+ * single gathered `HOLON_KNOWLEDGE_GRAPH` partition (owned by the knowledge-graph
+ * feature / pipeline).
  *
  * ## Key Behavioral Contracts
  *
  * 1. **validateConfig**: outputSessionId ∈ subscribedSessionIds (same as Vanilla).
  *    No private session — unlike PrivateSession/Sovereign.
  *
- * 2. **buildPrompt**: places INDEX and FILES gathered partitions,
- *    HKG navigation instructions, session awareness, multi-agent context.
- *    Excludes HKG keys from the generic CONTEXT section.
+ * 2. **buildPrompt**: reserves gathered-partition slots for HOLON_KNOWLEDGE_GRAPH
+ *    and SESSIONS/SESSION_FILES; adds identity + optional system instructions.
+ *    (An earlier design split HKG into INDEX/FILES sub-partitions with a
+ *    dedicated navigation section — that has been simplified to a single slot;
+ *    navigation is now pipeline-owned.)
  *
  * 3. **requestAdditionalContext / needsAdditionalContext**: dispatches
  *    KNOWLEDGEGRAPH_REQUEST_CONTEXT when knowledgeGraphId is set.
@@ -227,70 +230,66 @@ class HKGStrategyT1LogicTest {
     // =========================================================================
 
     @Test
-    fun `buildPrompt should include agent name and HKG awareness`() {
+    fun `buildPrompt should include identity section with agent name and HKG awareness`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
             gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
+        val builder = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState())
 
-        assertTrue(prompt.contains("You are $agentName."))
-        assertTrue(prompt.contains("Holon Knowledge Graph"))
+        val identity = builder.findSection("YOUR IDENTITY AND ROLE")
+        assertNotNull(identity, "identity section should be emitted")
+        assertTrue(identity.content.contains(agentName),
+            "identity content should echo the injected agent name")
+        assertTrue(identity.content.contains("Holon Knowledge Graph"),
+            "HKG strategy's identity section should mention the HKG")
     }
 
     @Test
     fun `buildPrompt should include system instructions when provided`() {
+        val sentinel = "SENTINEL_SYSINSTR_${kotlin.random.Random.nextInt()}"
         val context = AgentTurnContext(
             agentName = agentName,
-            resolvedResources = mapOf("system_instruction" to "Be a great mapper."),
+            resolvedResources = mapOf("system_instruction" to sentinel),
             gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
+        val builder = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState())
 
-        assertTrue(prompt.contains("SYSTEM INSTRUCTIONS"))
-        assertTrue(prompt.contains("Be a great mapper."))
+        val instructions = builder.findSection("SYSTEM INSTRUCTIONS")
+        assertNotNull(instructions, "instructions section should be emitted when resource provided")
+        assertTrue(instructions.content.contains(sentinel),
+            "instructions content should echo the injected resource verbatim")
     }
 
     @Test
-    fun `buildPrompt should include INDEX when present in gathered contexts`() {
-        val context = AgentTurnContext(
-            agentName = agentName,
-            resolvedResources = emptyMap(),
-            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX")
-        )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
-
-        assertTrue(prompt.contains("[GATHERED:HOLON_KNOWLEDGE_GRAPH_INDEX]"))
-        assertTrue(prompt.contains("HKG NAVIGATION"))
-    }
-
-    @Test
-    fun `buildPrompt should include FILES when present in gathered contexts`() {
-        val context = AgentTurnContext(
-            agentName = agentName,
-            resolvedResources = emptyMap(),
-            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX", "HOLON_KNOWLEDGE_GRAPH_FILES")
-        )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
-
-        assertTrue(prompt.contains("[GATHERED:HOLON_KNOWLEDGE_GRAPH_FILES]"))
-    }
-
-    @Test
-    fun `buildPrompt should not show HKG navigation when no INDEX`() {
+    fun `buildPrompt should not include instructions section when empty`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
             gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
+        val builder = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState())
 
-        assertFalse(prompt.contains("HKG NAVIGATION"))
+        assertNull(builder.findSection("SYSTEM INSTRUCTIONS"),
+            "instructions section should be omitted when no resource is provided")
     }
 
     @Test
-    fun `buildPrompt should include session subscription awareness`() {
+    fun `buildPrompt should reserve HOLON_KNOWLEDGE_GRAPH gathered partition`() {
+        val context = AgentTurnContext(
+            agentName = agentName,
+            resolvedResources = emptyMap(),
+            gatheredContextKeys = emptySet()
+        )
+        val builder = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState())
+
+        assertTrue(builder.hasGathered("HOLON_KNOWLEDGE_GRAPH"),
+            "strategy should reserve the HKG partition slot regardless of whether the pipeline has gathered content yet")
+    }
+
+    @Test
+    fun `buildPrompt should reserve SESSIONS gathered partition`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
@@ -300,25 +299,27 @@ class HKGStrategyT1LogicTest {
             ),
             outputSessionHandle = "session.chat"
         )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
+        val builder = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState())
 
-        assertTrue(prompt.contains("SUBSCRIBED SESSIONS"))
-        assertTrue(prompt.contains("Chat (session.chat)"))
-        assertTrue(prompt.contains("PRIMARY"))
+        // Strategy-level contract: SESSIONS slot is reserved. Content formatting
+        // (handles, PRIMARY markers, etc.) is the pipeline's responsibility — not this strategy's.
+        assertTrue(builder.hasGathered("SESSIONS"),
+            "strategy should reserve the SESSIONS partition slot for pipeline-formatted content")
     }
 
     @Test
-    fun `buildPrompt includes navigation instructions with expand and collapse examples`() {
+    fun `buildPrompt should reserve a RemainingGathered sink for unplaced partitions`() {
         val context = AgentTurnContext(
             agentName = agentName,
             resolvedResources = emptyMap(),
-            gatheredContextKeys = setOf("HOLON_KNOWLEDGE_GRAPH_INDEX")
+            gatheredContextKeys = emptySet()
         )
-        val prompt = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState()).renderForTest()
+        val builder = HKGStrategy.buildPrompt(context, HKGStrategy.getInitialState())
 
-        assertTrue(prompt.contains("CONTEXT_UNCOLLAPSE"))
-        assertTrue(prompt.contains("CONTEXT_COLLAPSE"))
-        assertTrue(prompt.contains("must expand a holon file before writing"))
+        assertTrue(
+            builder.sections.any { it is PromptSection.RemainingGathered },
+            "strategy should end with everythingElse() so unknown gathered keys still get placed"
+        )
     }
 
     // =========================================================================
