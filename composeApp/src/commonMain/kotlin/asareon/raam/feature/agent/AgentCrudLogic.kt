@@ -85,7 +85,10 @@ object AgentCrudLogic {
                         localHandle = "",    // placeholder — filled on RETURN_REGISTER_IDENTITY
                         handle = "",         // placeholder — filled on RETURN_REGISTER_IDENTITY
                         name = name,
-                        parentHandle = "agent"
+                        parentHandle = "agent",
+                        displayColor = payload["displayColor"]?.jsonPrimitive?.contentOrNull,
+                        displayIcon = payload["displayIcon"]?.jsonPrimitive?.contentOrNull,
+                        displayEmoji = payload["displayEmoji"]?.jsonPrimitive?.contentOrNull,
                     ),
                     modelProvider = payload["modelProvider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
                     modelName = payload["modelName"]?.jsonPrimitive?.contentOrNull ?: "gemini-pro",
@@ -101,7 +104,10 @@ object AgentCrudLogic {
                     contextMaxBudgetChars = payload["contextMaxBudgetChars"]?.jsonPrimitive?.intOrNull ?: 150_000,
                     contextMaxPartialChars = payload["contextMaxPartialChars"]?.jsonPrimitive?.intOrNull ?: 20_000
                 )
-                state.copy(agents = state.agents + (uuid to newAgent), editingAgentId = uuid)
+                // Note: we used to also set editingAgentId = uuid here so the inline
+                // editor would open on the newly-created agent. Removed with the
+                // move to full-view editor (opened locally via editTarget in UI).
+                state.copy(agents = state.agents + (uuid to newAgent))
             }
             ActionRegistry.Names.AGENT_UPDATE_CONFIG -> {
                 val payload = action.payload ?: return state

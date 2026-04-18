@@ -62,6 +62,18 @@
           "autoMaxWaitTimeSeconds": {
             "type": "integer"
           },
+          "displayColor": {
+            "type": ["string", "null"],
+            "description": "Optional '#RRGGBB' display color for the agent's identity."
+          },
+          "displayIcon": {
+            "type": ["string", "null"],
+            "description": "Optional Material icon key for the agent's identity."
+          },
+          "displayEmoji": {
+            "type": ["string", "null"],
+            "description": "Optional emoji override for the agent's identity."
+          },
           "correlationId": {
             "type": [
               "string",

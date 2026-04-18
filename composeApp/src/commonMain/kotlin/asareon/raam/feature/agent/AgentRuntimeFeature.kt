@@ -278,20 +278,28 @@ class AgentRuntimeFeature(
                 val strategy = CognitiveStrategyRegistry.get(agentToSave.cognitiveStrategyId)
                 strategy.onAgentRegistered(agentToSave, store)
 
-                // Register agent identity (no localHandle — CoreFeature generates via slugifyName)
-                // Auto-generate a display color using golden-angle hue rotation from the
-                // primary teal (H≈182, S≈0.66, L≈0.61). Each agent gets a distinct hue that
-                // matches the design language's vibrancy.
-                val agentIndex = agentState.agents.size - 1 // -1 because new agent is already in state
-                val autoHue = ((agentIndex * 137.5f) % 360f)
-                val autoColor = colorToHex(hslToColor(autoHue, 0.66f, 0.61f))
+                // Register agent identity (no localHandle — CoreFeature generates via slugifyName).
+                // Prefer user-provided display fields from the CREATE payload; fall back to
+                // golden-angle hue rotation from the primary teal (H≈182, S≈0.66, L≈0.61)
+                // so auto-created agents still get distinct hues.
+                val resolvedColor = agentToSave.identity.displayColor ?: run {
+                    val agentIndex = agentState.agents.size - 1 // -1 because new agent is already in state
+                    val autoHue = ((agentIndex * 137.5f) % 360f)
+                    colorToHex(hslToColor(autoHue, 0.66f, 0.61f))
+                }
 
                 store.deferredDispatch(identity.handle, Action(
                     ActionRegistry.Names.CORE_REGISTER_IDENTITY,
                     buildJsonObject {
                         put("uuid", agentToSave.identityUUID.uuid)
                         put("name", agentToSave.identity.name)
-                        put("displayColor", autoColor)
+                        put("displayColor", resolvedColor)
+                        if (agentToSave.identity.displayIcon != null) {
+                            put("displayIcon", agentToSave.identity.displayIcon)
+                        }
+                        if (agentToSave.identity.displayEmoji != null) {
+                            put("displayEmoji", agentToSave.identity.displayEmoji)
+                        }
                     }
                 ))
 

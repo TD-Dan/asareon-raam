@@ -53,7 +53,6 @@ class AgentRuntimeFeatureT1CrudLogicTest {
         assertEquals("My Agent", agent.identity.name)
         assertEquals("gemini", agent.modelProvider)
         assertEquals(false, agent.automaticMode)
-        assertEquals(agent.identityUUID, newState.editingAgentId)
     }
 
     @Test
