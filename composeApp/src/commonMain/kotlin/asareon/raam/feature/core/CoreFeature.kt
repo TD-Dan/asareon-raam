@@ -1018,24 +1018,33 @@ class CoreFeature(
             viewKeyIdentities to { store, _ -> IdentityManagerView(store) }
         )
 
-        @Composable
-        override fun RibbonContent(store: Store, activeViewKey: String?) {
-            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
-            IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyIdentities) })) }) {
-                Icon(Icons.Default.Person, "Identity Manager", tint = if (activeViewKey == viewKeyIdentities) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> {
+            val navigate = { key: String ->
+                store.dispatch(
+                    "core",
+                    Action(
+                        ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                        buildJsonObject { put("key", key) },
+                    ),
+                )
             }
-        }
-
-        @Composable
-        override fun MenuContent(store: Store, onDismiss: () -> Unit) {
-            DropdownMenuItem(
-                text = { Text("About") },
-                onClick = {
-                    // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
-                    store.dispatch("core", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKeyAbout) }))
-                    onDismiss()
-                },
-                leadingIcon = { Icon(Icons.Default.Info, "About Application") }
+            return listOf(
+                RibbonEntry(
+                    id = "core.identities",
+                    label = "Identities",
+                    icon = Icons.Default.Person,
+                    priority = 80,
+                    isActive = activeViewKey == viewKeyIdentities,
+                    onClick = { navigate(viewKeyIdentities) },
+                ),
+                RibbonEntry(
+                    id = "core.about",
+                    label = "About",
+                    icon = Icons.Default.Info,
+                    priority = 20,
+                    isActive = activeViewKey == viewKeyAbout,
+                    onClick = { navigate(viewKeyAbout) },
+                ),
             )
         }
     }

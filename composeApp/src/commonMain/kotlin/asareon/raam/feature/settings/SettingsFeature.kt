@@ -117,11 +117,24 @@ class SettingsFeature(
                 SettingsView(store = store, onClose = { store.deferredDispatch("settings", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) })
             }
         )
-        @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
-            val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("settings", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
-                Icon(Icons.Default.Settings, "Settings", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = listOf(
+            RibbonEntry(
+                id = "settings.main",
+                label = "Settings",
+                icon = Icons.Default.Settings,
+                priority = 10,
+                isActive = activeViewKey == viewKey,
+                onClick = {
+                    store.dispatch(
+                        "settings",
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", viewKey) },
+                        ),
+                    )
+                },
+            ),
+        )
     }
 }

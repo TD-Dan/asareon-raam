@@ -1076,20 +1076,28 @@ class KnowledgeGraphFeature(
     }
 
     override val composableProvider: Feature.ComposableProvider = object : Feature.ComposableProvider {
-        override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
-            mapOf("feature.knowledgegraph.main" to { store, _ -> KnowledgeGraphView(store, platformDependencies) })
+        private val viewKey = "feature.knowledgegraph.main"
 
-        @Composable
-        override fun RibbonContent(store: Store, activeViewKey: String?) {
-            val viewKey = "feature.knowledgegraph.main"
-            val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch(identity.handle, Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
-                Icon(
-                    imageVector = Icons.Default.Hub,
-                    contentDescription = "Knowledge Graph Manager",
-                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
+            mapOf(viewKey to { store, _ -> KnowledgeGraphView(store, platformDependencies) })
+
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = listOf(
+            RibbonEntry(
+                id = "knowledgegraph.main",
+                label = "Knowledge Graphs",
+                icon = Icons.Default.Hub,
+                priority = 50,
+                isActive = activeViewKey == viewKey,
+                onClick = {
+                    store.dispatch(
+                        identity.handle,
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", viewKey) },
+                        ),
+                    )
+                },
+            ),
+        )
     }
 }

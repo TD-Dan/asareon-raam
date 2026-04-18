@@ -84,23 +84,24 @@ class LuaFeature(
             viewKey to { s, f -> LuaScriptManagerView(s, f) }
         )
 
-        @Composable
-        override fun RibbonContent(store: Store, activeViewKey: String?) {
-            val isActive = activeViewKey == viewKey
-            IconButton(onClick = {
-                store.dispatch("lua", Action(
-                    ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
-                    buildJsonObject { put("key", viewKey) }
-                ))
-            }) {
-                Icon(
-                    Icons.Default.Code,
-                    "Lua Scripts",
-                    tint = if (isActive) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = listOf(
+            RibbonEntry(
+                id = "lua.script-manager",
+                label = "Lua Scripts",
+                icon = Icons.Default.Code,
+                priority = 30,
+                isActive = activeViewKey == viewKey,
+                onClick = {
+                    store.dispatch(
+                        "lua",
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", viewKey) },
+                        ),
+                    )
+                },
+            ),
+        )
     }
 
     override fun init(store: Store) {

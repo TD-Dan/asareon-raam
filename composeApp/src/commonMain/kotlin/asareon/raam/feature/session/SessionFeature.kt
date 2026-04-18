@@ -2008,13 +2008,40 @@ class SessionFeature(
             VIEW_KEY_MAIN to { store, features -> SessionView(store, features, platformDependencies) },
             VIEW_KEY_MANAGER to { store, _ -> SessionsManagerView(store, platformDependencies) }
         )
-        @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
-            IconButton(onClick = { store.dispatch("session", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", VIEW_KEY_MANAGER) })) }) {
-                Icon(Icons.AutoMirrored.Filled.ViewList, "Session Manager", tint = if (activeViewKey == VIEW_KEY_MANAGER) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = { store.dispatch("session", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", VIEW_KEY_MAIN) })) }) {
-                Icon(Icons.Default.ChatBubble, "Active Session", tint = if (activeViewKey == VIEW_KEY_MAIN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = listOf(
+            RibbonEntry(
+                id = "session.manager",
+                label = "Session Manager",
+                icon = Icons.AutoMirrored.Filled.ViewList,
+                priority = 55,
+                isActive = activeViewKey == VIEW_KEY_MANAGER,
+                onClick = {
+                    store.dispatch(
+                        "session",
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", VIEW_KEY_MANAGER) },
+                        ),
+                    )
+                },
+            ),
+            RibbonEntry(
+                id = "session.active",
+                label = "Active Session",
+                icon = Icons.Default.ChatBubble,
+                priority = 99,
+                isActive = activeViewKey == VIEW_KEY_MAIN,
+                onClick = {
+                    store.dispatch(
+                        "session",
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", VIEW_KEY_MAIN) },
+                        ),
+                    )
+                },
+            ),
+        )
     }
 }

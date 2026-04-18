@@ -2074,19 +2074,32 @@ class AgentRuntimeFeature(
     }
 
     override val composableProvider: ComposableProvider = object : ComposableProvider {
+        private val viewKeyManager = "feature.agent.manager"
+
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> =
             mapOf(
-                "feature.agent.manager" to { store, _ -> AgentManagerView(store, platformDependencies) },
+                viewKeyManager to { store, _ -> AgentManagerView(store, platformDependencies) },
                 "feature.agent.context_viewer" to { store, _ -> ManageContextView(store) }
             )
-        @Composable
-        override fun RibbonContent(store: Store, activeViewKey: String?) {
-            val viewKey = "feature.agent.manager"
-            val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("agent", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
-                Icon(Icons.Default.Bolt, "Agent Manager", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = listOf(
+            RibbonEntry(
+                id = "agent.manager",
+                label = "Agent Manager",
+                icon = Icons.Default.Bolt,
+                priority = 90,
+                isActive = activeViewKey == viewKeyManager,
+                onClick = {
+                    store.dispatch(
+                        "agent",
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", viewKeyManager) },
+                        ),
+                    )
+                },
+            ),
+        )
         @Composable
         override fun PartialView(store: Store, partId: String, context: Any?) {
             when (partId) {

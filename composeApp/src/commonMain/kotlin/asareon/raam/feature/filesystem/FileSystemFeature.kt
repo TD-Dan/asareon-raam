@@ -775,11 +775,24 @@ class FileSystemFeature(
         override val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit> = mapOf(
             viewKey to { store, _ -> FileSystemView(store, platformDependencies) }
         )
-        @Composable override fun RibbonContent(store: Store, activeViewKey: String?) {
-            val isActive = activeViewKey == viewKey
-            IconButton(onClick = { store.dispatch("filesystem", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, buildJsonObject { put("key", viewKey) })) }) {
-                Icon(Icons.Default.Folder, "File System Browser", tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+
+        override fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = listOf(
+            RibbonEntry(
+                id = "filesystem.main",
+                label = "File System Browser",
+                icon = Icons.Default.Folder,
+                priority = 40,
+                isActive = activeViewKey == viewKey,
+                onClick = {
+                    store.dispatch(
+                        "filesystem",
+                        Action(
+                            ActionRegistry.Names.CORE_SET_ACTIVE_VIEW,
+                            buildJsonObject { put("key", viewKey) },
+                        ),
+                    )
+                },
+            ),
+        )
     }
 }
