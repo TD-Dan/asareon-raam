@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.sp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.topbar.HeaderAction
-import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBar
 import asareon.raam.ui.components.topbar.TooltipIconButton
 import asareon.raam.ui.theme.spacing
@@ -108,9 +107,6 @@ fun FileSystemView(
 
     Column(modifier = Modifier.fillMaxSize()) {
         RaamTopBar(
-            leading = HeaderLeading.Back(onClick = {
-                store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
-            }),
             actions = headerActions,
             subContent = {
                 Text(
