@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
@@ -28,6 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.RaamTopBar
+import asareon.raam.ui.components.topbar.TooltipIconButton
+import asareon.raam.ui.theme.spacing
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -43,105 +48,199 @@ fun FileSystemView(
     var isFavoritesMenuExpanded by remember { mutableStateOf(false) }
     var isWhitelistMenuExpanded by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // --- Header ---
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+    val hasSelection = fsState?.rootItems?.any { findSelectedFiles(listOf(it)).isNotEmpty() } == true
+    val headerActions = listOf(
+        HeaderAction(
+            id = "copy-selection",
+            label = "Copy selection to clipboard",
+            icon = Icons.Default.ContentCopy,
+            priority = 30,
+            enabled = hasSelection,
+            onClick = {
+                store.dispatch(
+                    "filesystem",
+                    Action(ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD)
+                )
+            },
+        ),
+        HeaderAction(
+            id = "select-folder",
+            label = "Select folder",
+            icon = Icons.Default.FolderOpen,
+            priority = 20,
+            onClick = {
+                store.dispatch(
+                    "filesystem",
+                    Action(ActionRegistry.Names.FILESYSTEM_SELECT_DIRECTORY_UI)
+                )
+            },
+        ),
+        HeaderAction(
+            id = "go-up",
+            label = "Go up one directory",
+            icon = Icons.AutoMirrored.Filled.ArrowBack,
+            priority = 10,
+            enabled = parentPath != null,
+            onClick = {
+                parentPath?.let {
+                    store.dispatch(
+                        "filesystem",
+                        Action(
+                            ActionRegistry.Names.FILESYSTEM_NAVIGATE,
+                            buildJsonObject { put("path", it) },
+                        ),
+                    )
+                }
+            },
+        ),
+    )
+
+    val navigateTo: (String) -> Unit = { path ->
+        store.dispatch(
+            "filesystem",
+            Action(
+                ActionRegistry.Names.FILESYSTEM_NAVIGATE,
+                buildJsonObject { put("path", path) },
+            ),
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        RaamTopBar(
+            actions = headerActions,
+            subContent = {
+                Text(
+                    text = fsState?.currentPath ?: "Loading...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = MaterialTheme.spacing.screenEdge,
+                        vertical = MaterialTheme.spacing.inner,
+                    ),
+                )
+            },
         ) {
-            Text("Local File System Access", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            Button(
-                onClick = { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_COPY_SELECTION_TO_CLIPBOARD)) },
-                enabled = fsState?.rootItems?.any { findSelectedFiles(listOf(it)).isNotEmpty() } == true
-            ) {
-                Text("Copy selection")
-            }
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = { parentPath?.let { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", it) })) } },
-                enabled = parentPath != null
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Go Up")
-            }
-            IconButton(onClick = { store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_SELECT_DIRECTORY_UI)) }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Select Folder")
-            }
-
-            // Whitelist Dropdown
-            Box {
-                IconButton(
-                    onClick = { isWhitelistMenuExpanded = true },
-                    enabled = fsState?.whitelistedPaths?.isNotEmpty() == true
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Navigate to Whitelisted Folder")
-                }
-                DropdownMenu(
+            // Center slot: title + inline whitelist/favorites dropdowns.
+            // Those two stay inline because their DropdownMenus anchor to the
+            // IconButton — letting them spill into the responsive overflow kebab
+            // would break the anchor.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Local File System Access",
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                WhitelistDropdown(
                     expanded = isWhitelistMenuExpanded,
-                    onDismissRequest = { isWhitelistMenuExpanded = false }
-                ) {
-                    Text("Whitelisted Folders", modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
-                    HorizontalDivider()
-                    fsState?.whitelistedPaths?.sorted()?.forEach { path ->
-                        DropdownMenuItem(
-                            text = { Text(path) },
-                            onClick = {
-                                store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", path) }))
-                                isWhitelistMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Favorites Dropdown
-            Box {
-                IconButton(
-                    onClick = { isFavoritesMenuExpanded = true },
-                    enabled = fsState?.favoritePaths?.isNotEmpty() == true
-                ) {
-                    Icon(Icons.Default.Star, contentDescription = "Navigate to Favorite")
-                }
-                DropdownMenu(
+                    onExpandedChange = { isWhitelistMenuExpanded = it },
+                    whitelistedPaths = fsState?.whitelistedPaths ?: emptySet(),
+                    onNavigate = navigateTo,
+                )
+                FavoritesDropdown(
                     expanded = isFavoritesMenuExpanded,
-                    onDismissRequest = { isFavoritesMenuExpanded = false }
-                ) {
-                    fsState?.favoritePaths?.sorted()?.forEach { path ->
-                        DropdownMenuItem(
-                            text = { Text(path) },
-                            onClick = {
-                                store.dispatch("filesystem", Action(ActionRegistry.Names.FILESYSTEM_NAVIGATE, buildJsonObject { put("path", path) }))
-                                isFavoritesMenuExpanded = false
-                            }
-                        )
-                    }
-                }
+                    onExpandedChange = { isFavoritesMenuExpanded = it },
+                    favoritePaths = fsState?.favoritePaths ?: emptySet(),
+                    onNavigate = navigateTo,
+                )
             }
         }
 
-        Text(
-            text = fsState?.currentPath ?: "Loading...",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-        HorizontalDivider()
-
         // --- Error Panel or File Tree ---
-        fsState?.error?.let { ErrorPanel(it) }
-            ?: if (fsState?.rootItems?.isEmpty() == true && fsState.currentPath != null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Directory is empty.") }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(fsState?.rootItems ?: emptyList(), key = { it.path }) { item ->
-                        FileTree(
-                            item = item,
-                            store = store,
-                            fsState = fsState,
-                            platformDependencies = platformDependencies
-                        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(MaterialTheme.spacing.screenEdge)
+        ) {
+            fsState?.error?.let { ErrorPanel(it) }
+                ?: if (fsState?.rootItems?.isEmpty() == true && fsState.currentPath != null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) { Text("Directory is empty.") }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(fsState?.rootItems ?: emptyList(), key = { it.path }) { item ->
+                            FileTree(
+                                item = item,
+                                store = store,
+                                fsState = fsState,
+                                platformDependencies = platformDependencies
+                            )
+                        }
                     }
                 }
+        }
+    }
+}
+
+@Composable
+private fun WhitelistDropdown(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    whitelistedPaths: Set<String>,
+    onNavigate: (String) -> Unit,
+) {
+    Box {
+        TooltipIconButton(
+            label = "Navigate to whitelisted folder",
+            onClick = { onExpandedChange(true) },
+            enabled = whitelistedPaths.isNotEmpty(),
+        ) {
+            Icon(Icons.Default.Edit, contentDescription = "Navigate to whitelisted folder")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            Text(
+                "Whitelisted Folders",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            HorizontalDivider()
+            whitelistedPaths.sorted().forEach { path ->
+                DropdownMenuItem(
+                    text = { Text(path) },
+                    onClick = {
+                        onNavigate(path)
+                        onExpandedChange(false)
+                    },
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun FavoritesDropdown(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    favoritePaths: Set<String>,
+    onNavigate: (String) -> Unit,
+) {
+    Box {
+        TooltipIconButton(
+            label = "Navigate to favorite",
+            onClick = { onExpandedChange(true) },
+            enabled = favoritePaths.isNotEmpty(),
+        ) {
+            Icon(Icons.Default.Star, contentDescription = "Navigate to favorite")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            favoritePaths.sorted().forEach { path ->
+                DropdownMenuItem(
+                    text = { Text(path) },
+                    onClick = {
+                        onNavigate(path)
+                        onExpandedChange(false)
+                    },
+                )
+            }
+        }
     }
 }
 
