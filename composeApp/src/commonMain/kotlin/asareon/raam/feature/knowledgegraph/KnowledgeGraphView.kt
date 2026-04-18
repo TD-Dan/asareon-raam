@@ -26,6 +26,10 @@ import asareon.raam.ui.components.destructive.DangerDropdownMenuItem
 import asareon.raam.ui.components.footer.FooterActionEmphasis
 import asareon.raam.ui.components.footer.FooterButton
 import asareon.raam.ui.components.footer.ViewFooter
+import asareon.raam.ui.components.sidepane.SidePane
+import asareon.raam.ui.components.sidepane.SidePaneLayout
+import asareon.raam.ui.components.sidepane.SidePanePosition
+import asareon.raam.ui.components.sidepane.rememberSidePaneState
 import asareon.raam.ui.components.topbar.HeaderAction
 import asareon.raam.ui.components.topbar.HeaderActionEmphasis
 import asareon.raam.ui.components.topbar.HeaderLeading
@@ -227,6 +231,7 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
     val selectedHolonId = kgState.activeHolonIdForView
     val holonToEditId = kgState.holonIdToEdit
     val selectedHolon = kgState.holons[selectedHolonId]
+    val paneState = rememberSidePaneState()
 
     val availableTypes = remember(kgState.holons) {
         (listOf("All") + kgState.holons.values.map { it.header.type }.distinct().sorted()).toSet()
@@ -234,9 +239,18 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
 
     Column(modifier = modifier.fillMaxSize()) {
         if (kgState.personaRoots.isNotEmpty()) {
-            FlowRow(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 availableTypes.forEach { type ->
-                    val isSelected = if (type == "All") kgState.activeTypeFilters.isEmpty() else kgState.activeTypeFilters.contains(type)
+                    val isSelected = if (type == "All") {
+                        kgState.activeTypeFilters.isEmpty()
+                    } else {
+                        kgState.activeTypeFilters.contains(type)
+                    }
                     FilterChip(
                         selected = isSelected,
                         onClick = {
@@ -247,53 +261,85 @@ private fun InspectorPane(kgState: KnowledgeGraphState, store: Store, modifier: 
                             } else {
                                 kgState.activeTypeFilters + type
                             }
-                            store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_TYPE_FILTERS, buildJsonObject { put("types", Json.encodeToJsonElement(newFilters)) }))
+                            store.dispatch(
+                                "knowledgegraph",
+                                Action(
+                                    ActionRegistry.Names.KNOWLEDGEGRAPH_SET_TYPE_FILTERS,
+                                    buildJsonObject {
+                                        put("types", Json.encodeToJsonElement(newFilters))
+                                    },
+                                ),
+                            )
                         },
-                        label = { Text(type) }
+                        label = { Text(type) },
                     )
                 }
             }
             HorizontalDivider()
         }
 
-        Row(Modifier.fillMaxSize()) {
-            if (kgState.personaRoots.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    when {
-                        kgState.isLoading -> CircularProgressIndicator()
-                        kgState.fatalError != null -> Text(kgState.fatalError, color = MaterialTheme.colorScheme.error)
-                        else -> Text("No Knowledge Graphs found. Create or import a Persona to begin.")
-                    }
-                }
-            } else {
-                MultiRootTreeView(
-                    kgState = kgState,
-                    store = store,
-                    modifier = Modifier.width(400.dp)
-                )
-                VerticalDivider()
-
-                if (holonToEditId != null) {
-                    HolonEditView(
-                        holon = kgState.holons[holonToEditId],
-                        onDismiss = { store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT, buildJsonObject { put("holonId", null as String?) })) },
-                        onSave = { holonId, newPayload, newExecute ->
-                            store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT, buildJsonObject {
-                                put("holonId", holonId)
-                                newPayload?.let { put("payload", it) }
-                                newExecute?.let { put("execute", it) }
-                            }))
-                        },
-                        modifier = Modifier.weight(1f)
+        if (kgState.personaRoots.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                when {
+                    kgState.isLoading -> CircularProgressIndicator()
+                    kgState.fatalError != null -> Text(
+                        kgState.fatalError,
+                        color = MaterialTheme.colorScheme.error,
                     )
-                } else {
-                    HolonDetailView(
-                        holon = selectedHolon,
-                        store = store,
-                        modifier = Modifier.weight(1f)
-                    )
+                    else -> Text("No Knowledge Graphs found. Create or import a Persona to begin.")
                 }
             }
+        } else {
+            SidePaneLayout(
+                modifier = Modifier.weight(1f),
+                paneState = paneState,
+                panePosition = SidePanePosition.Start,
+                sidePane = {
+                    SidePane(title = "Personas") {
+                        MultiRootTreeView(
+                            kgState = kgState,
+                            store = store,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                },
+                primary = {
+                    if (holonToEditId != null) {
+                        HolonEditView(
+                            holon = kgState.holons[holonToEditId],
+                            onDismiss = {
+                                store.dispatch(
+                                    "knowledgegraph",
+                                    Action(
+                                        ActionRegistry.Names.KNOWLEDGEGRAPH_SET_HOLON_TO_EDIT,
+                                        buildJsonObject { put("holonId", null as String?) },
+                                    ),
+                                )
+                            },
+                            onSave = { holonId, newPayload, newExecute ->
+                                store.dispatch(
+                                    "knowledgegraph",
+                                    Action(
+                                        ActionRegistry.Names.KNOWLEDGEGRAPH_UPDATE_HOLON_CONTENT,
+                                        buildJsonObject {
+                                            put("holonId", holonId)
+                                            newPayload?.let { put("payload", it) }
+                                            newExecute?.let { put("execute", it) }
+                                        },
+                                    ),
+                                )
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        HolonDetailView(
+                            holon = selectedHolon,
+                            store = store,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                },
+            )
         }
     }
 }
