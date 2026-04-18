@@ -89,6 +89,63 @@ Labels are caller-provided verbatim. Confirm is not auto-labelled "Confirm"; use
 Because Confirm uses the `primary` role, it carries the active identity's tint for free — the same way Create and Prominent derive from the overridable primary in the header.
 
 
+## Identity Assets
+
+Users, sessions, agents, and Lua scripts are all **identity assets**: every one of them carries an `Identity` value with a name, an optional display color, and an optional display icon or emoji. The identity is the thing that appears in the bus as an originator, in session cards as a sender, in avatars, and in the permissions system. Anything a user can "own" and address is an identity asset.
+
+Because they share a data shape, they share an editing surface. The name + color + icon fields live in a single shared composable — **`IdentityFieldsSection`** — that every asset editor drops in as its first section. There is no per-asset re-implementation of a name input or an icon picker. The identity tint is the active user's tint until overridden; the icon defaults to a per-asset fallback (bolt for agents, person for users, etc.).
+
+Asset-specific fields live *below* the identity section. Agents have strategy, compute, subscriptions, context budget. Scripts have a code body. Sessions have nothing beyond identity today — their editor is identity-only. A user's editor is identity-only.
+
+
+## Asset Editors
+
+Creating and editing an identity asset happens in the same full-view surface. **Create = edit a new instance.** There is no separate "Create X" dialog with a subset of fields — clicking Create opens the same editor the user would see when editing, pre-filled with sensible defaults. One codepath, one layout, one commit.
+
+An asset editor has four regions, from top to bottom:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Top bar — Back, title ("New Agent" / existing name),    │
+│           subtitle breadcrumb of the list view          │
+├─────────────────────────────────────────────────────────┤
+│ IdentityFieldsSection — name, color, icon/emoji         │
+├─────────────────────────────────────────────────────────┤
+│ Asset-specific fields (may be empty)                    │
+│ For scrollable forms: wrap in verticalScroll.           │
+│ For editors with a single dominant surface (a code      │
+│ editor), that surface takes weight(1f) directly.        │
+├─────────────────────────────────────────────────────────┤
+│ ViewFooter — [Cancel]              [Save / Create]      │
+└─────────────────────────────────────────────────────────┘
+```
+
+The editor takes over the entire pane while open; the asset list beneath it is hidden. This is deliberate — editing is a focused activity, and leaving half the screen to the list tempts users into destructive comparisons mid-edit.
+
+**Back in edit mode means "back to the list"**, never "back to ribbon home". While editing an agent, the top-bar Back arrow returns to the agent list, which itself has its own Back to ribbon home. Two levels deep is the maximum depth an asset editor introduces.
+
+**Cross-view Edit requests.** An asset card embedded in another view (e.g. an agent avatar inside a session) can request "edit this agent" via `CORE_SET_ACTIVE_VIEW` + the owning feature's "set editing" action. The target manager view consumes that signal on mount and opens its editor. This keeps edit-from-anywhere working without duplicating the editor composable per host.
+
+
+## Commit Discipline
+
+Every asset editor follows the same rules about when Save is enabled and when Cancel is allowed to silently close.
+
+- **Save is enabled iff the name is non-blank.** There is no other gate. Dirty-state is not used to gate Save because it's fragile across complex forms (reference equality on JsonObject fields, for example, produces false negatives). Clicking Save on an unchanged form is a no-op on the store; letting it through is cheaper than the complexity of a bulletproof dirty check.
+- **Cancel on a clean editor closes immediately.** No confirmation — there is nothing to lose.
+- **Cancel on a dirty editor opens a Discard dialog.** The dialog has two text buttons: "Keep editing" dismisses the dialog, "Discard" closes the editor without dispatching anything. This is the *only* place the word "Discard" appears in the flow — the Cancel button stays Cancel regardless of state.
+- **Navigating away while dirty.** The same discard rule applies to the Back arrow in edit mode. Anything that would leave the editor without saving goes through the same prompt.
+
+"Dirty" is a local comparison: `draft != initial`, where `initial` is snapshotted once on editor entry. It exists only to gate the discard prompt.
+
+
+### Rename vs. visual edits
+
+Renaming an identity is semantically heavier than changing its color or icon. The name feeds into the slugified localHandle, which in turn is the file path / bus address for assets whose identity is backed by a file (sessions, agents, scripts). A rename therefore requires a side-effect chain: dispatch `CORE_UPDATE_IDENTITY`, listen for the targeted response, rename the file on disk, update the feature's state map.
+
+That chain is implemented for sessions and agents. It is **not** implemented for scripts yet. Accordingly, `IdentityFieldsSection` accepts a `nameEditable` flag that the script editor sets to `false` in Edit mode — the name field is greyed out, and only visuals and the code body can be changed in place. Create mode on scripts still allows naming (the file doesn't exist yet, so there's nothing to rename). A dedicated "Rename Script" flow will land when the rename chain is implemented for Lua.
+
+
 ## Secondary Destinations
 
 Some feature pairs have a primary view plus a helper view that users visit occasionally. Permissions accompany Identities; System Resources accompany Agents; Import accompanies Knowledge Graphs. These helpers are **not** presented as peer tabs. A tab row would lie about their importance.

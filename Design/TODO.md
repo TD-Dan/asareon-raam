@@ -26,7 +26,16 @@ Unify `WorkspacePane`, the `AgentResourcesView` left pane, and (design-wise) `Gl
 - **Consistent background tone** (`surfaceContainerLow`).
 
 ## Footer CTA system — DONE
-Commit CTAs are not a header-action tier. They live in a dedicated `ViewFooter` with `FooterButton(Confirm | Cancel)` — see `06-UI-system.md` "View Footer" section. `ManageContextView` is migrated. Remaining opportunistic migration: audit other views for hand-rolled `BottomAppBar` + `Button` pairs and the `SessionView` message-input Send button (the Send button is icon-only, a different visual axis — may need a `FooterIconButton` sibling or remain as-is).
+Commit CTAs live in `ViewFooter` with `FooterButton(Confirm | Cancel)` — see `06-UI-system.md` "View Footer".
+
+## Identity-asset editor pattern — DONE
+Every identity-asset editor (user, session, agent, Lua script) is a full-view edit surface using the shared `IdentityFieldsSection` + asset-specific content + `ViewFooter`. Create = edit a new instance. Discard-prompt on dirty Cancel. See `06-UI-system.md` "Identity Assets", "Asset Editors", and "Commit Discipline".
+
+### Remaining follow-ups
+- **Script rename cascade.** `IdentityFieldsSection(nameEditable = false)` is used in Lua script Edit mode because the rename chain (listen for `CORE_RETURN_UPDATE_IDENTITY`, rename the `.lua` file, update `state.scripts` map) is not yet implemented in `LuaFeature`. When it lands, drop the `nameEditable = false` and delete the note in `06-UI-system.md#Rename-vs-visual-edits`.
+- **Hand-rolled footer audit.** Walk remaining views for `BottomAppBar` + raw `Button` pairs and migrate to `ViewFooter`. Known candidates: Knowledge Graph Import wizard, Holon Payload/Execute editor.
+- **Code-editor commit discipline.** The in-place code editors in Agent System Resources and KG Holon payload/execute still use their own Save button chrome. Unify with `ViewFooter` where the containing view presents a draft.
+- **Send button in SessionView message input.** Icon-only, different visual axis — may need a `FooterIconButton` sibling or remain as-is. Decide when the composer gets its next pass.
 
 ## Consistency sweep (small)
 Walk every view once more for:
@@ -35,8 +44,6 @@ Walk every view once more for:
 - Contextual affordance labels ("Open workspace folder" used in two places — verify same wording)
 - Icon choices for common concepts ("external open" vs "folder show/hide" semantics)
 - `contentDescription` strings (accessibility) — currently not audited
-
-No structural changes expected; this is polish.
 
 
 # ONBOARDING
