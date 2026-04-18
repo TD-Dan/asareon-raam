@@ -71,6 +71,8 @@
 
 - add ui header composable to share with features (ui consistency)
 
+- 'auto-os(default)/dark/light/' mode switch in settings
+
 ## Bugs
 - BUG: Agent identities are not removed from core when agent is deleted
 - BUG: stale identities remain at the core from session, agent, others?
@@ -132,7 +134,7 @@ BUG: gocnitivepipeline 969: should error not default
 - non destructive ledger deletions and edits. Why are we permanantly deleting entries when modern storage capacity is practically unlimited for text.
 - Render Action items in JSON formatting with the CodeEditor
 - Add emoticon and unicode search to the input
-- configurable post header styles via settings "${identity} - ${time}:" etc.
+- configurable post header content via settings "${identity} - ${time}:" etc.
 
 ## WorkspacePane
 - session files pane does not support folders and files in folders

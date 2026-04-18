@@ -10,6 +10,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import asareon.raam.ui.theme.LocalSpacing
+import asareon.raam.ui.theme.Spacing
 
 /**
  * Extended semantic colors not covered by the Material 3 core color scheme.
@@ -203,7 +205,10 @@ fun AppTheme(
 
     val extendedColors = if (darkTheme) darkExtendedColors else lightExtendedColors
 
-    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+    CompositionLocalProvider(
+        LocalExtendedColors provides extendedColors,
+        LocalSpacing provides Spacing()
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = MaterialTheme.typography,

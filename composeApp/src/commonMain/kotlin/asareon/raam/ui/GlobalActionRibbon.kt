@@ -3,6 +3,7 @@ package asareon.raam.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
@@ -10,9 +11,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,11 +29,28 @@ import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.feature.core.CoreState
+import asareon.raam.ui.theme.spacing
 import asareonraam.composeapp.generated.resources.Res
 import asareonraam.composeapp.generated.resources.icon
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jetbrains.compose.resources.painterResource
+
+/**
+ * Vertical height reserved per ribbon icon button (M3 touch target).
+ * Used to compute how many structured [RibbonEntry]s fit in available space.
+ */
+private val RibbonSlotHeight = 48.dp
+
+/**
+ * Fixed vertical cost of the non-collapsible ribbon chrome: the home button
+ * at the top, the Menu button at the bottom, the vertical padding, and any
+ * legacy `RibbonContent` composables rendered from un-migrated features.
+ *
+ * Conservative estimate — slight under-use of vertical space is preferable to
+ * crowding the menu button off-screen.
+ */
+private val RibbonChromeHeight = 160.dp
 
 @Composable
 fun GlobalActionRibbon(
@@ -45,48 +65,125 @@ fun GlobalActionRibbon(
     }
     val defaultViewKey = coreState?.defaultViewKey ?: "feature.session.main"
 
-    Column(
+    // Collect all structured entries from all features, sorted by priority.
+    val structuredEntries = features
+        .asSequence()
+        .mapNotNull { it.composableProvider }
+        .flatMap { it.ribbonEntries(store, activeViewKey).asSequence() }
+        .withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<RibbonEntry>> { it.value.priority }
+                .thenBy { it.index }
+        )
+        .map { it.value }
+        .toList()
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxHeight()
-            .width(50.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainer) // background FIRST
-            .padding(vertical = 8.dp),                              // then padding
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .width(MaterialTheme.spacing.ribbonWidth)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
     ) {
-        // --- Master Home Button ---
-        val payload = buildJsonObject { put("key", defaultViewKey) }
-        IconButton(onClick = { store.deferredDispatch("system", Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, payload)) }) {
-            Icon(
-                painter = painterResource(Res.drawable.icon),
-                contentDescription = "Go to Default View (Session)",
-                tint = Color.Unspecified
-            )
-        }
+        // Compute how many structured entries fit. Overflow spills into a
+        // dedicated overflow icon that lives at the end of the structured list.
+        val availableHeight = maxHeight
+        val slotBudget = ((availableHeight - RibbonChromeHeight) / RibbonSlotHeight)
+            .toInt()
+            .coerceAtLeast(0)
+        val allFit = structuredEntries.size <= slotBudget
+        val visibleCount = if (allFit) structuredEntries.size
+            else (slotBudget - 1).coerceAtLeast(0)
+        val visibleEntries = structuredEntries.take(visibleCount)
+        val overflowEntries = structuredEntries.drop(visibleCount)
 
-        // Render ribbon content from all features
-        features.forEach { feature ->
-            feature.composableProvider?.RibbonContent(
-                store = store,
-                activeViewKey = activeViewKey
-            )
-        }
-
-        // The main application menu
-        Box {
-            IconButton(onClick = { isMenuExpanded = true }) {
-                Icon(Icons.Default.Menu, contentDescription = "Application Menu")
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(vertical = MaterialTheme.spacing.inner),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.inner)
+        ) {
+            // --- Master Home Button ---
+            val payload = buildJsonObject { put("key", defaultViewKey) }
+            IconButton(onClick = {
+                store.deferredDispatch(
+                    "system",
+                    Action(ActionRegistry.Names.CORE_SET_ACTIVE_VIEW, payload)
+                )
+            }) {
+                Icon(
+                    painter = painterResource(Res.drawable.icon),
+                    contentDescription = "Go to Default View (Session)",
+                    tint = Color.Unspecified
+                )
             }
-            DropdownMenu(
-                expanded = isMenuExpanded,
-                onDismissRequest = { isMenuExpanded = false }
-            ) {
-                features.forEach { feature ->
-                    feature.composableProvider?.MenuContent(
-                        store = store,
-                        onDismiss = { isMenuExpanded = false }
-                    )
+
+            // --- Structured ribbon entries (stacked from top) ---
+            visibleEntries.forEach { entry ->
+                RibbonIconButton(entry)
+            }
+            if (overflowEntries.isNotEmpty()) {
+                RibbonOverflowButton(overflowEntries)
+            }
+
+            // --- Legacy: un-migrated features still use @Composable RibbonContent ---
+            features.forEach { feature ->
+                feature.composableProvider?.RibbonContent(
+                    store = store,
+                    activeViewKey = activeViewKey
+                )
+            }
+
+            // --- Application menu (aggregates all features' MenuContent) ---
+            Box {
+                IconButton(onClick = { isMenuExpanded = true }) {
+                    Icon(Icons.Default.Menu, contentDescription = "Application Menu")
                 }
+                DropdownMenu(
+                    expanded = isMenuExpanded,
+                    onDismissRequest = { isMenuExpanded = false }
+                ) {
+                    features.forEach { feature ->
+                        feature.composableProvider?.MenuContent(
+                            store = store,
+                            onDismiss = { isMenuExpanded = false }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RibbonIconButton(entry: RibbonEntry) {
+    val tint = if (entry.isActive) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurface
+    IconButton(onClick = entry.onClick) {
+        Icon(entry.icon, contentDescription = entry.label, tint = tint)
+    }
+}
+
+@Composable
+private fun RibbonOverflowButton(entries: List<RibbonEntry>) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Default.Menu, contentDescription = "More views")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            entries.forEach { entry ->
+                DropdownMenuItem(
+                    text = { Text(entry.label) },
+                    leadingIcon = { Icon(entry.icon, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        entry.onClick()
+                    },
+                )
             }
         }
     }

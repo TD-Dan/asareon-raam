@@ -1,6 +1,7 @@
 package asareon.raam.core
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
  * Defines the universal contract for a self-contained, modular feature plugin within the AUF app.
@@ -68,6 +69,18 @@ interface Feature {
         val stageViews: Map<String, @Composable (Store, List<Feature>) -> Unit>
             get() = emptyMap()
 
+        /**
+         * Structured ribbon entries contributed by this feature. The ribbon
+         * renders entries sorted by [RibbonEntry.priority] (higher first) and
+         * spills low-priority ones into its overflow menu when vertical space
+         * is constrained.
+         *
+         * Prefer this over [RibbonContent]. The legacy [RibbonContent] hook
+         * remains for features that need a custom composable (e.g. a badge),
+         * and is rendered below the structured entries.
+         */
+        fun ribbonEntries(store: Store, activeViewKey: String?): List<RibbonEntry> = emptyList()
+
         @Composable
         fun RibbonContent(store: Store, activeViewKey: String?) {}
 
@@ -83,3 +96,21 @@ interface Feature {
         fun MenuContent(store: Store, onDismiss: () -> Unit) {}
     }
 }
+
+/**
+ * A single entry rendered in the [GlobalActionRibbon].
+ *
+ * @property priority Higher values render first (top of the ribbon) and are
+ *   the last to spill into the overflow menu when space is tight. Ties break
+ *   by insertion order across features.
+ * @property isActive Whether this entry corresponds to the currently active
+ *   view — used to render a selected/pressed visual state.
+ */
+data class RibbonEntry(
+    val id: String,
+    val label: String,
+    val icon: ImageVector,
+    val priority: Int = 0,
+    val isActive: Boolean = false,
+    val onClick: () -> Unit,
+)

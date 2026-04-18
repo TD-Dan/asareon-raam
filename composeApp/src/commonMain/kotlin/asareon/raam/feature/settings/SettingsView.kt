@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
+import asareon.raam.ui.theme.spacing
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,26 +35,31 @@ fun SettingsView(
         settingsState?.definitions?.groupBy { it["section"]?.jsonPrimitive?.content ?: "Uncategorized" } ?: emptyMap()
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Spacer(Modifier.width(16.dp))
-            Text("Application Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            IconButton(onClick = { store.dispatch("settings", Action(ActionRegistry.Names.SETTINGS_OPEN_FOLDER)) }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Open Settings Folder")
-            }
-        }
+    Column(modifier = Modifier.fillMaxSize()) {
+        RaamTopBarHeader(
+            title = "Application Settings",
+            leading = HeaderLeading.Back(onClick = onClose),
+            actions = listOf(
+                HeaderAction(
+                    id = "open-settings-folder",
+                    label = "Open Settings Folder",
+                    icon = Icons.Default.FolderOpen,
+                    priority = 10,
+                    onClick = {
+                        store.dispatch(
+                            "settings",
+                            Action(ActionRegistry.Names.SETTINGS_OPEN_FOLDER)
+                        )
+                    },
+                ),
+            ),
+        )
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(MaterialTheme.spacing.screenEdge),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.screenEdge)
         ) {
             groupedSettings.forEach { (section, definitions) ->
                 item {
