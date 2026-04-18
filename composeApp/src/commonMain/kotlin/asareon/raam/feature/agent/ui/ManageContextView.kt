@@ -35,9 +35,6 @@ import asareon.raam.feature.agent.CollapseState
 import asareon.raam.feature.agent.ContextAssemblyResult
 import asareon.raam.feature.agent.ContextCollapseLogic
 import asareon.raam.feature.agent.ContextDelimiters
-import asareon.raam.ui.components.footer.FooterActionEmphasis
-import asareon.raam.ui.components.footer.FooterButton
-import asareon.raam.ui.components.footer.ViewFooter
 import asareon.raam.ui.components.hslToColor
 import asareon.raam.ui.components.topbar.HeaderLeading
 import asareon.raam.ui.components.topbar.RaamTopBarHeader
@@ -122,28 +119,31 @@ fun ManageContextView(store: Store) {
             }
         }
 
-        val tokens = statusInfo.managedContextEstimatedTokens
-            ?: managedPartitions?.totalChars?.let { it / ContextDelimiters.CHARS_PER_TOKEN }
-        ViewFooter(
-            leading = if (tokens != null) {
-                {
-                    Icon(
-                        Icons.Default.Token,
-                        contentDescription = "Tokens",
+        BottomAppBar {
+            // Token estimate
+            val tokens = statusInfo.managedContextEstimatedTokens
+                ?: managedPartitions?.totalChars?.let { it / ContextDelimiters.CHARS_PER_TOKEN }
+            if (tokens != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Icon(Icons.Default.Token, contentDescription = "Tokens",
                         modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        "~${formatTokenCount(tokens)} tokens",
+                    Text("~${formatTokenCount(tokens)} tokens",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else null,
-        ) {
-            FooterButton(FooterActionEmphasis.Cancel, "Cancel", onClick = onDiscard)
-            FooterButton(FooterActionEmphasis.Confirm, "Execute Turn", onClick = onExecute)
+            }
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onDiscard,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
+                Text("Cancel")
+            }
+            Spacer(Modifier.width(16.dp))
+            Button(onClick = onExecute) { Text("Execute Turn") }
         }
     }
 
