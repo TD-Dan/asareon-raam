@@ -132,6 +132,7 @@ BUG: gocnitivepipeline 969: should error not default
 - non destructive ledger deletions and edits. Why are we permanantly deleting entries when modern storage capacity is practically unlimited for text.
 - Render Action items in JSON formatting with the CodeEditor
 - Add emoticon and unicode search to the input
+- configurable post header styles via settings "${identity} - ${time}:" etc.
 
 ## WorkspacePane
 - session files pane does not support folders and files in folders
