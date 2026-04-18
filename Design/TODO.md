@@ -144,6 +144,9 @@ BUG: gocnitivepipeline 969: should error not default
 - NVRAM needs to be at the end of the context for optimal llm attention.
 - CONTEXT_NAVIGATION_REFERENCE: gather all context navigation information to one partial
 
+## Context compressor
+- Smart terse actions compression: edit all actions descriptions to contain all key information in first sentence. Drop all subsequent sentenced in terse mode.
+
 
 # GATEWAY
 - streaming support for gateways
