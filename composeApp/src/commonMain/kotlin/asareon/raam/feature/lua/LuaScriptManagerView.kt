@@ -26,13 +26,16 @@ import asareon.raam.core.Store
 import asareon.raam.core.generated.ActionRegistry
 import asareon.raam.ui.components.CodeEditor
 import asareon.raam.ui.components.SyntaxMode
+import asareon.raam.ui.components.topbar.HeaderAction
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
+import asareon.raam.ui.theme.spacing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
  * Full CRUD Script Manager view matching the app's visual language.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LuaScriptManagerView(store: Store, features: List<Feature>) {
     val appState by store.state.collectAsState()
@@ -62,50 +65,49 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // ══════════════════════════════════════════════════════════════════
-        // HEADER (matches TopAppBar pattern from AgentManager / SessionManager)
-        // ══════════════════════════════════════════════════════════════════
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        RaamTopBarHeader(
+            title = "Lua Scripts",
+            leading = HeaderLeading.Back(onClick = {
+                store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+            }),
+            actions = listOf(
+                HeaderAction(
+                    id = "new-script",
+                    label = "New Script",
+                    icon = Icons.Default.Add,
+                    priority = 30,
+                    prominent = true,
+                    onClick = { showCreateDialog = true },
+                ),
+                HeaderAction(
+                    id = "open-workspace-folder",
+                    label = "Open workspace folder",
+                    icon = Icons.Default.FolderOpen,
+                    priority = 20,
+                    onClick = {
+                        store.dispatch(
+                            "lua",
+                            Action(
+                                name = ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
+                                payload = buildJsonObject { put("path", "") },
+                            ),
+                        )
+                    },
+                ),
+            ),
+            subContent = {
                 Text(
-                    "LUA Scripting",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = {
-                        store.dispatch("lua", Action(
-                            name = ActionRegistry.Names.FILESYSTEM_OPEN_WORKSPACE_FOLDER,
-                            payload = buildJsonObject { put("path", "") }
-                        ))
-                    }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Open workspace folder")
-                    }
-                    FilledTonalButton(onClick = { showCreateDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("New Script")
-                    }
-                }
-            }
-            Text(
-                "Automate actions with Lua scripts. Each script runs sandboxed with its own identity. " +
+                    text = "Automate actions with Lua scripts. Each script runs sandboxed with its own identity. " +
                         "Per-script permissions are managed in the Permission Manager.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        HorizontalDivider()
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = MaterialTheme.spacing.screenEdge,
+                        vertical = MaterialTheme.spacing.inner,
+                    ),
+                )
+            },
+        )
 
         // ══════════════════════════════════════════════════════════════════
         // MAIN CONTENT: Left list + Right detail

@@ -5,7 +5,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -23,6 +22,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import asareon.raam.core.*
 import asareon.raam.core.generated.ActionRegistry
+import asareon.raam.ui.components.topbar.HeaderLeading
+import asareon.raam.ui.components.topbar.RaamTopBarHeader
+import asareon.raam.ui.theme.spacing
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -35,26 +37,19 @@ fun AboutView(store: Store) {
     val actionDescriptors = appState.actionDescriptors
     val identityRegistry = appState.identityRegistry
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-    ) {
-        // --- Header ---
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-        ) {
-            // Pre-Phase 1 fix: use feature handle "core" instead of unregistered "core"
-            IconButton(onClick = { store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW)) }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Spacer(Modifier.width(16.dp))
-            Text("About", style = MaterialTheme.typography.headlineSmall)
-        }
+    Column(modifier = Modifier.fillMaxSize()) {
+        RaamTopBarHeader(
+            title = "About",
+            leading = HeaderLeading.Back(onClick = {
+                store.dispatch("core", Action(ActionRegistry.Names.CORE_SHOW_DEFAULT_VIEW))
+            }),
+        )
 
-        // --- Content ---
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(MaterialTheme.spacing.screenEdge),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.screenEdge)
         ) {
             // Version Info
             item {
