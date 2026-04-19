@@ -167,6 +167,61 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
         }
     }
 
+    @Test
+    fun `execute writes a child whose filename needed id-repair to match its header id`() {
+        // Regression for the observed "says will create N but only M land" behavior
+        // with legacy HHMM-without-seconds filenames. The filename is
+        // `dream-record-20250731T0925Z.json`, but id-repair rewrites the header id
+        // (and thus the holon's canonical id in memory) to
+        // `dream-record-20250731T092500Z`. Previously the execute phase looked up
+        // each holon's action by matching filename-to-id, which misses here, so the
+        // write was silently dropped. Fix: index by normalized header id.
+        val parentId = "pl1-20251112T190000Z"
+        val childCanonicalId = "dream-record-20250731T092500Z"
+        val childFilenameId = "dream-record-20250731T0925Z"   // legacy HHMM form
+        val parentFilePath = "$parentId/$parentId.json"
+        val childImportPath = "$parentId/$childFilenameId.json"
+
+        val parentContent = """
+            { "header": { "id": "$parentId", "type": "AI_Persona_Root", "name": "P" }, "payload": {} }
+        """.trimIndent()
+        // Header id is the repair-equivalent of the filename — repair rewrites both
+        // to the canonical form and they match, so the file loads fine.
+        val childContent = """
+            { "header": { "id": "$childFilenameId", "type": "T", "name": "C" }, "payload": {} }
+        """.trimIndent()
+
+        val sandboxRoot = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph"
+        platform.createDirectories("$sandboxRoot/$parentId")
+        platform.writeFileContent("$sandboxRoot/$parentFilePath", parentContent)
+
+        val existingParent = createHolonFromString(parentContent, parentFilePath, platform)
+        val initialState = KnowledgeGraphState(
+            holons = mapOf(parentId to existingParent),
+            importFileContents = mapOf(childImportPath to childContent),
+            importSelectedActions = mapOf(childImportPath to Integrate(parentId))
+        )
+        val harness = TestEnvironment.create()
+            .withFeature(kgFeature)
+            .withFeature(fsFeature)
+            .withInitialState("knowledgegraph", initialState)
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+
+            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            val childWrite = writeActions.find {
+                it.payload?.get("path")?.jsonPrimitive?.content?.contains(childCanonicalId) == true
+            }
+            assertNotNull(childWrite, "Id-repaired child must still be written; the filename→id lookup used to miss it.")
+            assertEquals(
+                "$parentId/$childCanonicalId/$childCanonicalId.json",
+                childWrite.payload?.get("path")?.jsonPrimitive?.content
+            )
+        }
+    }
+
     // --- Test Group: Recursive import flag plumbing ---
     // The UI checkbox "Import sub-folders recursively" must reach the filesystem walker.
     // Previously, KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS hardcoded `recursive: true` in the
@@ -188,6 +243,60 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             assertNotNull(readRequest, "Expected a FILESYSTEM_REQUEST_SCOPED_READ_UI to be dispatched.")
             val recursive = readRequest.payload?.get("recursive")?.jsonPrimitive?.boolean
             assertFalse(recursive == true, "recursive flag must reflect state.isImportRecursive=false, got: $recursive")
+        }
+    }
+
+    // --- Test Group: Execute under an Ignore'd parent ---
+    // When the user re-imports a folder whose parent holon is unchanged (auto-Ignored)
+    // alongside new children that Integrate under it, the child must still be written
+    // at a path derived from the kgState parent. Previously, `determinePath` fell
+    // through to `else → null` for Ignore actions, poisoning the whole subtree:
+    // every planned write silently dropped because no finalPath could be resolved.
+
+    @Test
+    fun `execute INTEGRATE under an Ignore'd parent in import set writes child with kgState-derived path`() {
+        val parentId = "pl1-20251112T190000Z"
+        val childId = "hl1-20251112T190000Z"
+        val parentFilePath = "$parentId/$parentId.json"
+        val childImportPath = "$parentId/$childId.json"
+
+        // Parent content is identical in import and on disk → auto-Ignore.
+        val parentContent = """
+            { "header": { "id": "$parentId", "type": "AI_Persona_Root", "name": "P" }, "payload": {} }
+        """.trimIndent()
+        val childContent = """
+            { "header": { "id": "$childId", "type": "T", "name": "C" }, "payload": {} }
+        """.trimIndent()
+
+        val sandboxRoot = "${platform.getBasePathFor(BasePath.APP_ZONE)}/knowledgegraph"
+        platform.createDirectories("$sandboxRoot/$parentId")
+        platform.writeFileContent("$sandboxRoot/$parentFilePath", parentContent)
+
+        val existingParent = createHolonFromString(parentContent, parentFilePath, platform)
+
+        val initialState = KnowledgeGraphState(
+            holons = mapOf(parentId to existingParent),
+            // Both parent and child in the import set — parent is Ignore (identical), child is Integrate.
+            importFileContents = mapOf(
+                childImportPath to childContent
+            ),
+            importSelectedActions = mapOf(
+                childImportPath to Integrate(parentId)
+            )
+        )
+        val harness = TestEnvironment.create()
+            .withFeature(kgFeature)
+            .withFeature(fsFeature)
+            .withInitialState("knowledgegraph", initialState)
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_EXECUTE_IMPORT))
+
+            val writeActions = harness.processedActions.filter { it.name == ActionRegistry.Names.FILESYSTEM_WRITE }
+            val childWrite = writeActions.find { it.payload?.get("path")?.jsonPrimitive?.content?.contains(childId) == true }
+            assertNotNull(childWrite, "Child must be written; previously the Ignore'd parent null'd the whole subtree.")
+            assertEquals("$parentId/$childId/$childId.json", childWrite.payload?.get("path")?.jsonPrimitive?.content)
         }
     }
 

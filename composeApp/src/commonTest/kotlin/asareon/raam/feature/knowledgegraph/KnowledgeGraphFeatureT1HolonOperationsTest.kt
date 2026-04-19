@@ -171,7 +171,10 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
     }
 
     @Test
-    fun `createHolonFromString should throw for invalid sub-holon ID format`() {
+    fun `createHolonFromString drops an irreparable sub-holon ref instead of throwing`() {
+        // A single dangling/malformed sub-holon ref should NOT quarantine the whole
+        // parent file — that cascade was the biggest source of lost children in
+        // real-world imports. The bad ref is dropped with a warning; the parent loads.
         val rawContent = """
             {
                 "header": {
@@ -182,11 +185,8 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
         """.trimIndent()
         val sourcePath = "valid-parent-20251112T190000Z.json"
 
-        val exception = assertFailsWith<HolonValidationException> {
-            createHolonFromString(rawContent, sourcePath, platform)
-        }
-        assertTrue(exception.message!!.contains("Invalid ID format"))
-        assertTrue(exception.message!!.contains("invalid-sub-holon"))
+        val holon = createHolonFromString(rawContent, sourcePath, platform)
+        assertEquals(0, holon.header.subHolons.size, "Irreparable sub-holon ref should be dropped.")
     }
 
     // --- Test Group: createHolonFromString — automatic ID repair ---
@@ -253,24 +253,53 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
     }
 
     @Test
-    fun `createHolonFromString still throws for irreparable sub-holon id`() {
-        // "dream-protocol-1" is the irreparable sub-holon id from the import report.
+    fun `createHolonFromString keeps valid sub-holon refs and drops irreparable ones`() {
+        // Mirrors the real-world dream-records-20250807T100200Z.json case: the parent
+        // has one legacy dangling ref ('dream-protocol-1') alongside legitimate
+        // dream-record children. Pre-fix, the bad ref quarantined the whole parent
+        // and every legit child was then flagged orphan. Post-fix, the bad ref is
+        // dropped and the parent loads with its real children intact.
         val rawContent = """
             {
                 "header": {
                     "id": "parent-20251112T190000Z", "type": "T", "name": "N",
-                    "sub_holons": [{ "id": "dream-protocol-1", "type": "T", "summary": "s" }]
+                    "sub_holons": [
+                        { "id": "good-child-20251112T190100Z", "type": "T", "summary": "s" },
+                        { "id": "dream-protocol-1", "type": "T", "summary": "s" },
+                        { "id": "another-good-20251112T190200Z", "type": "T", "summary": "s" }
+                    ]
                 },
                 "payload": {}
             }
         """.trimIndent()
         val sourcePath = "parent-20251112T190000Z.json"
 
-        val exception = assertFailsWith<HolonValidationException> {
-            createHolonFromString(rawContent, sourcePath, platform)
-        }
-        assertTrue(exception.message!!.contains("Invalid ID format"))
-        assertTrue(exception.message!!.contains("dream-protocol-1"))
+        val holon = createHolonFromString(rawContent, sourcePath, platform)
+        assertEquals(2, holon.header.subHolons.size, "Valid refs retained; bad ref dropped.")
+        assertTrue(holon.header.subHolons.any { it.id == "good-child-20251112T190100Z" })
+        assertTrue(holon.header.subHolons.any { it.id == "another-good-20251112T190200Z" })
+        assertFalse(holon.header.subHolons.any { it.id.contains("dream-protocol") })
+    }
+
+    @Test
+    fun `createHolonFromString drops an irreparable relationship target instead of throwing`() {
+        val rawContent = """
+            {
+                "header": {
+                    "id": "parent-20251112T190000Z", "type": "T", "name": "N",
+                    "relationships": [
+                        { "target_id": "good-target-20251112T190100Z", "type": "references" },
+                        { "target_id": "dangling-ref-with-no-timestamp", "type": "references" }
+                    ]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        val sourcePath = "parent-20251112T190000Z.json"
+
+        val holon = createHolonFromString(rawContent, sourcePath, platform)
+        assertEquals(1, holon.header.relationships.size)
+        assertEquals("good-target-20251112T190100Z", holon.header.relationships.first().targetId)
     }
 
     @Test

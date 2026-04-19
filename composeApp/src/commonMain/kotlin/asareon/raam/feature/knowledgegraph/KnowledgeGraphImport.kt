@@ -190,11 +190,18 @@ internal fun executeImportWrites(
         }
     }.toMap()
 
+    // Build holonsInTransaction *and* a normalized-id → sourcePath index in one pass.
+    // The index is authoritative because an id-repaired holon's `header.id` no longer
+    // equals its on-disk filename — so matching by filename loses the action lookup
+    // for every file whose ID had to be repaired (e.g. HHMM-without-seconds legacy
+    // names), silently dropping those writes in Phase 1/2/3.
+    val holonIdToSourcePath = mutableMapOf<String, String>()
     val holonsInTransaction = kgState.importSelectedActions.mapNotNull { (sourcePath, action) ->
         if (action is Quarantine || action is Ignore) return@mapNotNull null
         val content = kgState.importFileContents[sourcePath] ?: return@mapNotNull null
         try {
             val holon = createHolonFromString(content, sourcePath, platformDependencies)
+            holonIdToSourcePath[holon.header.id] = sourcePath
             holon.header.id to holon
         } catch (e: Exception) {
             platformDependencies.log(LogLevel.WARN, "ImportExecution", "Skipping malformed holon '$sourcePath' during execution.")
@@ -215,12 +222,18 @@ internal fun executeImportWrites(
         if (finalPaths.containsKey(holonId)) return finalPaths[holonId]
 
         val holon = transactionContext[holonId] ?: kgState.holons[holonId] ?: return null
-        // Check if this holon is being imported to find its action
-        val sourcePath = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holonId }?.key
+        // Resolve this holon's import action via the normalized-id index. Filename
+        // matching doesn't work here because id-repair may have rewritten the id
+        // to no longer equal the on-disk filename.
+        val sourcePath = holonIdToSourcePath[holonId]
         val action = sourcePath?.let { kgState.importSelectedActions[it] }
 
-        // If no import action, it's an existing holon. Use its existing path.
-        if (action == null) {
+        // No import action, or the holon is in the import set as Ignore (meaning
+        // "already in kgState with identical content" — no write needed, but the
+        // path must still be resolvable because children may integrate under it).
+        // Without the Ignore branch, any subtree whose ancestor resolves to Ignore
+        // produces a null path, silently dropping every planned write beneath it.
+        if (action == null || action is Ignore) {
             val path = kgState.holons[holonId]?.header?.filePath ?: loadedParents[holonId]?.header?.filePath
             path?.let { finalPaths[holonId] = it }
             return path
@@ -250,9 +263,12 @@ internal fun executeImportWrites(
 
 
     // --- PHASE 2: STRUCTURAL MODIFICATION ---
-    // Iterate over imported holons to link them to parents
-    holonsInTransaction.values.forEach { holon ->
-        val sourcePath = kgState.importSelectedActions.entries.find { platformDependencies.getFileName(it.key).removeSuffix(".json") == holon.header.id }?.key
+    // Iterate over imported holons to link them to parents.
+    // Snapshot the values before iterating — Phase 2 may add new parent entries
+    // (existing kgState parents getting a new sub-holon ref) and iterating a live
+    // MutableMap's values while mutating it produces undefined behavior.
+    holonsInTransaction.values.toList().forEach { holon ->
+        val sourcePath = holonIdToSourcePath[holon.header.id]
         val action = sourcePath?.let { kgState.importSelectedActions[it] }
 
         if (action is Integrate || action is AssignParent) {

@@ -157,24 +157,51 @@ internal fun createHolonFromString(
     }
 
     // --- 3. Normalization and Final Validation ---
-    try {
-        val normalizedId = normalizeHolonId(repairedHeaderId)
-        val normalizedHeader = holon.header.copy(
-            id = normalizedId,
-            name = holon.header.name.trim(),
-            summary = holon.header.summary?.trim(),
-            relationships = holon.header.relationships.map { r ->
-                r.copy(targetId = normalizeHolonId(repairHolonId(r.targetId) ?: r.targetId))
-            },
-            subHolons = holon.header.subHolons.map { s ->
-                s.copy(id = normalizeHolonId(repairHolonId(s.id) ?: s.id))
-            },
-            filePath = sourcePath
-        )
-        return holon.copy(header = normalizedHeader, rawContent = rawContent)
+    // The header id itself must be valid — a holon with no id can't exist. Sub-holon
+    // refs and relationship targets, however, are just pointers into the graph; an
+    // irreparable one is a dangling legacy stub (seen in the wild: `dream-protocol-1`,
+    // `legacy-deep-archive-1`, `long-dream-1`). Dropping those with a warning lets
+    // the otherwise-valid parent load instead of quarantining it — which previously
+    // cascaded the quarantine to dozens of legitimate children.
+    val normalizedId = try {
+        normalizeHolonId(repairedHeaderId)
     } catch (e: IllegalArgumentException) {
         throw HolonValidationException("Invalid ID format in '$sourcePath': ${e.message}")
     }
+
+    val normalizedSubHolons = holon.header.subHolons.mapNotNull { s ->
+        try {
+            s.copy(id = normalizeHolonId(repairHolonId(s.id) ?: s.id))
+        } catch (e: IllegalArgumentException) {
+            platformDependencies.log(
+                LogLevel.WARN, "HolonRepair",
+                "Dropped unresolvable sub-holon ref '${s.id}' from '$sourcePath': ${e.message}"
+            )
+            null
+        }
+    }
+
+    val normalizedRelationships = holon.header.relationships.mapNotNull { r ->
+        try {
+            r.copy(targetId = normalizeHolonId(repairHolonId(r.targetId) ?: r.targetId))
+        } catch (e: IllegalArgumentException) {
+            platformDependencies.log(
+                LogLevel.WARN, "HolonRepair",
+                "Dropped unresolvable relationship target '${r.targetId}' from '$sourcePath': ${e.message}"
+            )
+            null
+        }
+    }
+
+    val normalizedHeader = holon.header.copy(
+        id = normalizedId,
+        name = holon.header.name.trim(),
+        summary = holon.header.summary?.trim(),
+        relationships = normalizedRelationships,
+        subHolons = normalizedSubHolons,
+        filePath = sourcePath
+    )
+    return holon.copy(header = normalizedHeader, rawContent = rawContent)
 }
 
 
