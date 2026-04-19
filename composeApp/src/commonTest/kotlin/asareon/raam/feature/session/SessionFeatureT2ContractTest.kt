@@ -386,14 +386,15 @@ class SessionFeatureT2ContractTest {
             initialState = baseState
         ),
         FailureCase(
+            label = "SET_MESSAGE_LOCK (session not found)",
+            actionName = ActionRegistry.Names.SESSION_SET_MESSAGE_LOCK,
             originator = "agent",
             payload = buildJsonObject {
                 put("session", "nonexistent")
                 put("senderId", "user")
+                put("timestamp", "2025-02-07T18:40:00Z")
                 put("locked", true)
-
             }
-
         )
     )
 
