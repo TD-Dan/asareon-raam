@@ -1,5 +1,6 @@
 package asareon.raam.feature.knowledgegraph
 
+import asareon.raam.util.LogLevel
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -78,8 +79,53 @@ fun normalizeHolonId(id: String): String {
 
 
 /**
+ * Attempt to mechanically repair a malformed holon ID into the canonical
+ * `name-YYYYMMDDTHHMMSSZ` shape. Returns the repaired ID if one of the known
+ * recoverable patterns matches, or `null` if the ID requires human judgement
+ * (e.g. no timestamp component at all, or the name part is missing).
+ *
+ * Handled cases (observed in legacy import corpora):
+ *  - Trailing file-extension suffix on the id tail, e.g. `foo-20250902T190000Z.md` → strip `.md`.
+ *  - Missing trailing `Z`, e.g. `foo-20250905T220000` → append `Z`.
+ *  - Missing seconds (HHMM instead of HHMMSS), e.g. `foo-20250731T0925Z` → `foo-20250731T092500Z`.
+ *  - Combinations of the above.
+ *
+ * Not handled (returns null — these require a user-guided repair tool):
+ *  - No timestamp component at all, e.g. `legacy-deep-archive-1`.
+ *  - Non-timestamp tails like `archive-record-202507`.
+ *  - Filename-vs-header ID drift where both look valid but differ (content drift).
+ */
+internal fun repairHolonId(id: String): String? {
+    val trimmed = id.trim()
+    val lastHyphen = trimmed.lastIndexOf('-')
+    if (lastHyphen == -1 || lastHyphen == trimmed.length - 1) return null
+
+    val name = trimmed.substring(0, lastHyphen)
+    var ts = trimmed.substring(lastHyphen + 1)
+
+    // Strip a trailing file-extension suffix (seen in rogue sub-holon ids where
+    // someone wrote a .md path as the id).
+    val extMatch = Regex("\\.[a-zA-Z0-9]{1,5}$").find(ts)
+    if (extMatch != null) ts = ts.substring(0, ts.length - extMatch.value.length)
+
+    return when {
+        ts.matches(Regex("^\\d{8}T\\d{6}Z$")) -> "$name-$ts"                    // already canonical
+        ts.matches(Regex("^\\d{8}T\\d{6}$")) -> "$name-${ts}Z"                  // missing Z
+        ts.matches(Regex("^\\d{8}T\\d{4}Z$")) -> "$name-${ts.substring(0, 13)}00Z"  // HHMMZ → HHMM00Z
+        ts.matches(Regex("^\\d{8}T\\d{4}$")) -> "$name-${ts}00Z"                // HHMM → HHMM00Z
+        else -> null
+    }
+}
+
+
+/**
  * The sole, canonical gateway for creating a validated and normalized Holon object from a string.
  * This function is the primary defense against data corruption and inconsistency.
+ *
+ * Applies [repairHolonId] to the header id, filename-derived id, relationship targets, and
+ * sub-holon refs before validation, so that mechanically-fixable legacy IDs (missing Z,
+ * missing seconds, trailing extension suffix) load successfully instead of quarantining
+ * the whole file. Non-trivially-broken IDs still throw.
  *
  * @param rawContent The raw JSON string content from a file.
  * @param sourcePath The file path from which the content was read, used for the ID match validation.
@@ -99,21 +145,30 @@ internal fun createHolonFromString(
         throw HolonValidationException("Malformed JSON in '$sourcePath': ${e.message}")
     }
 
-    // --- 2. Validation: Does the internal ID match the filename? ---
+    // --- 2. Validation: Does the internal ID match the filename? (repair-aware) ---
     val expectedId = platformDependencies.getFileName(sourcePath).removeSuffix(".json")
-    if (holon.header.id != expectedId) {
+    val repairedExpectedId = repairHolonId(expectedId) ?: expectedId
+    val repairedHeaderId = repairHolonId(holon.header.id) ?: holon.header.id
+    if (repairedHeaderId != repairedExpectedId) {
         throw HolonValidationException("Mismatched ID in '$sourcePath': File name implies ID '$expectedId' but header contains '${holon.header.id}'.")
+    }
+    if (repairedHeaderId != holon.header.id) {
+        platformDependencies.log(LogLevel.INFO, "HolonRepair", "Repaired header id '${holon.header.id}' → '$repairedHeaderId' in '$sourcePath'")
     }
 
     // --- 3. Normalization and Final Validation ---
     try {
-        val normalizedId = normalizeHolonId(holon.header.id)
+        val normalizedId = normalizeHolonId(repairedHeaderId)
         val normalizedHeader = holon.header.copy(
             id = normalizedId,
             name = holon.header.name.trim(),
             summary = holon.header.summary?.trim(),
-            relationships = holon.header.relationships.map { it.copy(targetId = normalizeHolonId(it.targetId)) },
-            subHolons = holon.header.subHolons.map { it.copy(id = normalizeHolonId(it.id)) },
+            relationships = holon.header.relationships.map { r ->
+                r.copy(targetId = normalizeHolonId(repairHolonId(r.targetId) ?: r.targetId))
+            },
+            subHolons = holon.header.subHolons.map { s ->
+                s.copy(id = normalizeHolonId(repairHolonId(s.id) ?: s.id))
+            },
             filePath = sourcePath
         )
         return holon.copy(header = normalizedHeader, rawContent = rawContent)

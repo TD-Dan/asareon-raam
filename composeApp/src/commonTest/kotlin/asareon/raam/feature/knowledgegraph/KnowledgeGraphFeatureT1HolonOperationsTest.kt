@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -62,6 +63,59 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
         assertFailsWith<IllegalArgumentException> {
             normalizeHolonId("!@#$-20251112T183000Z")
         }
+    }
+
+    // --- Test Group: repairHolonId ---
+    // Mechanically-fixable legacy ID shapes should repair cleanly. Irreparable shapes
+    // (no timestamp at all, non-timestamp tails) must return null so the caller can
+    // surface a real validation error to the user rather than silently invent data.
+
+    @Test
+    fun `repairHolonId passes through an already-canonical ID unchanged`() {
+        assertEquals("foo-20250731T092500Z", repairHolonId("foo-20250731T092500Z"))
+    }
+
+    @Test
+    fun `repairHolonId appends missing trailing Z`() {
+        assertEquals("foo-20250905T220000Z", repairHolonId("foo-20250905T220000"))
+    }
+
+    @Test
+    fun `repairHolonId pads missing seconds when Z is present`() {
+        assertEquals("dream-record-20250731T092500Z", repairHolonId("dream-record-20250731T0925Z"))
+    }
+
+    @Test
+    fun `repairHolonId pads missing seconds when Z is absent`() {
+        assertEquals("foo-20250731T092500Z", repairHolonId("foo-20250731T0925"))
+    }
+
+    @Test
+    fun `repairHolonId strips a trailing file-extension suffix`() {
+        assertEquals("dream_transcript-20250902T190000Z", repairHolonId("dream_transcript-20250902T190000Z.md"))
+    }
+
+    @Test
+    fun `repairHolonId handles extension plus missing Z`() {
+        assertEquals("foo-20250902T190000Z", repairHolonId("foo-20250902T190000.md"))
+    }
+
+    @Test
+    fun `repairHolonId returns null when there is no timestamp tail`() {
+        assertNull(repairHolonId("legacy-deep-archive-1"))
+        assertNull(repairHolonId("archive-record-202507"))
+        assertNull(repairHolonId("dream-protocol-1"))
+    }
+
+    @Test
+    fun `repairHolonId returns null when there is no hyphen`() {
+        assertNull(repairHolonId("noseparator"))
+        assertNull(repairHolonId("20250731T092500Z"))
+    }
+
+    @Test
+    fun `repairHolonId returns null when the id ends with a trailing hyphen`() {
+        assertNull(repairHolonId("name-"))
     }
 
     // --- Test Group: createHolonFromString ---
@@ -133,6 +187,105 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
         }
         assertTrue(exception.message!!.contains("Invalid ID format"))
         assertTrue(exception.message!!.contains("invalid-sub-holon"))
+    }
+
+    // --- Test Group: createHolonFromString — automatic ID repair ---
+    // Mechanically-fixable legacy IDs should load instead of quarantining the file.
+
+    @Test
+    fun `createHolonFromString repairs a header id missing seconds`() {
+        // "dream-record-20250731T0925Z" is the legacy HHMM-without-seconds pattern
+        // seen all over the import report. Both the filename and the header id are
+        // the same legacy shape; both repair to the canonical form and match.
+        val rawContent = """
+            { "header": {"id": "dream-record-20250731T0925Z", "type": "T", "name": "N"}, "payload": {} }
+        """.trimIndent()
+        val sourcePath = "dream-record-20250731T0925Z.json"
+
+        val holon = createHolonFromString(rawContent, sourcePath, platform)
+        assertEquals("dream-record-20250731T092500Z", holon.header.id)
+    }
+
+    @Test
+    fun `createHolonFromString tolerates filename missing Z when header has Z`() {
+        // Matches the "dream-record-first-sunrise-20250905T220000" vs header ...Z case.
+        val rawContent = """
+            { "header": {"id": "foo-20250905T220000Z", "type": "T", "name": "N"}, "payload": {} }
+        """.trimIndent()
+        val sourcePath = "foo-20250905T220000.json"  // filename missing Z
+
+        val holon = createHolonFromString(rawContent, sourcePath, platform)
+        assertEquals("foo-20250905T220000Z", holon.header.id)
+    }
+
+    @Test
+    fun `createHolonFromString repairs sub-holon id with trailing file-extension suffix`() {
+        // Matches "dream_transcript-20250902T190000Z.md" seen as a rogue sub-holon id.
+        val rawContent = """
+            {
+                "header": {
+                    "id": "parent-20251112T190000Z", "type": "T", "name": "N",
+                    "sub_holons": [{ "id": "bar-20250902T190000Z.md", "type": "T", "summary": "s" }]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        val sourcePath = "parent-20251112T190000Z.json"
+
+        val holon = createHolonFromString(rawContent, sourcePath, platform)
+        assertEquals(1, holon.header.subHolons.size)
+        assertEquals("bar-20250902T190000Z", holon.header.subHolons.first().id)
+    }
+
+    @Test
+    fun `createHolonFromString still throws for irreparable header id`() {
+        // "legacy-deep-archive-1" has no timestamp component — repair returns null,
+        // so normalize throws and the file is quarantined as before.
+        val rawContent = """
+            { "header": {"id": "legacy-deep-archive-1", "type": "T", "name": "N"}, "payload": {} }
+        """.trimIndent()
+        val sourcePath = "legacy-deep-archive-1.json"
+
+        val exception = assertFailsWith<HolonValidationException> {
+            createHolonFromString(rawContent, sourcePath, platform)
+        }
+        assertTrue(exception.message!!.contains("Invalid ID format"))
+    }
+
+    @Test
+    fun `createHolonFromString still throws for irreparable sub-holon id`() {
+        // "dream-protocol-1" is the irreparable sub-holon id from the import report.
+        val rawContent = """
+            {
+                "header": {
+                    "id": "parent-20251112T190000Z", "type": "T", "name": "N",
+                    "sub_holons": [{ "id": "dream-protocol-1", "type": "T", "summary": "s" }]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        val sourcePath = "parent-20251112T190000Z.json"
+
+        val exception = assertFailsWith<HolonValidationException> {
+            createHolonFromString(rawContent, sourcePath, platform)
+        }
+        assertTrue(exception.message!!.contains("Invalid ID format"))
+        assertTrue(exception.message!!.contains("dream-protocol-1"))
+    }
+
+    @Test
+    fun `createHolonFromString still throws on genuine filename-vs-header drift`() {
+        // Both IDs are canonical but differ in timestamp — content drift, not a
+        // mechanical issue. Must surface as Mismatched ID.
+        val rawContent = """
+            { "header": {"id": "session-record-20250810T102500Z", "type": "T", "name": "N"}, "payload": {} }
+        """.trimIndent()
+        val sourcePath = "session-record-20250810T100000Z.json"
+
+        val exception = assertFailsWith<HolonValidationException> {
+            createHolonFromString(rawContent, sourcePath, platform)
+        }
+        assertTrue(exception.message!!.contains("Mismatched ID"))
     }
 
 
@@ -342,5 +495,169 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
         val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
 
         assertTrue(selected[sourcePath] is Ignore, "Re-imported file with reordered sub_holons should be Ignore.")
+    }
+
+    // --- Test Group: Orphan resolution uses existing graph ---
+    // runImportAnalysis must treat a parent that's already in the graph as a valid
+    // integration target, not flag the child as "Orphaned." This previously produced
+    // a flood of false orphans when users re-imported a subset of files without also
+    // re-selecting the parent folder.
+
+    @Test
+    fun `runImportAnalysis integrates a new child whose parent exists only in kgState`() {
+        val parentId = "parent-20251112T190000Z"
+        val childId = "child-20251112T190100Z"
+        val childPath = "$childId.json"
+
+        // Parent lives in the graph (e.g. from a prior successful import), and the
+        // parent's subHolons list already references this child id.
+        val parentRaw = """
+            {
+                "header": {
+                    "id": "$parentId", "type": "T", "name": "P",
+                    "sub_holons": [{"id": "$childId", "type": "T", "summary": "s"}]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        val childRaw = """
+            { "header": {"id": "$childId", "type": "T", "name": "C"}, "payload": {} }
+        """.trimIndent()
+
+        val parentHolon = createHolonFromString(parentRaw, "$parentId.json", platform)
+        val kgState = KnowledgeGraphState(holons = mapOf(parentId to parentHolon))
+
+        val result = runImportAnalysis(
+            fileContents = mapOf(childPath to childRaw),
+            kgState = kgState,
+            userOverrides = emptyMap(),
+            isRecursive = true,
+            platformDependencies = platform
+        )
+        val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
+
+        val action = selected[childPath]
+        assertTrue(action is Integrate, "Child should Integrate under kgState parent, got: $action")
+        assertEquals(parentId, (action as Integrate).parentHolonId)
+    }
+
+    @Test
+    fun `runImportAnalysis keeps child as Integrate when parent is Ignore (identical content)`() {
+        // When a parent is re-imported with identical content (auto-Ignore) and a new
+        // child is imported in the same batch, the cascade-demotion loop must NOT
+        // quarantine the child. The parent already exists in kgState, so the child
+        // integration is valid.
+        val parentId = "parent-20251112T190000Z"
+        val childId = "child-20251112T190100Z"
+        val parentPath = "$parentId.json"
+        val childPath = "$childId.json"
+
+        val parentRaw = """
+            {
+                "header": {
+                    "id": "$parentId", "type": "T", "name": "P",
+                    "sub_holons": [{"id": "$childId", "type": "T", "summary": "s"}]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        val childRaw = """
+            { "header": {"id": "$childId", "type": "T", "name": "C"}, "payload": {} }
+        """.trimIndent()
+
+        val parentHolon = createHolonFromString(parentRaw, parentPath, platform)
+        val kgState = KnowledgeGraphState(holons = mapOf(parentId to parentHolon))
+
+        val result = runImportAnalysis(
+            fileContents = mapOf(parentPath to parentRaw, childPath to childRaw),
+            kgState = kgState,
+            userOverrides = emptyMap(),
+            isRecursive = true,
+            platformDependencies = platform
+        )
+        val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
+
+        assertTrue(selected[parentPath] is Ignore, "Parent with identical content should be Ignore.")
+        assertTrue(
+            selected[childPath] is Integrate,
+            "Child should remain Integrate when parent is auto-Ignore'd; got: ${selected[childPath]}"
+        )
+    }
+
+    @Test
+    fun `runImportAnalysis keeps child as Integrate when parent in import is Quarantined but exists in kgState`() {
+        // The import file for the parent is malformed (mismatched ID causes Quarantine),
+        // but the parent still exists in kgState from a prior import. Children should
+        // integrate under the kgState parent rather than cascade-quarantine.
+        val parentId = "parent-20251112T190000Z"
+        val childId = "child-20251112T190100Z"
+        val parentPath = "$parentId.json"
+        val childPath = "$childId.json"
+
+        val parentValidRaw = """
+            {
+                "header": {
+                    "id": "$parentId", "type": "T", "name": "P",
+                    "sub_holons": [{"id": "$childId", "type": "T", "summary": "s"}]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        // Malformed: header id does not match filename → HolonValidationException → Quarantine
+        val parentMalformedRaw = """
+            { "header": {"id": "different-id-20251112T190000Z", "type": "T", "name": "P"}, "payload": {} }
+        """.trimIndent()
+        val childRaw = """
+            { "header": {"id": "$childId", "type": "T", "name": "C"}, "payload": {} }
+        """.trimIndent()
+
+        val parentHolon = createHolonFromString(parentValidRaw, parentPath, platform)
+        val kgState = KnowledgeGraphState(holons = mapOf(parentId to parentHolon))
+
+        val result = runImportAnalysis(
+            fileContents = mapOf(parentPath to parentMalformedRaw, childPath to childRaw),
+            kgState = kgState,
+            userOverrides = emptyMap(),
+            isRecursive = true,
+            platformDependencies = platform
+        )
+        val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
+
+        assertTrue(selected[parentPath] is Quarantine, "Parent with mismatched ID should Quarantine.")
+        assertTrue(
+            selected[childPath] is Integrate,
+            "Child should Integrate under kgState parent despite parent file Quarantine; got: ${selected[childPath]}"
+        )
+    }
+
+    @Test
+    fun `runImportAnalysis still quarantines child when parent is neither in kgState nor importable`() {
+        // Regression guard for the original cascade behavior: if the parent truly
+        // cannot be resolved anywhere, the child should remain Quarantined.
+        val parentId = "missing-parent-20251112T190000Z"
+        val childId = "child-20251112T190100Z"
+        val childPath = "$childId.json"
+
+        // Child points to parent via its header's subHolons reference — but only
+        // another in-import holon declares this child as its sub_holon. Here no one
+        // does, so the child is plainly orphaned.
+        val childRaw = """
+            { "header": {"id": "$childId", "type": "T", "name": "C"}, "payload": {} }
+        """.trimIndent()
+
+        val kgState = KnowledgeGraphState()
+
+        val result = runImportAnalysis(
+            fileContents = mapOf(childPath to childRaw),
+            kgState = kgState,
+            userOverrides = emptyMap(),
+            isRecursive = true,
+            platformDependencies = platform
+        )
+        val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
+
+        val action = selected[childPath]
+        assertTrue(action is Quarantine, "Truly orphaned child should remain Quarantine; got: $action")
+        assertTrue(action.reason.contains("Orphaned"), "Reason should mention Orphaned; got: ${action.reason}")
     }
 }

@@ -67,7 +67,16 @@ internal fun runImportAnalysis(
             }
         }
     }
-    val parentMap = sourceHolons.values.flatMap { h -> h.header.subHolons.map { it.id to h.header.id } }.toMap()
+    // Build parent lookup from both the kgState and the incoming import set.
+    // kgState is enumerated first so that when an id exists in both, the import-set
+    // mapping wins (toMap keeps the last value for a given key) — the import-set is
+    // the more recent truth about the parent-child relationship.
+    // Without including kgState parents, re-imports of a subset (e.g. just the
+    // dream-record children without re-selecting their dream-records folder) would
+    // wrongly flag every child as "Orphaned: Parent not found in import set."
+    val parentMap = (kgState.holons.values + sourceHolons.values)
+        .flatMap { h -> h.header.subHolons.map { it.id to h.header.id } }
+        .toMap()
 
 
     for ((path, sourceHolon) in sourceHolons) {
@@ -85,7 +94,7 @@ internal fun runImportAnalysis(
             }
             sourceHolon.header.type == "AI_Persona_Root" -> proposedActions[path] = CreateRoot()
             parentMap.containsKey(holonId) -> proposedActions[path] = Integrate(parentMap[holonId]!!)
-            else -> proposedActions[path] = Quarantine("Orphaned: Parent not found in import set.")
+            else -> proposedActions[path] = Quarantine("Orphaned: Parent not found in import set or existing graph.")
         }
     }
 
@@ -94,6 +103,14 @@ internal fun runImportAnalysis(
         finalActions[path] = action
     }
 
+    // Cascade-demote children whose parent won't land — but only if the parent is
+    // also absent from kgState. A parent that already exists in the graph is a valid
+    // integration target even if its corresponding file in the import set is Ignored
+    // (identical content) or Quarantined (malformed): the child will still link to
+    // the kgState parent, and executeImportWrites rewrites the parent with the new
+    // sub-holon ref. Previously this loop cascade-quarantined such children,
+    // producing the "Parent holon 'X' is not being imported" flood in re-import
+    // reports even when X was present in the graph.
     var changed: Boolean
     do {
         changed = false
@@ -103,8 +120,9 @@ internal fun runImportAnalysis(
                 val parentHolonId = action.parentHolonId
                 val parentSourcePath = sourceHolons.entries.find { it.value.header.id == parentHolonId }?.key
                 val parentAction = parentSourcePath?.let { finalActions[it] }
+                val parentExistsInKgState = kgState.holons.containsKey(parentHolonId)
 
-                if (parentAction is Ignore || parentAction is Quarantine) {
+                if (!parentExistsInKgState && (parentAction is Ignore || parentAction is Quarantine)) {
                     if (finalActions[path] !is Quarantine) {
                         finalActions[path] = Quarantine("Parent holon '$parentHolonId' is not being imported.")
                         changed = true
