@@ -2,7 +2,10 @@ package asareon.raam.feature.knowledgegraph
 
 import asareon.raam.fakes.FakePlatformDependencies
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -177,5 +180,167 @@ class KnowledgeGraphFeatureT1HolonOperationsTest {
         // Assert
         assertEquals("New Name", parsedRawContent["header"]?.jsonObject?.get("name")?.jsonPrimitive?.content)
         assertEquals(syncedHolon.rawContent, prepareHolonForWriting(desyncedHolon))
+    }
+
+    // --- Test Group: Round-trip idempotence & canonicalization ---
+    // These tests pin the contract that `prepareHolonForWriting` emits a canonical form:
+    // semantically-equivalent holons serialize to byte-identical output regardless of
+    // payload key order or sub-holon/relationship list order. Without this, re-importing
+    // the same files forever reports "Content differs from existing."
+
+    @Test
+    fun `prepareHolonForWriting is invariant to payload key order`() {
+        val header = HolonHeader(id = "hl1-20251112T190000Z", type = "T", name = "N")
+        val payloadA = buildJsonObject { put("alpha", "1"); put("beta", "2"); put("gamma", "3") }
+        val payloadB = buildJsonObject { put("gamma", "3"); put("alpha", "1"); put("beta", "2") }
+
+        val outA = prepareHolonForWriting(Holon(header = header, payload = payloadA))
+        val outB = prepareHolonForWriting(Holon(header = header, payload = payloadB))
+
+        assertEquals(outA, outB, "Differently-ordered payloads must serialize identically.")
+    }
+
+    @Test
+    fun `prepareHolonForWriting is invariant to nested payload key order`() {
+        val header = HolonHeader(id = "hl1-20251112T190000Z", type = "T", name = "N")
+        val payloadA = buildJsonObject {
+            put("outer", buildJsonObject { put("a", "1"); put("b", "2") })
+        }
+        val payloadB = buildJsonObject {
+            put("outer", buildJsonObject { put("b", "2"); put("a", "1") })
+        }
+
+        assertEquals(prepareHolonForWriting(Holon(header, payloadA)), prepareHolonForWriting(Holon(header, payloadB)))
+    }
+
+    @Test
+    fun `prepareHolonForWriting sorts sub_holons by id`() {
+        val header = HolonHeader(
+            id = "hl1-20251112T190000Z", type = "T", name = "N",
+            subHolons = listOf(
+                SubHolonRef("zzz-20251112T190000Z", "T", "s"),
+                SubHolonRef("aaa-20251112T190000Z", "T", "s"),
+                SubHolonRef("mmm-20251112T190000Z", "T", "s"),
+            )
+        )
+        val out = prepareHolonForWriting(Holon(header = header, payload = buildJsonObject {}))
+        val serializedHeader = json.parseToJsonElement(out).jsonObject["header"]?.jsonObject
+        val serializedIds = serializedHeader?.get("sub_holons")?.let { it as JsonArray }
+            ?.map { (it as JsonObject)["id"]?.jsonPrimitive?.content }
+
+        assertEquals(
+            listOf("aaa-20251112T190000Z", "mmm-20251112T190000Z", "zzz-20251112T190000Z"),
+            serializedIds
+        )
+    }
+
+    @Test
+    fun `prepareHolonForWriting round-trips bitwise-stably through createHolonFromString`() {
+        // The canonical contract: write → read → write must produce identical bytes.
+        // This is what makes re-import converge on "Content is identical".
+        val originalRaw = """
+            {
+                "header": {
+                    "id": "test-holon-20251112T190000Z",
+                    "type": "Test", "name": "Round Trip",
+                    "sub_holons": [
+                        {"id": "zzz-20251112T190000Z", "type": "T", "summary": "s"},
+                        {"id": "aaa-20251112T190000Z", "type": "T", "summary": "s"}
+                    ]
+                },
+                "payload": {"zebra": 1, "apple": 2, "nested": {"y": "y", "x": "x"}}
+            }
+        """.trimIndent()
+        val sourcePath = "test-holon-20251112T190000Z.json"
+
+        val holon1 = createHolonFromString(originalRaw, sourcePath, platform)
+        val written1 = prepareHolonForWriting(holon1)
+
+        val holon2 = createHolonFromString(written1, sourcePath, platform)
+        val written2 = prepareHolonForWriting(holon2)
+
+        assertEquals(written1, written2, "A holon must round-trip bitwise-stably.")
+    }
+
+    // --- Test Group: Re-import convergence ---
+    // End-to-end test against runImportAnalysis: a file whose on-disk key order differs
+    // from the existing holon's serialized form must still be marked "Ignore (identical)".
+    // This is the top-level user-visible bug — re-imports should converge.
+
+    @Test
+    fun `runImportAnalysis marks re-imported file Ignore even when payload key order differs`() {
+        val sourcePath = "hl1-20251112T190000Z.json"
+        // Existing holon (in state) with payload keys in alphabetical order
+        val existingRaw = """
+            {
+                "header": {"id": "hl1-20251112T190000Z", "type": "T", "name": "H"},
+                "payload": {"alpha": "1", "beta": "2"}
+            }
+        """.trimIndent()
+        // Incoming file has the same payload but keys in a different order
+        val incomingRaw = """
+            {
+                "header": {"id": "hl1-20251112T190000Z", "type": "T", "name": "H"},
+                "payload": {"beta": "2", "alpha": "1"}
+            }
+        """.trimIndent()
+
+        val existing = createHolonFromString(existingRaw, sourcePath, platform)
+        val kgState = KnowledgeGraphState(holons = mapOf(existing.header.id to existing))
+
+        val result = runImportAnalysis(
+            fileContents = mapOf(sourcePath to incomingRaw),
+            kgState = kgState,
+            userOverrides = emptyMap(),
+            isRecursive = true,
+            platformDependencies = platform
+        )
+        val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
+
+        val action = selected[sourcePath]
+        assertTrue(action is Ignore, "Re-imported file with reordered payload keys should be Ignore, got: $action")
+    }
+
+    @Test
+    fun `runImportAnalysis marks re-imported file Ignore even when sub_holons are listed in different order`() {
+        val sourcePath = "parent-20251112T190000Z.json"
+        val existingRaw = """
+            {
+                "header": {
+                    "id": "parent-20251112T190000Z", "type": "T", "name": "P",
+                    "sub_holons": [
+                        {"id": "aaa-20251112T190000Z", "type": "T", "summary": "s"},
+                        {"id": "zzz-20251112T190000Z", "type": "T", "summary": "s"}
+                    ]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+        val incomingRaw = """
+            {
+                "header": {
+                    "id": "parent-20251112T190000Z", "type": "T", "name": "P",
+                    "sub_holons": [
+                        {"id": "zzz-20251112T190000Z", "type": "T", "summary": "s"},
+                        {"id": "aaa-20251112T190000Z", "type": "T", "summary": "s"}
+                    ]
+                },
+                "payload": {}
+            }
+        """.trimIndent()
+
+        val existing = createHolonFromString(existingRaw, sourcePath, platform)
+        val kgState = KnowledgeGraphState(holons = mapOf(existing.header.id to existing))
+
+        val result = runImportAnalysis(
+            fileContents = mapOf(sourcePath to incomingRaw),
+            kgState = kgState,
+            userOverrides = emptyMap(),
+            isRecursive = true,
+            platformDependencies = platform
+        )
+        val selected = json.decodeFromJsonElement<Map<String, ImportAction>>(result["selectedActions"]!!)
+
+        assertTrue(selected[sourcePath] is Ignore, "Re-imported file with reordered sub_holons should be Ignore.")
     }
 }

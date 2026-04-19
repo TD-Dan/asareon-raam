@@ -2,8 +2,27 @@ package asareon.raam.feature.knowledgegraph
 
 import asareon.raam.util.PlatformDependencies
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
+
+/**
+ * Recursively canonicalize a JsonElement by sorting all object keys alphabetically.
+ * Arrays keep their element order (semantic). Primitives pass through unchanged.
+ *
+ * Rationale: kotlinx.serialization emits JsonObject fields in iteration order,
+ * which is the insertion order from the original parse. Two holon files with
+ * identical semantics but different key order serialize to different bytes, so
+ * round-trip comparison spuriously reports "Content differs." Canonicalizing
+ * on write and on compare removes this source of drift.
+ */
+internal fun canonicalize(element: JsonElement): JsonElement = when (element) {
+    is JsonObject -> JsonObject(element.toSortedMap().mapValues { canonicalize(it.value) })
+    is JsonArray -> JsonArray(element.map { canonicalize(it) })
+    else -> element
+}
 
 /**
  * A custom exception to signal a failure during the validation or creation of a Holon.
@@ -105,25 +124,39 @@ internal fun createHolonFromString(
 
 
 /**
+ * Canonicalize a HolonHeader: sort sub_holons by id and relationships by (type, targetId).
+ * Tree-view order is the view's responsibility (it sorts by name at render time), so the
+ * on-disk order of sub_holons carries no semantic meaning. A stable on-disk order makes
+ * write → read → write round-trips bitwise-stable, which is what the import's
+ * content-diff relies on.
+ */
+internal fun canonicalizeHeader(header: HolonHeader): HolonHeader = header.copy(
+    subHolons = header.subHolons.sortedBy { it.id },
+    relationships = header.relationships.sortedWith(compareBy({ it.type }, { it.targetId }))
+)
+
+/**
  * The canonical function for serializing a Holon to a string for file system persistence.
  * It serializes a minimal, clean representation of the holon, ensuring that runtime-only
- * fields like `rawContent` are not included in the file.
+ * fields like `rawContent` are not included in the file. The output is canonicalized
+ * (alphabetically-sorted JSON object keys, sorted sub_holons/relationships) so that a
+ * write → read → write cycle produces byte-identical output — see `canonicalize` for why.
  *
  * @param holon The in-memory Holon object to prepare.
- * @return A pretty-printed JSON string.
+ * @return A pretty-printed, canonicalized JSON string.
  */
 internal fun prepareHolonForWriting(holon: Holon): String {
     @kotlinx.serialization.Serializable
     data class SerializableHolon(
         val header: HolonHeader,
-        val payload: kotlinx.serialization.json.JsonElement,
-        val execute: kotlinx.serialization.json.JsonElement? = null
+        val payload: JsonElement,
+        val execute: JsonElement? = null
     )
 
     val serializable = SerializableHolon(
-        header = holon.header,
-        payload = holon.payload,
-        execute = holon.execute
+        header = canonicalizeHeader(holon.header),
+        payload = canonicalize(holon.payload),
+        execute = holon.execute?.let { canonicalize(it) }
     )
 
     return json.encodeToString(SerializableHolon.serializer(), serializable)

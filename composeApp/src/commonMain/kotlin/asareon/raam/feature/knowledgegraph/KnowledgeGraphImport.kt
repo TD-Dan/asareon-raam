@@ -13,16 +13,29 @@ import kotlinx.serialization.json.put
 
 private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 
+/**
+ * Reduce a Holon to the fields that define its *semantic content*, so two holons
+ * representing the same knowledge compare equal regardless of on-disk key order,
+ * sub-holon list order, relationship list order, filesystem location, or timestamps.
+ *
+ * Without this, re-importing the same files reports "Content differs" forever,
+ * because kotlinx.serialization preserves JSON object key order from the original
+ * parse and data-class equality on Lists is order-sensitive.
+ */
 private fun Holon.toComparable(): Holon {
     return this.copy(
         rawContent = "",
-        header = this.header.copy(
-            filePath = "",
-            parentId = null,
-            depth = 0,
-            createdAt = null,
-            modifiedAt = null
-        )
+        header = canonicalizeHeader(
+            this.header.copy(
+                filePath = "",
+                parentId = null,
+                depth = 0,
+                createdAt = null,
+                modifiedAt = null
+            )
+        ),
+        payload = canonicalize(this.payload),
+        execute = this.execute?.let { canonicalize(it) }
     )
 }
 
