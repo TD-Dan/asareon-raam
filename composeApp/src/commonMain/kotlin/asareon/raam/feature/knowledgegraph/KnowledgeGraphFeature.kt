@@ -221,7 +221,7 @@ class KnowledgeGraphFeature(
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.KNOWLEDGEGRAPH_SET_PENDING_IMPORT_ID, buildJsonObject { put("id", correlationId) }))
                 store.deferredDispatch(identity.handle, Action(ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI, buildJsonObject {
                     put("correlationId", correlationId)
-                    put("recursive", true)
+                    put("recursive", kgState.isImportRecursive)
                     putJsonArray("fileExtensions") { add("json") }
                 }))
             }

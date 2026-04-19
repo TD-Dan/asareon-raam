@@ -9,12 +9,14 @@ import asareon.raam.util.BasePath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -162,6 +164,49 @@ class KnowledgeGraphFeatureT3ImportPeerTest {
             val writtenRootContent = rootWrite.payload?.get("content")?.jsonPrimitive?.content!!
             val parsedRoot = createHolonFromString(writtenRootContent, "$rootId/$rootId.json", platform)
             assertTrue(parsedRoot.header.subHolons.any { it.id == midId }, "Root holon must contain reference to Mid.")
+        }
+    }
+
+    // --- Test Group: Recursive import flag plumbing ---
+    // The UI checkbox "Import sub-folders recursively" must reach the filesystem walker.
+    // Previously, KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS hardcoded `recursive: true` in the
+    // scoped-read request, so subfolders were always imported regardless of the flag.
+
+    @Test
+    fun `START_IMPORT_ANALYSIS propagates isImportRecursive=false to the filesystem request`() {
+        val harness = TestEnvironment.create()
+            .withFeature(kgFeature)
+            .withFeature(fsFeature)
+            .withInitialState("knowledgegraph", KnowledgeGraphState(isImportRecursive = false))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
+
+            val readRequest = harness.processedActions
+                .find { it.name == ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI }
+            assertNotNull(readRequest, "Expected a FILESYSTEM_REQUEST_SCOPED_READ_UI to be dispatched.")
+            val recursive = readRequest.payload?.get("recursive")?.jsonPrimitive?.boolean
+            assertFalse(recursive == true, "recursive flag must reflect state.isImportRecursive=false, got: $recursive")
+        }
+    }
+
+    @Test
+    fun `START_IMPORT_ANALYSIS propagates isImportRecursive=true to the filesystem request`() {
+        val harness = TestEnvironment.create()
+            .withFeature(kgFeature)
+            .withFeature(fsFeature)
+            .withInitialState("knowledgegraph", KnowledgeGraphState(isImportRecursive = true))
+            .build(platform = platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("knowledgegraph", Action(ActionRegistry.Names.KNOWLEDGEGRAPH_START_IMPORT_ANALYSIS))
+
+            val readRequest = harness.processedActions
+                .find { it.name == ActionRegistry.Names.FILESYSTEM_REQUEST_SCOPED_READ_UI }
+            assertNotNull(readRequest)
+            val recursive = readRequest.payload?.get("recursive")?.jsonPrimitive?.boolean
+            assertTrue(recursive == true, "recursive flag must reflect state.isImportRecursive=true, got: $recursive")
         }
     }
 }

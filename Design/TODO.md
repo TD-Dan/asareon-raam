@@ -162,6 +162,7 @@ BUG: gocnitivepipeline 969: should error not default
 
 - KG Editor needs approx token sizes for holons and also total approx for parent holons
 
+- Import toggle "Import subfolders recurively" only works prioir to pressing Select & Analyze
 
 # BACKUP
 - Add a "Backups" manager to the burger global menu.
