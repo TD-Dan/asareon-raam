@@ -541,6 +541,7 @@
     {
       "action_name": "agent.UPDATE_NVRAM",
       "summary": "Updates the agent's cognitive state (NVRAM). Updates are merged into existing state. Self-targeting by default; cross-agent targeting requires agent:manage permission and is rejected with an error if missing.",
+      "agent_summary": "Update your NVRAM (cognitive state). Values are merged into existing state.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -549,11 +550,14 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
+            "agent_description": "Target agent (UUID, handle, or name). Defaults to self.",
+            "agent_requires_permission": "agent:manage"
           },
           "updates": {
             "type": "object",
-            "description": "Key-value pairs to merge into the agent's cognitive state JSON. Keys are validated against the strategy's NVRAM schema."
+            "description": "Key-value pairs to merge into the agent's cognitive state JSON. Keys are validated against the strategy's NVRAM schema.",
+            "agent_description": "Key-value pairs to merge into your NVRAM. Keys are validated against your strategy's schema."
           },
           "correlationId": {
             "type": [
@@ -561,7 +565,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -1120,6 +1125,7 @@
     {
       "action_name": "agent.CONTEXT_UNCOLLAPSE",
       "summary": "Expands a context partition so you can see its full content in your next turn. This is the primary way to browse session workspace files. Use partitionKey format \"sf:{sessionId}:{path}\" with scope \"subtree\" to expand directories. Example: {\"partitionKey\": \"sf:session.my-session:folder/subfolder/\", \"scope\": \"subtree\"}",
+      "agent_summary": "Expand a context partition to see its full content next turn. Primary way to browse workspace/session files.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -1128,11 +1134,14 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
+            "agent_description": "Target agent (UUID, handle, or name). Defaults to self.",
+            "agent_requires_permission": "agent:manage"
           },
           "partitionKey": {
             "type": "string",
-            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file (e.g., 'ws:src/', 'ws:src/main.kt'), or a bare partition name (e.g., 'AVAILABLE_ACTIONS')."
+            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file (e.g., 'ws:src/', 'ws:src/main.kt'), or a bare partition name (e.g., 'AVAILABLE_ACTIONS').",
+            "agent_description": "Partition key: 'hkg:<id>', 'ws:<path>', 'sf:<sessionId>:<path>', or a bare partition name."
           },
           "scope": {
             "type": "string",
@@ -1142,7 +1151,8 @@
               "single"
             ],
             "default": "single",
-            "description": "'single': one item. 'subtree': for HKG holons, reveal children in INDEX; for workspace directories, expand the directory and all nested sub-directories (but not files). 'full': entire partition."
+            "description": "'single': one item. 'subtree': for HKG holons, reveal children in INDEX; for workspace directories, expand the directory and all nested sub-directories (but not files). 'full': entire partition.",
+            "agent_description": "'single' (one item), 'subtree' (HKG children or nested dirs), or 'full' (whole partition)."
           }
         },
         "required": [
@@ -1156,6 +1166,7 @@
     {
       "action_name": "agent.CONTEXT_COLLAPSE",
       "summary": "Collapses a context partition so it shows only a summary in the next turn. Use to free up context budget after you are done inspecting a file or directory.",
+      "agent_summary": "Collapse a context partition to free context budget.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -1164,11 +1175,14 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent."
+            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
+            "agent_description": "Target agent (UUID, handle, or name). Defaults to self.",
+            "agent_requires_permission": "agent:manage"
           },
           "partitionKey": {
             "type": "string",
-            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file, or a bare partition name."
+            "description": "Partition key. Conventions: 'hkg:<holonId>' for a specific holon, 'ws:<relativePath>' for a workspace directory or file, or a bare partition name.",
+            "agent_description": "Partition key: 'hkg:<id>', 'ws:<path>', 'sf:<sessionId>:<path>', or a bare partition name."
           }
         },
         "required": [

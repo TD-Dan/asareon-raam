@@ -31,7 +31,7 @@
   "actions": [
     {
       "action_name": "session.CREATE",
-      "summary": "Creates a new, empty session transcript. If the name exists, a numeric suffix will be added. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied to the session's identity at registration.",
+      "summary": "Creates a new, empty session. If the name exists, a numeric suffix will be added. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied to the session's identity at registration.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -134,7 +134,7 @@
     },
     {
       "action_name": "session.DELETE",
-      "summary": "Deletes an entire session transcript. Targets the session via the 'session' property (ID or name).",
+      "summary": "Deletes an entire session. Targets the session via the 'session' property (ID or name).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -157,6 +157,7 @@
     {
       "action_name": "session.POST",
       "summary": "Posts a new entry to a specific session's ledger.",
+      "agent_summary": "Post a message to a session.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -165,34 +166,41 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name."
+            "description": "The session's localHandle, full handle, or display name.",
+            "agent_description": "Target session reference (handle or name)."
           },
           "senderId": {
             "type": "string",
-            "description": "The identity handle of the message sender. If omitted, defaults to the action's originator (the dispatching identity)."
+            "description": "The identity handle of the message sender. For agent-originated POSTs the system always overwrites this with the agent's own handle — agents cannot impersonate.",
+            "agent_autofill": "{originatorId}"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Message text content."
           },
           "messageId": {
             "type": "string",
-            "description": "An optional, pre-generated ID for the message. If not provided, one will be created."
+            "description": "An optional, pre-generated ID for the message. If not provided, one will be created. System-managed for agents.",
+            "agent_internal": true
           },
           "metadata": {
             "type": "object",
-            "description": "An optional, generic metadata object."
+            "description": "An optional, generic metadata object. Used by the UI for hints (e.g. default_collapsed); system-managed for agents.",
+            "agent_internal": true
           },
           "afterMessageId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end."
+            "description": "If provided, the new entry will be inserted directly after this message ID. If the ID is not found, it will be appended to the end. System-managed for agents.",
+            "agent_internal": true
           },
           "doNotClear": {
             "type": "boolean",
-            "description": "If true, this entry will survive a SESSION_CLEAR action even when not locked. Used for transient UI entries like agent avatar cards. Defaults to false.",
-            "default": false
+            "description": "If true, this entry will survive a SESSION_CLEAR action even when not locked. Used for transient UI entries like agent avatar cards; system-managed for agents.",
+            "default": false,
+            "agent_internal": true
           }
         },
         "required": [
@@ -514,7 +522,8 @@
     },
     {
       "action_name": "session.LIST_SESSIONS",
-      "summary": "Lists all non-hidden sessions. The result is posted as a message to the responseSession specified in the payload.",
+      "summary": "Lists all non-hidden sessions. For agents the listing is automatically posted into the agent's primary session.",
+      "agent_summary": "List sessions.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -523,7 +532,8 @@
         "properties": {
           "responseSession": {
             "type": "string",
-            "description": "The session ID where the listing should be posted."
+            "description": "The session ID where the listing should be posted. For agents this is auto-set to their primary session.",
+            "agent_autofill": "{primarySessionHandle}"
           }
         }
       },
@@ -534,6 +544,7 @@
     {
       "action_name": "session.SET_MESSAGE_LOCK",
       "summary": "Locks or unlocks a message. A locked message cannot be edited, deleted, or cleared. Targets by senderId + ISO 8601 timestamp.",
+      "agent_summary": "Lock or unlock a message (prevents edit/delete/clear).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -542,19 +553,23 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name."
+            "description": "The session's localHandle, full handle, or display name.",
+            "agent_description": "Session containing the message."
           },
           "senderId": {
             "type": "string",
-            "description": "The display name or ID of the message sender."
+            "description": "The display name or ID of the message sender.",
+            "agent_description": "Identity handle of the target message's sender."
           },
           "timestamp": {
             "type": "string",
-            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z')."
+            "description": "ISO 8601 timestamp of the message (e.g., '2025-02-07T18:40:00Z').",
+            "agent_description": "ISO 8601 timestamp of the target message."
           },
           "locked": {
             "type": "boolean",
-            "description": "true to lock the message, false to unlock."
+            "description": "true to lock the message, false to unlock.",
+            "agent_description": "true to lock, false to unlock."
           }
         },
         "required": [

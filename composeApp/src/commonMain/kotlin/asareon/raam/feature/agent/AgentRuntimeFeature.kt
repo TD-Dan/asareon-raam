@@ -1053,8 +1053,40 @@ class AgentRuntimeFeature(
                     "ACTION_CREATED: Handling '$actionName' for agent '$originatorId' (uuid=$agentUuid, correlationId=$correlationId)."
                 )
 
-                // Apply self-targeting enforcement for identity-scoped actions.
+                // ============================================================
+                // Agent payload hygiene (strip unknown/internal + auto-fill).
+                //
+                // Single choke point for agent-originated payloads. We do NOT
+                // distinguish "field exists in schema but is agent_internal" from
+                // "field doesn't exist at all" in advisories — leaking the
+                // existence of internal field names would let agents probe the
+                // catalog by trial and error.
+                // ============================================================
                 var finalPayload = actionPayload
+                val sanitization = sanitizeAgentActionPayload(agent, actionName, actionPayload, store)
+                finalPayload = sanitization.payload
+                if (sanitization.unknownOrStrippedFields.isNotEmpty()) {
+                    val targetSession = agent.outputSessionId
+                        ?: agent.subscribedSessionIds.firstOrNull()
+                    if (targetSession != null) {
+                        val warningLines = sanitization.unknownOrStrippedFields
+                            .joinToString("\n") { "warning: parameter '$it' not found" }
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.SESSION_POST,
+                            buildJsonObject {
+                                put("session", targetSession.uuid)
+                                put("senderId", "system")
+                                put("message", "SYSTEM SENTINEL: $actionName payload sanitized.\n$warningLines")
+                            }
+                        ))
+                    }
+                    platformDependencies.log(
+                        LogLevel.WARN, identity.handle,
+                        "Sanitized agent payload on '$actionName' for '$agentUuid': stripped " +
+                            sanitization.unknownOrStrippedFields.joinToString(", ")
+                    )
+                }
+
 
                 // NVRAM self-targeting enforcement: agents with only agent:cognition
                 // can only target their own NVRAM. Cross-agent targeting requires
@@ -1523,6 +1555,94 @@ class AgentRuntimeFeature(
      * @return Rewritten payload with agentId set to the resolved UUID, or null if
      *         the request was rejected (ACTION_RESULT error already published).
      */
+    /**
+     * Result of sanitizing an agent-originated payload.
+     */
+    private data class AgentPayloadSanitization(
+        val payload: JsonObject,
+        /** Names of fields the agent supplied that were stripped (unknown OR internal). */
+        val unknownOrStrippedFields: List<String>,
+    )
+
+    /**
+     * Strips agent-supplied fields that aren't part of the visible schema, then
+     * injects values for [ActionRegistry.PayloadField.agentAutofill] fields using
+     * the agent's runtime context. Same predicate as [ActionsContextFormatter] —
+     * what the catalog hides, this strips. Indistinguishable advisories ("not
+     * found") for unknown fields and internal fields prevent the catalog being
+     * probed for hidden field names.
+     *
+     * Templates supported:
+     *  - `{originatorId}`: agent.identityHandle.handle
+     *  - `{primarySessionHandle}`: handle of agent.outputSessionId (or empty)
+     *  - `{primarySessionUUID}`: agent.outputSessionId.uuid (or empty)
+     */
+    private fun sanitizeAgentActionPayload(
+        agent: AgentInstance,
+        actionName: String,
+        rawPayload: JsonObject,
+        store: Store,
+    ): AgentPayloadSanitization {
+        val descriptor = ActionRegistry.byActionName[actionName]
+            ?: return AgentPayloadSanitization(rawPayload, emptyList())
+        val fields = descriptor.payloadFields
+        val byName = fields.associateBy { it.name }
+
+        val agentIdentity = store.state.value.identityRegistry[agent.identityHandle.handle]
+        val grantedPermKeys = if (agentIdentity != null) {
+            store.resolveEffectivePermissions(agentIdentity)
+                .filter { it.value.level == PermissionLevel.YES }
+                .keys
+        } else emptySet()
+
+        val visibleFieldNames = fields
+            .filter { f ->
+                !f.agentInternal &&
+                    f.agentAutofill == null &&
+                    (f.agentRequiresPermission == null || f.agentRequiresPermission in grantedPermKeys)
+            }
+            .map { it.name }
+            .toSet()
+
+        // Step 1 — strip everything the agent shouldn't be setting.
+        val stripped = mutableListOf<String>()
+        val cleaned = mutableMapOf<String, JsonElement>()
+        for ((key, value) in rawPayload) {
+            if (key in visibleFieldNames) {
+                cleaned[key] = value
+            } else {
+                stripped += key
+            }
+        }
+
+        // Step 2 — apply autofill templates from the schema.
+        for (field in fields) {
+            val template = field.agentAutofill ?: continue
+            val resolved = renderAutofillTemplate(template, agent, store)
+            if (resolved != null) {
+                cleaned[field.name] = JsonPrimitive(resolved)
+            }
+        }
+
+        return AgentPayloadSanitization(JsonObject(cleaned), stripped)
+    }
+
+    private fun renderAutofillTemplate(template: String, agent: AgentInstance, store: Store): String? {
+        val outputUuidStr = agent.outputSessionId?.uuid
+        val outputHandle = outputUuidStr?.let { uuid ->
+            store.state.value.identityRegistry.values.find { it.uuid == uuid }?.handle
+        } ?: ""
+        val rendered = template
+            .replace("{originatorId}", agent.identityHandle.handle)
+            .replace("{primarySessionHandle}", outputHandle)
+            .replace("{primarySessionUUID}", outputUuidStr ?: "")
+        // If a required substitution couldn't resolve (left an empty placeholder
+        // in what should be a single-value template), drop the autofill so the
+        // domain-action validator surfaces the real problem.
+        if (rendered.isBlank()) return null
+        return rendered
+    }
+
     /**
      * Inspects an agent-originated action for known antipatterns and returns a
      * human-readable advisory if one is detected. Pure: callers decide how to

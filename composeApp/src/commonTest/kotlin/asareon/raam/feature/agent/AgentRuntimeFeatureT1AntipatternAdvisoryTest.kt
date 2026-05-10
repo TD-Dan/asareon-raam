@@ -92,8 +92,10 @@ class AgentRuntimeFeatureT1AntipatternAdvisoryTest {
                 put("actionName", ActionRegistry.Names.SESSION_POST)
                 put("actionPayload", buildJsonObject {
                     put("session", targetSessionRef)
-                    put("senderId", agentHandle)
                     put("message", message)
+                    // senderId is intentionally omitted — the agent feature auto-fills it
+                    // from the originator handle. Tests that need to verify the autofill
+                    // hardening should add it explicitly to confirm it gets overwritten.
                 })
             }
         )
@@ -108,13 +110,14 @@ class AgentRuntimeFeatureT1AntipatternAdvisoryTest {
         return store
     }
 
+    /** Finds the antipattern advisory specifically (not the sanitization sentinel). */
     private fun findSentinelPost(store: FakeStore): JsonObject? {
         return store.dispatchedActions
             .filter { it.name == ActionRegistry.Names.SESSION_POST }
             .map { it.payload }
             .firstOrNull { p ->
                 p?.get("senderId")?.jsonPrimitive?.contentOrNull == "system" &&
-                    (p["message"]?.jsonPrimitive?.contentOrNull ?: "").contains("SYSTEM SENTINEL")
+                    (p["message"]?.jsonPrimitive?.contentOrNull ?: "").contains("Unnecessary session.POST")
             }
     }
 

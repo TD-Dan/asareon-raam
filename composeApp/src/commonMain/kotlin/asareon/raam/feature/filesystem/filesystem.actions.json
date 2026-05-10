@@ -22,6 +22,7 @@
     {
       "action_name": "filesystem.LIST",
       "summary": "List files and directories in your own private agent workspace. This does NOT access session workspace files \u2014 use agent.CONTEXT_UNCOLLAPSE for those.",
+      "agent_summary": "List your workspace. (For session workspace files use agent.CONTEXT_UNCOLLAPSE.)",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -31,11 +32,13 @@
           "path": {
             "type": "string",
             "description": "An optional sub-directory within the sandbox to list.",
-            "default": ""
+            "default": "",
+            "agent_description": "Sub-directory to list. Empty = workspace root."
           },
           "recursive": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "agent_description": "If true, descend into sub-directories."
           },
           "correlationId": {
             "type": [
@@ -43,7 +46,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the response envelope.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         }
       },
@@ -54,6 +58,7 @@
     {
       "action_name": "filesystem.READ",
       "summary": "Read a file from your own private agent workspace.",
+      "agent_summary": "Read a file from your workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -61,7 +66,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Path to the file (relative to your workspace)."
           }
         },
         "required": [
@@ -75,6 +81,7 @@
     {
       "action_name": "filesystem.READ_MULTIPLE",
       "summary": "Read multiple files from your own private agent workspace.",
+      "agent_summary": "Read multiple files from your workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -85,7 +92,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "agent_description": "Array of file paths (relative to your workspace)."
           },
           "correlationId": {
             "type": [
@@ -93,7 +101,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the RETURN_FILES_CONTENT response envelope.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -107,6 +116,7 @@
     {
       "action_name": "filesystem.WRITE",
       "summary": "Write a file to your own private agent workspace. Overwrites existing files.",
+      "agent_summary": "Write a file to your workspace (overwrites existing).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -114,15 +124,18 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Path to write to (relative to your workspace)."
           },
           "content": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "File contents."
           },
           "encrypt": {
             "type": "boolean",
             "description": "If true, the content will be encrypted at rest. Defaults to false.",
-            "default": false
+            "default": false,
+            "agent_description": "Encrypt the content at rest."
           }
         },
         "required": [
@@ -137,6 +150,7 @@
     {
       "action_name": "filesystem.DELETE_FILE",
       "summary": "Delete a file from your own private agent workspace.",
+      "agent_summary": "Delete a file from your workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -144,7 +158,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Path to delete (relative to your workspace)."
           }
         },
         "required": [
@@ -158,6 +173,7 @@
     {
       "action_name": "filesystem.DELETE_DIRECTORY",
       "summary": "Delete a directory and all its contents from your own private agent workspace.",
+      "agent_summary": "Delete a directory and its contents from your workspace.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -165,7 +181,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Directory path (relative to your workspace)."
           }
         },
         "required": [

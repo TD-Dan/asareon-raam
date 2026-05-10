@@ -44,7 +44,11 @@ object ActionsContextFormatter {
         if (compressionConfig.abbreviations) {
             preamble = TerseText.abbreviate(preamble)
         }
-        val agentActions = resolveAgentActions(store, agentIdentity)
+        val effectivePerms = store.resolveEffectivePermissions(agentIdentity)
+        val grantedPermKeys = effectivePerms
+            .filter { it.value.level == PermissionLevel.YES }
+            .keys
+        val agentActions = resolveAgentActions(effectivePerms)
 
         if (agentActions.isEmpty()) {
             return PromptSection.Group(
@@ -71,21 +75,19 @@ object ActionsContextFormatter {
 
         val children = byFeature.map { (feature, actions) ->
             val content = if (compressionConfig.terseActions) {
-                buildTerseActionContent(actions)
+                buildTerseActionContent(actions, grantedPermKeys)
             } else {
                 buildString {
                     actions.forEach { desc ->
                         appendLine("### ${desc.fullName}")
-                        appendLine(desc.summary)
-                        if (desc.payloadFields.isNotEmpty()) {
-                            appendLine("Payload fields:")
-                            desc.payloadFields.forEach { field ->
-                                val requiredTag = if (field.required) " (REQUIRED)" else ""
-                                val defaultTag = field.default?.let { " [default: $it]" } ?: ""
-                                appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag: ${field.description}")
-                            }
-                        } else {
-                            appendLine("Payload: none (empty code block body)")
+                        appendLine(desc.summaryFor(ActionRegistry.Audience.AGENT))
+                        val visibleFields = desc.payloadFields.filter { isFieldVisibleToAgent(it, grantedPermKeys) }
+                        visibleFields.forEach { field ->
+                            val requiredTag = if (field.required) " (REQUIRED)" else ""
+                            val defaultTag = field.default?.let { " [default: $it]" } ?: ""
+                            val agentDesc = field.descriptionFor(ActionRegistry.Audience.AGENT)
+                            val descTail = if (agentDesc.isNotBlank()) ": $agentDesc" else ""
+                            appendLine("  - \"${field.name}\" (${field.type})$requiredTag$defaultTag$descTail")
                         }
                         appendLine()
                     }
@@ -122,34 +124,57 @@ object ActionsContextFormatter {
      * Format: `action.name — One-line description` with `paramName*: type — hint` lines.
      * Convention: `*` = required, `?` = optional.
      */
-    private fun buildTerseActionContent(actions: List<ActionRegistry.ActionDescriptor>): String = buildString {
+    private fun buildTerseActionContent(
+        actions: List<ActionRegistry.ActionDescriptor>,
+        grantedPermKeys: Set<String>,
+    ): String = buildString {
+        // No length truncation — authors control terse copy via agent_summary /
+        // agent_description. Mechanical truncation here would silently drop the
+        // tail of an author-trimmed description, which is precisely where
+        // disambiguating detail tends to live (e.g. "...'sf:<sessionId>:<path>'").
         actions.forEach { desc ->
-            append("${desc.fullName} — ${desc.summary.take(80)}")
+            val agentSummary = desc.summaryFor(ActionRegistry.Audience.AGENT)
+            append("${desc.fullName} — $agentSummary")
             appendLine()
-            if (desc.payloadFields.isNotEmpty()) {
-                desc.payloadFields.forEach { field ->
-                    val marker = if (field.required) "*" else "?"
-                    val defaultStr = field.default?.let { " (default: $it)" } ?: ""
-                    val descStr = if (field.description.length > 60) field.description.take(57) + "..." else field.description
-                    appendLine("  ${field.name}$marker: ${field.type}$defaultStr — $descStr")
-                }
+            val visibleFields = desc.payloadFields.filter { isFieldVisibleToAgent(it, grantedPermKeys) }
+            visibleFields.forEach { field ->
+                val marker = if (field.required) "*" else "?"
+                val defaultStr = field.default?.let { " (default: $it)" } ?: ""
+                val agentFieldDesc = field.descriptionFor(ActionRegistry.Audience.AGENT)
+                val descTail = if (agentFieldDesc.isNotBlank()) " — $agentFieldDesc" else ""
+                appendLine("  ${field.name}$marker: ${field.type}$defaultStr$descTail")
             }
             appendLine()
         }
     }
 
+    /**
+     * Field-level visibility: hide system-managed and auto-filled fields, plus
+     * permission-gated fields the agent can't actually use. The same predicate
+     * drives both the catalog and the strip pass on agent-originated payloads,
+     * so what you see is what you can set.
+     */
+    private fun isFieldVisibleToAgent(
+        field: ActionRegistry.PayloadField,
+        grantedPermKeys: Set<String>,
+    ): Boolean {
+        if (field.agentInternal) return false
+        if (field.agentAutofill != null) return false
+        val gated = field.agentRequiresPermission
+        if (gated != null && gated !in grantedPermKeys) return false
+        return true
+    }
+
     /** Resolves and filters the actions available to the given agent identity. */
-    private fun resolveAgentActions(store: Store, agentIdentity: Identity) =
-        store.resolveEffectivePermissions(agentIdentity).let { effectivePerms ->
-            ActionRegistry.byActionName.values
-                .filter { desc ->
-                    desc.public &&
-                            !desc.hidden &&
-                            desc.requiredPermissions != null &&
-                            desc.requiredPermissions!!.all { permKey ->
-                                effectivePerms[permKey]?.level == PermissionLevel.YES
-                            }
-                }
-                .sortedBy { it.fullName }
-        }
+    private fun resolveAgentActions(effectivePerms: Map<String, asareon.raam.core.PermissionGrant>) =
+        ActionRegistry.byActionName.values
+            .filter { desc ->
+                desc.public &&
+                        !desc.hidden &&
+                        desc.requiredPermissions != null &&
+                        desc.requiredPermissions!!.all { permKey ->
+                            effectivePerms[permKey]?.level == PermissionLevel.YES
+                        }
+            }
+            .sortedBy { it.fullName }
 }

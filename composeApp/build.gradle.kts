@@ -168,6 +168,7 @@ tasks.register("generateActionRegistry") {
                         val obj = actionsArray[i] as? JsonObject ?: continue
                         val actionName = obj["action_name"]?.jsonPrimitive?.content ?: continue
                         val summary = obj["summary"]?.jsonPrimitive?.content ?: ""
+                        val agentSummary = obj["agent_summary"]?.jsonPrimitive?.contentOrNull
                         val publicFlag = obj["public"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val broadcastFlag = obj["broadcast"]?.jsonPrimitive?.content?.toBoolean() ?: false
                         val targetedFlag = obj["targeted"]?.jsonPrimitive?.content?.toBoolean() ?: false
@@ -239,6 +240,8 @@ tasks.register("generateActionRegistry") {
                                     if (agentAutofill != null) fieldMap["agentAutofill"] = agentAutofill
                                     val agentRequiresPerm = (fieldObj["agent_requires_permission"] as? JsonPrimitive)?.contentOrNull
                                     if (agentRequiresPerm != null) fieldMap["agentRequiresPermission"] = agentRequiresPerm
+                                    val agentDesc = (fieldObj["agent_description"] as? JsonPrimitive)?.contentOrNull
+                                    if (agentDesc != null) fieldMap["agentDescription"] = agentDesc
                                     payloadFields.add(fieldMap)
                                 }
                             }
@@ -248,7 +251,7 @@ tasks.register("generateActionRegistry") {
                         val reqPerms = (obj["required_permissions"] as? JsonArray)
                             ?.map { it.jsonPrimitive.content }
 
-                        actionsList.add(mapOf(
+                        val actionMap = mutableMapOf<String, Any?>(
                             "fullName" to actionName,
                             "featureName" to actionFeature,
                             "suffix" to suffix,
@@ -261,7 +264,9 @@ tasks.register("generateActionRegistry") {
                             "payloadFields" to payloadFields,
                             "requiredFields" to requiredFields,
                             "requiredPermissions" to reqPerms
-                        ))
+                        )
+                        if (agentSummary != null) actionMap["agentSummary"] = agentSummary
+                        actionsList.add(actionMap)
                     }
                 } catch (e: Exception) {
                     if (e is GradleException) throw e
@@ -345,7 +350,9 @@ tasks.register("generateActionRegistry") {
                         val agentAutofillStr = if (agentAutofillVal != null) "\"${agentAutofillVal.escKt()}\"" else "null"
                         val agentReqPermVal = f["agentRequiresPermission"] as? String
                         val agentReqPermStr = if (agentReqPermVal != null) "\"${agentReqPermVal.escKt()}\"" else "null"
-                        "                        PayloadField(\"${(f["name"] as String)}\", \"${(f["type"] as String).escKt()}\", \"${(f["description"] as String).escKt()}\", ${f["required"]}, $defStr, $agentInternalFlag, $agentAutofillStr, $agentReqPermStr)"
+                        val agentDescVal = f["agentDescription"] as? String
+                        val agentDescStr = if (agentDescVal != null) "\"${agentDescVal.escKt()}\"" else "null"
+                        "                        PayloadField(\"${(f["name"] as String)}\", \"${(f["type"] as String).escKt()}\", \"${(f["description"] as String).escKt()}\", ${f["required"]}, $defStr, $agentInternalFlag, $agentAutofillStr, $agentReqPermStr, $agentDescStr)"
                     }
                     "listOf(\n$fieldLines\n                    )"
                 }
@@ -365,11 +372,15 @@ tasks.register("generateActionRegistry") {
                 else if (reqPerms.isEmpty()) "emptyList()"
                 else "listOf(${reqPerms.joinToString(", ") { "\"$it\"" }})"
 
+                val agentSummaryRaw = action["agentSummary"] as? String
+                val agentSummaryStr = if (agentSummaryRaw != null) "\"${agentSummaryRaw.escKt()}\"" else "null"
+
                 """                "${action["suffix"]}" to ActionDescriptor(
                 |                    fullName = "${action["fullName"]}",
                 |                    featureName = "${action["featureName"]}",
                 |                    suffix = "${action["suffix"]}",
                 |                    summary = "${(action["summary"] as String).escKt()}",
+                |                    agentSummary = $agentSummaryStr,
                 |                    public = ${action["public"]},
                 |                    broadcast = ${action["broadcast"]},
                 |                    targeted = ${action["targeted"]},
@@ -456,14 +467,33 @@ tasks.register("generateActionRegistry") {
             |        val default: String? = null,
             |        val agentInternal: Boolean = false,
             |        val agentAutofill: String? = null,
-            |        val agentRequiresPermission: String? = null
-            |    )
+            |        val agentRequiresPermission: String? = null,
+            |        /**
+            |         * Optional agent-facing override for [description]. When null, falls back
+            |         * to [description]. Use [descriptionFor] to read the right one in context.
+            |         */
+            |        val agentDescription: String? = null
+            |    ) {
+            |        /** Description to render for the given audience. */
+            |        fun descriptionFor(audience: Audience): String = when (audience) {
+            |            Audience.AGENT -> agentDescription ?: description
+            |            Audience.INTERNAL -> description
+            |        }
+            |    }
+            |
+            |    /** Whose eyes the rendered text is meant for. */
+            |    enum class Audience { AGENT, INTERNAL }
             |
             |    data class ActionDescriptor(
             |        val fullName: String,
             |        val featureName: String,
             |        val suffix: String,
             |        val summary: String,
+            |        /**
+            |         * Optional agent-facing override for [summary]. When null, falls back to
+            |         * [summary]. Use [summaryFor] to read the right one in context.
+            |         */
+            |        val agentSummary: String? = null,
             |        val public: Boolean,
             |        val broadcast: Boolean,
             |        val targeted: Boolean,
@@ -484,6 +514,11 @@ tasks.register("generateActionRegistry") {
             |        val isResponse: Boolean get() = response || (!public && targeted)
             |        /** A hidden action is public but not discoverable by users or agents. Feature-to-feature only. */
             |        val isHiddenCommand: Boolean get() = public && hidden && !response
+            |        /** Summary to render for the given audience. */
+            |        fun summaryFor(audience: Audience): String = when (audience) {
+            |            Audience.AGENT -> agentSummary ?: summary
+            |            Audience.INTERNAL -> summary
+            |        }
             |    }
             |
             |    data class FeatureDescriptor(

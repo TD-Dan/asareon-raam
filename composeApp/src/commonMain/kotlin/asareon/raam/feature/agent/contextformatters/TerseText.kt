@@ -154,6 +154,7 @@ object TerseText {
             appendLine("--- SYSTEM ACTIONS ---")
             appendLine("Invoke via fenced code block: lang tag = 'raam_' + action name, body = JSON payload.")
             appendLine("Paths relative to YOUR workspace. '/' separators. Multiple actions per response OK.")
+            appendLine("Field markers: * = required, ? = optional.")
             appendLine("Example: ```raam_filesystem.WRITE")
             appendLine("""{ "path": "notes/summary.md", "content": "..." }""")
             append("```")
