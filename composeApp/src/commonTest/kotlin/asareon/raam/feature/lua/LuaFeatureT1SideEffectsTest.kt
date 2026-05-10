@@ -298,7 +298,7 @@ class LuaFeatureT1SideEffectsTest {
     // ========================================================================
 
     @Test
-    fun `EXTERNAL_TURN_REQUEST with no loaded script returns error result`() {
+    fun `EXTERNAL_TURN_REQUEST without strategyConfig returns error mentioning selection`() {
         val store = createFakeStore(LuaState(runtimeAvailable = true))
         feature.init(store)
         store.dispatchedActions.clear()
@@ -317,6 +317,119 @@ class LuaFeatureT1SideEffectsTest {
         assertNotNull(resultAction, "Should dispatch turn result")
         assertEquals("error", resultAction.payload?.get("mode")?.asString())
         assertEquals("test-agent-uuid", resultAction.payload?.get("correlationId")?.asString())
+        val msg = resultAction.payload?.get("error")?.asString() ?: ""
+        assertTrue(msg.contains("strategy script", ignoreCase = true),
+            "Error should explain that no strategy script was selected; was: $msg")
+    }
+
+    @Test
+    fun `EXTERNAL_TURN_REQUEST with unknown strategyScriptHandle errors with not-found`() {
+        val store = createFakeStore(LuaState(runtimeAvailable = true))
+        feature.init(store)
+        store.dispatchedActions.clear()
+
+        val action = Action(ActionRegistry.Names.AGENT_EXTERNAL_TURN_REQUEST, buildJsonObject {
+            put("correlationId", "test-agent-uuid")
+            put("systemPrompt", "")
+            put("strategyConfig", buildJsonObject { put("strategyScriptHandle", "lua.ghost") })
+        })
+
+        feature.handleSideEffects(action, store, null, LuaState(runtimeAvailable = true))
+
+        val resultAction = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT
+        }
+        assertNotNull(resultAction)
+        assertEquals("error", resultAction.payload?.get("mode")?.asString())
+        val msg = resultAction.payload?.get("error")?.asString() ?: ""
+        assertTrue(msg.contains("lua.ghost"),
+            "Error should reference the missing handle; was: $msg")
+        assertTrue(msg.contains("not found", ignoreCase = true) || msg.contains("deleted", ignoreCase = true))
+    }
+
+    @Test
+    fun `EXTERNAL_TURN_REQUEST with stopped strategy script errors with status`() {
+        val luaState = LuaState(
+            runtimeAvailable = true,
+            scripts = mapOf(
+                "lua.haiku" to ScriptInfo(
+                    handle = "lua.haiku", localHandle = "haiku", name = "Haiku",
+                    path = "haiku.lua", status = ScriptStatus.STOPPED,
+                    sourceContent = "function on_turn(ctx) return { turnAdvance = true } end",
+                ),
+            ),
+        )
+        val store = createFakeStore(luaState)
+        feature.init(store)
+        store.dispatchedActions.clear()
+
+        val action = Action(ActionRegistry.Names.AGENT_EXTERNAL_TURN_REQUEST, buildJsonObject {
+            put("correlationId", "test-agent-uuid")
+            put("systemPrompt", "")
+            put("strategyConfig", buildJsonObject { put("strategyScriptHandle", "lua.haiku") })
+        })
+
+        feature.handleSideEffects(action, store, null, luaState)
+
+        val resultAction = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT
+        }
+        assertNotNull(resultAction)
+        assertEquals("error", resultAction.payload?.get("mode")?.asString())
+        val msg = resultAction.payload?.get("error")?.asString() ?: ""
+        assertTrue(msg.contains("not running", ignoreCase = true) || msg.contains("STOPPED", ignoreCase = true),
+            "Error should mention the script is not running; was: $msg")
+    }
+
+    // ========================================================================
+    // LIST_STRATEGY_SCRIPT_OPTIONS — agent-manager dropdown source
+    // ========================================================================
+
+    @Test
+    fun `LIST_STRATEGY_SCRIPT_OPTIONS returns only scripts defining on_turn`() {
+        val luaState = LuaState(
+            runtimeAvailable = true,
+            scripts = mapOf(
+                "lua.app-only" to ScriptInfo(
+                    handle = "lua.app-only", localHandle = "app-only", name = "App Only",
+                    path = "app-only.lua", status = ScriptStatus.RUNNING,
+                    sourceContent = "function on_load() raam.log('hi') end",
+                ),
+                "lua.haiku" to ScriptInfo(
+                    handle = "lua.haiku", localHandle = "haiku", name = "Haiku",
+                    path = "haiku.lua", status = ScriptStatus.RUNNING,
+                    sourceContent = "function on_turn(ctx) return { turnAdvance = true } end",
+                ),
+                "lua.silent" to ScriptInfo(
+                    handle = "lua.silent", localHandle = "silent", name = "Silent",
+                    path = "silent.lua", status = ScriptStatus.STOPPED,
+                    sourceContent = "function on_turn(ctx) return { response = 'hi' } end",
+                ),
+            ),
+        )
+        val store = createFakeStore(luaState)
+        feature.init(store)
+        store.dispatchedActions.clear()
+
+        val action = Action(
+            ActionRegistry.Names.LUA_LIST_STRATEGY_SCRIPT_OPTIONS,
+            buildJsonObject {},
+        ).copy(originator = "agent")
+
+        feature.handleSideEffects(action, store, null, luaState)
+
+        val response = store.dispatchedActions.find {
+            it.name == ActionRegistry.Names.LUA_RETURN_STRATEGY_SCRIPT_OPTIONS
+        }
+        assertNotNull(response, "Should dispatch RETURN_STRATEGY_SCRIPT_OPTIONS")
+        assertEquals("agent", response.targetRecipient)
+        val options = response.payload?.get("options")
+            ?.let { it as? kotlinx.serialization.json.JsonArray }
+        assertNotNull(options)
+        val handles = options.mapNotNull { (it as? kotlinx.serialization.json.JsonObject)?.get("handle")?.asString() }
+        assertTrue("lua.haiku" in handles, "Strategy script should be included")
+        assertTrue("lua.silent" in handles, "Stopped strategy scripts must still be listed (with hint)")
+        assertTrue("lua.app-only" !in handles, "App scripts must be filtered out")
     }
 
     // ========================================================================

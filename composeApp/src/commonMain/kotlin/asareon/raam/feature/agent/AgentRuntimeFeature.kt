@@ -164,8 +164,43 @@ class AgentRuntimeFeature(
     override fun reducer(state: FeatureState?, action: Action): FeatureState? {
         val currentFeatureState = state as? AgentRuntimeState ?: AgentRuntimeState()
         val crudState = AgentCrudLogic.reduce(currentFeatureState, action, platformDependencies)
-        if (crudState !== currentFeatureState) return crudState
-        return AgentRuntimeReducer.reduce(currentFeatureState, action, platformDependencies)
+        if (crudState !== currentFeatureState) return captureExternalRefOptions(crudState, action)
+        val nextState = AgentRuntimeReducer.reduce(currentFeatureState, action, platformDependencies)
+            ?: return null
+        return captureExternalRefOptions(nextState, action)
+    }
+
+    /**
+     * If [action] is the declared options-response for any registered EXTERNAL_REFERENCE
+     * config field, parse its `options` array into [AgentRuntimeState.externalReferenceOptions].
+     * No-op for actions that don't match. Generic — agent feature stays decoupled from
+     * the providing feature's specific action names.
+     */
+    private fun captureExternalRefOptions(state: AgentRuntimeState, action: Action): AgentRuntimeState {
+        val matches = CognitiveStrategyRegistry.getAll()
+            .filterIsInstance<ExternalStrategyProxy>()
+            .flatMap { proxy ->
+                proxy.getConfigFields()
+                    .filter { f ->
+                        f.type == StrategyConfigFieldType.EXTERNAL_REFERENCE &&
+                            f.optionsResponseActionName == action.name
+                    }
+                    .map { proxy.identityHandle.handle to it }
+            }
+        if (matches.isEmpty()) return state
+        val payload = action.payload ?: return state
+        val parsed = payload["options"]?.jsonArray?.mapNotNull { elem ->
+            val obj = elem as? JsonObject ?: return@mapNotNull null
+            val handle = obj["handle"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val label = obj["label"]?.jsonPrimitive?.contentOrNull ?: handle
+            val desc = obj["description"]?.jsonPrimitive?.contentOrNull
+            ExternalReferenceOption(handle = handle, label = label, description = desc)
+        } ?: return state
+        val updated = state.externalReferenceOptions.toMutableMap()
+        for ((strategyHandle, field) in matches) {
+            updated[externalRefOptionsKey(strategyHandle, field.key)] = parsed
+        }
+        return state.copy(externalReferenceOptions = updated)
     }
 
     override fun handleSideEffects(action: Action, store: Store, previousState: FeatureState?, newState: FeatureState?) {
@@ -1165,6 +1200,36 @@ class AgentRuntimeFeature(
                     }
                 }
 
+                // ============================================================
+                // Antipattern advisory (non-blocking)
+                //
+                // Detect agent action choices that are unnecessary or counter-
+                // productive (e.g. session.POST to the agent's own primary
+                // session — duplicates the auto-posted reply). Surface a
+                // visible system sentinel rather than silently filtering the
+                // action: hiding the misuse would mask failure modes and
+                // create obscure bugs. The advisory shows up in the next
+                // turn's context so the agent can correct course.
+                // ============================================================
+                detectAgentActionAntipattern(agent, actionName, finalPayload, store)?.let { advisory ->
+                    val targetSessionUUID = agent.outputSessionId
+                        ?: agent.subscribedSessionIds.firstOrNull()
+                    if (targetSessionUUID != null) {
+                        store.deferredDispatch(identity.handle, Action(
+                            ActionRegistry.Names.SESSION_POST,
+                            buildJsonObject {
+                                put("session", targetSessionUUID.uuid)
+                                put("senderId", "system")
+                                put("message", "SYSTEM SENTINEL: $advisory")
+                            }
+                        ))
+                    }
+                    platformDependencies.log(
+                        LogLevel.WARN, identity.handle,
+                        "Antipattern advisory for agent '$agentUuid' on '$actionName': $advisory"
+                    )
+                }
+
                 // Inject correlationId into the payload
                 val enrichedPayload = if (finalPayload["correlationId"] == null) {
                     JsonObject(finalPayload + ("correlationId" to JsonPrimitive(correlationId)))
@@ -1340,7 +1405,11 @@ class AgentRuntimeFeature(
                 key = key,
                 type = type,
                 displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: key,
-                description = obj["description"]?.jsonPrimitive?.contentOrNull ?: ""
+                description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "",
+                isRequired = obj["isRequired"]?.jsonPrimitive?.booleanOrNull ?: false,
+                optionsRequestActionName = obj["optionsRequestActionName"]?.jsonPrimitive?.contentOrNull,
+                optionsResponseActionName = obj["optionsResponseActionName"]?.jsonPrimitive?.contentOrNull,
+                optionsRequestPayload = obj["optionsRequestPayload"] as? JsonObject,
             )
         } ?: emptyList()
 
@@ -1454,6 +1523,46 @@ class AgentRuntimeFeature(
      * @return Rewritten payload with agentId set to the resolved UUID, or null if
      *         the request was rejected (ACTION_RESULT error already published).
      */
+    /**
+     * Inspects an agent-originated action for known antipatterns and returns a
+     * human-readable advisory if one is detected. Pure: callers decide how to
+     * surface the result. Returning null = action looks fine.
+     *
+     * Antipatterns detected so far:
+     *  - `session.POST` whose target is the agent's own primary (output) session.
+     *    The reply text is already auto-routed there; the explicit POST creates
+     *    a duplicate.
+     */
+    private fun detectAgentActionAntipattern(
+        agent: AgentInstance,
+        actionName: String,
+        actionPayload: JsonObject,
+        store: Store,
+    ): String? = when (actionName) {
+        ActionRegistry.Names.SESSION_POST -> detectUnnecessarySessionPost(agent, actionPayload, store)
+        else -> null
+    }
+
+    private fun detectUnnecessarySessionPost(
+        agent: AgentInstance,
+        actionPayload: JsonObject,
+        store: Store,
+    ): String? {
+        val targetRef = actionPayload["session"]?.jsonPrimitive?.contentOrNull ?: return null
+        val outputUUID = agent.outputSessionId ?: return null
+        val registry = store.state.value.identityRegistry
+        val outputIdentity = registry.values.find { it.uuid == outputUUID.uuid } ?: return null
+        val isPrimary = targetRef == outputUUID.uuid ||
+            targetRef == outputIdentity.handle ||
+            targetRef == outputIdentity.localHandle ||
+            targetRef == outputIdentity.name
+        if (!isPrimary) return null
+        return "Unnecessary session.POST detected — '$targetRef' is your own primary session, " +
+            "where your reply text is automatically posted. Just write your reply as plain text " +
+            "instead of calling session.POST. Use session.POST only when posting into a DIFFERENT " +
+            "subscribed session."
+    }
+
     private fun enforceSelfTargetOrReject(
         payload: JsonObject,
         callerAgent: AgentInstance,

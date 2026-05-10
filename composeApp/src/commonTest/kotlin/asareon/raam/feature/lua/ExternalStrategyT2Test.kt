@@ -231,6 +231,99 @@ class ExternalStrategyT2Test {
     }
 
     // ========================================================================
+    // EXTERNAL_REFERENCE config field metadata
+    // ========================================================================
+
+    @Test
+    fun `EXTERNAL_REFERENCE field metadata round-trips through registration`() {
+        val platform = FakePlatformDependencies("test")
+        val harness = createHarness(platform)
+
+        harness.runAndLogOnFailure {
+            harness.store.dispatch("lua", Action(
+                name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                payload = buildJsonObject {
+                    put("strategyId", "agent.strategy.lua")
+                    put("displayName", "Lua Script")
+                    put("featureHandle", "lua")
+                    put("configFields", buildJsonArray {
+                        add(buildJsonObject {
+                            put("key", "strategyScriptHandle")
+                            put("type", "EXTERNAL_REFERENCE")
+                            put("displayName", "Strategy Script")
+                            put("isRequired", true)
+                            put("optionsRequestActionName", "lua.LIST_STRATEGY_SCRIPT_OPTIONS")
+                            put("optionsResponseActionName", "lua.RETURN_STRATEGY_SCRIPT_OPTIONS")
+                        })
+                    })
+                }
+            ))
+
+            val strategy = CognitiveStrategyRegistry.get(IdentityHandle("agent.strategy.lua"))
+            val field = strategy.getConfigFields().single()
+            assertEquals(StrategyConfigFieldType.EXTERNAL_REFERENCE, field.type)
+            assertTrue(field.isRequired)
+            assertEquals("lua.LIST_STRATEGY_SCRIPT_OPTIONS", field.optionsRequestActionName)
+            assertEquals("lua.RETURN_STRATEGY_SCRIPT_OPTIONS", field.optionsResponseActionName)
+        }
+    }
+
+    @Test
+    fun `EXTERNAL_REFERENCE response captures options into agent state`() {
+        val platform = FakePlatformDependencies("test")
+        val harness = createHarness(platform)
+
+        harness.runAndLogOnFailure {
+            // Register the strategy declaring the field
+            harness.store.dispatch("lua", Action(
+                name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
+                payload = buildJsonObject {
+                    put("strategyId", "agent.strategy.lua")
+                    put("displayName", "Lua Script")
+                    put("featureHandle", "lua")
+                    put("configFields", buildJsonArray {
+                        add(buildJsonObject {
+                            put("key", "strategyScriptHandle")
+                            put("type", "EXTERNAL_REFERENCE")
+                            put("displayName", "Strategy Script")
+                            put("optionsRequestActionName", "lua.LIST_STRATEGY_SCRIPT_OPTIONS")
+                            put("optionsResponseActionName", "lua.RETURN_STRATEGY_SCRIPT_OPTIONS")
+                        })
+                    })
+                }
+            ))
+
+            // Simulate a response from the (absent) Lua feature
+            harness.store.dispatch("lua", Action(
+                name = ActionRegistry.Names.LUA_RETURN_STRATEGY_SCRIPT_OPTIONS,
+                payload = buildJsonObject {
+                    put("options", buildJsonArray {
+                        add(buildJsonObject {
+                            put("handle", "lua.haiku")
+                            put("label", "Haiku Script")
+                        })
+                        add(buildJsonObject {
+                            put("handle", "lua.silent")
+                            put("label", "Silent Script")
+                            put("description", "off — toggle on before use")
+                        })
+                    })
+                },
+                targetRecipient = "agent",
+            ))
+
+            val agentState = harness.store.state.value.featureStates["agent"] as AgentRuntimeState
+            val key = externalRefOptionsKey("agent.strategy.lua", "strategyScriptHandle")
+            val captured = agentState.externalReferenceOptions[key]
+            assertNotNull(captured, "Options should be captured into agent state under composed key")
+            assertEquals(2, captured.size)
+            assertEquals("lua.haiku", captured[0].handle)
+            assertEquals("Haiku Script", captured[0].label)
+            assertEquals("off — toggle on before use", captured[1].description)
+        }
+    }
+
+    // ========================================================================
     // External Turn Result Reducer
     // ========================================================================
 

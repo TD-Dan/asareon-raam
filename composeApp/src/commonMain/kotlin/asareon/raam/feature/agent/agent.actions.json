@@ -1555,7 +1555,11 @@
                 "key": { "type": "string" },
                 "type": { "type": "string" },
                 "displayName": { "type": "string" },
-                "description": { "type": "string" }
+                "description": { "type": "string" },
+                "isRequired": { "type": "boolean" },
+                "optionsRequestActionName": { "type": ["string", "null"], "description": "For EXTERNAL_REFERENCE: action the UI dispatches to fetch options." },
+                "optionsResponseActionName": { "type": ["string", "null"], "description": "For EXTERNAL_REFERENCE: action the UI listens for to receive options." },
+                "optionsRequestPayload": { "type": ["object", "null"], "description": "For EXTERNAL_REFERENCE: extra payload merged into the request action." }
               }
             },
             "description": "Strategy-specific config fields for the Agent Manager UI."
@@ -1619,6 +1623,7 @@
           "state": { "description": "Current agent NVRAM (cognitive state)." },
           "resources": { "type": "object", "description": "Resolved resource contents keyed by slotId." },
           "sessions": { "type": "array", "description": "Subscribed session info." },
+          "strategyConfig": { "type": "object", "description": "Operator-set strategy configuration values (e.g., chosen Lua strategy script handle)." },
           "modelProvider": { "type": "string" },
           "modelName": { "type": "string" }
         },

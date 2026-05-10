@@ -232,6 +232,13 @@ tasks.register("generateActionRegistry") {
                                     if (defaultVal != null) {
                                         fieldMap["default"] = defaultVal
                                     }
+                                    // Agent-facing field flags. See PayloadField docs for semantics.
+                                    val agentInternal = (fieldObj["agent_internal"] as? JsonPrimitive)?.boolean == true
+                                    if (agentInternal) fieldMap["agentInternal"] = true
+                                    val agentAutofill = (fieldObj["agent_autofill"] as? JsonPrimitive)?.contentOrNull
+                                    if (agentAutofill != null) fieldMap["agentAutofill"] = agentAutofill
+                                    val agentRequiresPerm = (fieldObj["agent_requires_permission"] as? JsonPrimitive)?.contentOrNull
+                                    if (agentRequiresPerm != null) fieldMap["agentRequiresPermission"] = agentRequiresPerm
                                     payloadFields.add(fieldMap)
                                 }
                             }
@@ -333,7 +340,12 @@ tasks.register("generateActionRegistry") {
                     val fieldLines = fields.joinToString(",\n") { f ->
                         val defVal = f["default"]
                         val defStr = if (defVal != null) "\"${(defVal as String).escKt()}\"" else "null"
-                        "                        PayloadField(\"${(f["name"] as String)}\", \"${(f["type"] as String).escKt()}\", \"${(f["description"] as String).escKt()}\", ${f["required"]}, $defStr)"
+                        val agentInternalFlag = (f["agentInternal"] as? Boolean) == true
+                        val agentAutofillVal = f["agentAutofill"] as? String
+                        val agentAutofillStr = if (agentAutofillVal != null) "\"${agentAutofillVal.escKt()}\"" else "null"
+                        val agentReqPermVal = f["agentRequiresPermission"] as? String
+                        val agentReqPermStr = if (agentReqPermVal != null) "\"${agentReqPermVal.escKt()}\"" else "null"
+                        "                        PayloadField(\"${(f["name"] as String)}\", \"${(f["type"] as String).escKt()}\", \"${(f["description"] as String).escKt()}\", ${f["required"]}, $defStr, $agentInternalFlag, $agentAutofillStr, $agentReqPermStr)"
                     }
                     "listOf(\n$fieldLines\n                    )"
                 }
@@ -419,12 +431,32 @@ tasks.register("generateActionRegistry") {
             |    // ================================================================
             |    // Section 2: Descriptor Data Classes
             |    // ================================================================
+            |    /**
+            |     * One field of an action's payload schema.
+            |     *
+            |     * Agent-facing flags (drive prompt economy + dispatch hygiene; never affect
+            |     * non-agent originators):
+            |     *  - [agentInternal]: System-managed field. Hidden from the agent action catalog
+            |     *    and stripped from agent-originated payloads. Agents that try to set it get
+            |     *    a "parameter not found" advisory — same wording as for genuinely unknown
+            |     *    fields, so the catalog can't be probed for hidden field names.
+            |     *  - [agentAutofill]: Strict superset of [agentInternal] — additionally injected
+            |     *    by the agent feature with a templated value before dispatch. Templates:
+            |     *    `{originatorId}`, `{primarySessionHandle}`, `{primarySessionUUID}`.
+            |     *  - [agentRequiresPermission]: Field is hidden from the agent catalog unless
+            |     *    the calling agent holds the named permission. The field is still accepted
+            |     *    on input when the permission is held; the Store guard / domain reducer is
+            |     *    authoritative for actual enforcement.
+            |     */
             |    data class PayloadField(
             |        val name: String,
             |        val type: String,
             |        val description: String,
             |        val required: Boolean,
-            |        val default: String? = null
+            |        val default: String? = null,
+            |        val agentInternal: Boolean = false,
+            |        val agentAutofill: String? = null,
+            |        val agentRequiresPermission: String? = null
             |    )
             |
             |    data class ActionDescriptor(

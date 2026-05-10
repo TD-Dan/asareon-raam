@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -71,6 +72,7 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
 
     // Auto-select first script if selection is stale
     val scripts = luaState.scripts.values.toList()
+    val (strategyScripts, applicationScripts) = scripts.partition { it.isStrategyScript() }
     if (selectedScript != null && selectedScript !in luaState.scripts) {
         selectedScript = scripts.firstOrNull()?.handle
     }
@@ -96,11 +98,19 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
             actions = listOf(
                 HeaderAction(
                     id = "create-script",
-                    label = "Create Script",
+                    label = "Create Application Script",
                     icon = Icons.Default.Add,
                     priority = 30,
                     emphasis = HeaderActionEmphasis.Create,
-                    onClick = { editTarget = ScriptEditTarget.Create },
+                    onClick = { editTarget = ScriptEditTarget.Create(ScriptKind.APPLICATION) },
+                ),
+                HeaderAction(
+                    id = "create-strategy-script",
+                    label = "Create Strategy Script",
+                    icon = Icons.Default.Add,
+                    priority = 25,
+                    emphasis = HeaderActionEmphasis.Create,
+                    onClick = { editTarget = ScriptEditTarget.Create(ScriptKind.STRATEGY) },
                 ),
                 HeaderAction(
                     id = "open-workspace-folder",
@@ -145,32 +155,33 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
                         modifier = Modifier.weight(1f).padding(8.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        if (scripts.isEmpty()) {
-                            item {
-                                Text(
-                                    "No scripts yet.\nClick \"Create Script\" to get started.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(12.dp)
-                                )
-                            }
-                        } else {
-                            items(scripts, key = { it.handle }) { script ->
-                                ScriptListRow(
-                                    script = script,
-                                    isSelected = selectedScript == script.handle,
-                                    onSelect = {
-                                        selectedScript = script.handle
-                                    },
-                                    onToggle = {
-                                        store.dispatch("lua", Action(
-                                            name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
-                                            payload = buildJsonObject { put("scriptHandle", script.handle) }
-                                        ))
-                                    }
-                                )
-                            }
-                        }
+                        scriptSection(
+                            title = "Application Scripts",
+                            emptyMessage = "No application scripts yet.\nClick \"Create Application Script\" to get started.",
+                            scripts = applicationScripts,
+                            selectedHandle = selectedScript,
+                            onSelect = { selectedScript = it },
+                            onToggle = { handle ->
+                                store.dispatch("lua", Action(
+                                    name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
+                                    payload = buildJsonObject { put("scriptHandle", handle) }
+                                ))
+                            },
+                        )
+                        item { Spacer(Modifier.height(12.dp)) }
+                        scriptSection(
+                            title = "Strategy Scripts",
+                            emptyMessage = "No strategy scripts yet.\nClick \"Create Strategy Script\" or define on_turn() in an existing script.",
+                            scripts = strategyScripts,
+                            selectedHandle = selectedScript,
+                            onSelect = { selectedScript = it },
+                            onToggle = { handle ->
+                                store.dispatch("lua", Action(
+                                    name = ActionRegistry.Names.LUA_TOGGLE_SCRIPT,
+                                    payload = buildJsonObject { put("scriptHandle", handle) }
+                                ))
+                            },
+                        )
                     }
                 }
             },
@@ -362,6 +373,51 @@ fun LuaScriptManagerView(store: Store, features: List<Feature>) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Script section list helper
+// Strategy/application classification lives on ScriptInfo (sourceContent-based,
+// no agent-feature lookup) so this view and LuaFeature share one definition.
+// ══════════════════════════════════════════════════════════════════════════════
+
+private fun LazyListScope.scriptSection(
+    title: String,
+    emptyMessage: String,
+    scripts: List<ScriptInfo>,
+    selectedHandle: String?,
+    onSelect: (String) -> Unit,
+    onToggle: (String) -> Unit,
+) {
+    item(key = "section-header-$title") {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+    if (scripts.isEmpty()) {
+        item(key = "section-empty-$title") {
+            Text(
+                emptyMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+    } else {
+        items(scripts, key = { it.handle }) { script ->
+            ScriptListRow(
+                script = script,
+                isSelected = selectedHandle == script.handle,
+                onSelect = { onSelect(script.handle) },
+                onToggle = { onToggle(script.handle) },
+            )
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Script List Row
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -540,9 +596,12 @@ private fun StatusBadge(status: ScriptStatus) {
 // Full-view Script Editor — create or edit a Lua script's identity + body
 // ══════════════════════════════════════════════════════════════════════════════
 
+/** Distinguishes the two kinds of Lua scripts shown in the manager. */
+private enum class ScriptKind { APPLICATION, STRATEGY }
+
 /** Which script the full-view editor is targeting. */
 private sealed interface ScriptEditTarget {
-    data object Create : ScriptEditTarget
+    data class Create(val kind: ScriptKind) : ScriptEditTarget
     data class Edit(val handle: String) : ScriptEditTarget
 }
 
@@ -581,7 +640,10 @@ private fun ScriptEditorView(
             is ScriptEditTarget.Create -> {
                 val starterName = identityDraft.name.ifBlank { "New Script" }
                 val starterLocalHandle = slugifyScriptName(starterName)
-                LuaScriptTemplates.appScript(starterName, starterLocalHandle)
+                when (target.kind) {
+                    ScriptKind.APPLICATION -> LuaScriptTemplates.appScript(starterName, starterLocalHandle)
+                    ScriptKind.STRATEGY -> LuaScriptTemplates.strategyScript(starterName, starterLocalHandle)
+                }
             }
             is ScriptEditTarget.Edit -> existing?.sourceContent ?: ""
         }
@@ -645,7 +707,10 @@ private fun ScriptEditorView(
     Column(Modifier.fillMaxSize()) {
         RaamTopBarHeader(
             title = when (target) {
-                is ScriptEditTarget.Create -> "New Script"
+                is ScriptEditTarget.Create -> when (target.kind) {
+                    ScriptKind.APPLICATION -> "New Application Script"
+                    ScriptKind.STRATEGY -> "New Strategy Script"
+                }
                 is ScriptEditTarget.Edit -> existing?.name ?: "Edit Script"
             },
             subtitle = "Lua Scripts",

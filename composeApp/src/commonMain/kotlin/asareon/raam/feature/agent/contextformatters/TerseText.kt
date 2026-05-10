@@ -62,11 +62,10 @@ object TerseText {
             append("Use session.POST to publish to public sessions.")
         },
         "SESSION_ROUTING_STANDARD" to buildString {
-            appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
+            appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session AUTOMATICALLY — DO NOT call session.POST to reply to the user; just write your response as plain text. session.POST exists for posting into OTHER sessions and is unnecessary here.")
         },
         "SESSION_ROUTING_STANDARD_MULTI" to buildString {
-            appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session.")
-            append("Use session.POST to publish to other sessions.")
+            appendLine("You observe messages from all subscribed sessions. Your responses are posted to the primary session AUTOMATICALLY — DO NOT call session.POST to reply to the user; just write your response as plain text. Use session.POST only to post into a DIFFERENT subscribed session.")
         },
         "SESSION_MSG_FORMAT" to buildString {
             appendLine("Each message in the conversation is wrapped with sender headers (name, id, timestamp).")
@@ -133,9 +132,9 @@ object TerseText {
         "SESSION_ROUTING_PRIVATE" to
             "Responses \u2192 PRIVATE session (only you). Use session.POST for public msgs. Context shows ALL subscribed sessions.",
         "SESSION_ROUTING_STANDARD" to
-            "Responses \u2192 primary session. Context shows ALL subscribed sessions.",
+            "Responses \u2192 primary session AUTOMATICALLY. Reply with plain text; do NOT use session.POST to reply here \u2014 it's only for OTHER sessions.",
         "SESSION_ROUTING_STANDARD_MULTI" to
-            "Responses \u2192 primary session. Use session.POST for other sessions.",
+            "Responses \u2192 primary session AUTOMATICALLY. Reply with plain text; use session.POST ONLY to post into a DIFFERENT subscribed session.",
         "SESSION_MSG_FORMAT" to
             "Msg headers auto-added. Don't include them in responses.",
 

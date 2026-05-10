@@ -392,10 +392,21 @@ private fun AgentEditorView(
         budgetOptimalTokensInput != initialBudgetOptimal ||
         budgetMaxTokensInput != initialBudgetMax ||
         budgetMaxPartialTokensInput != initialBudgetMaxPartial
-    // Save is gated only by name validity — the agent form has so many fields
-    // that a strict dirty gate risks false negatives (e.g., JsonObject reference
-    // churn on strategy config). `dirty` still drives the discard confirmation.
-    val canSave = identityDraft.name.isNotBlank()
+    // Save is gated by name validity and any required strategy config fields that
+    // are still empty. Other fields skip the strict dirty gate (the agent form has
+    // so many fields that JsonObject reference churn risks false negatives).
+    // `dirty` still drives the discard confirmation.
+    val activeStrategy = if (CognitiveStrategyRegistry.getAll().isEmpty()) null
+        else CognitiveStrategyRegistry.get(draftAgent.cognitiveStrategyId)
+    val missingRequiredConfig = activeStrategy
+        ?.getConfigFields()
+        ?.filter { it.isRequired }
+        ?.any { field ->
+            val value = draftAgent.strategyConfig[field.key]
+            val str = value?.jsonPrimitive?.contentOrNull
+            str.isNullOrBlank()
+        } ?: false
+    val canSave = identityDraft.name.isNotBlank() && !missingRequiredConfig
 
     var showDiscardDialog by remember { mutableStateOf(false) }
     val tryClose = { if (dirty) showDiscardDialog = true else onClose() }
@@ -513,6 +524,15 @@ private fun AgentEditorView(
                                 KnowledgeGraphSelector(draftAgent, agentState, onDraftChanged)
                             StrategyConfigFieldType.OUTPUT_SESSION ->
                                 OutputSessionSelector(draftAgent, agentState, onDraftChanged, field, currentStrategy)
+                            StrategyConfigFieldType.EXTERNAL_REFERENCE ->
+                                ExternalReferenceSelector(
+                                    field = field,
+                                    strategyHandle = currentStrategy?.identityHandle?.handle,
+                                    agent = draftAgent,
+                                    agentState = agentState,
+                                    onUpdate = onDraftChanged,
+                                    store = store,
+                                )
                         }
                     }
                 }
@@ -1298,6 +1318,126 @@ private fun StrategySelector(agent: AgentInstance, onUpdate: (AgentInstance) -> 
                     onUpdate(updated)
                     isExpanded = false
                 })
+            }
+        }
+    }
+}
+
+// =============================================================================
+// External Reference Selector — dropdown sourced from another feature via the bus
+// =============================================================================
+
+/**
+ * Renders a dropdown for a [StrategyConfigFieldType.EXTERNAL_REFERENCE] field.
+ * Options are fetched once on first composition by dispatching the field's declared
+ * options-request action; the response is captured by the agent reducer and read
+ * back from [AgentRuntimeState.externalReferenceOptions].
+ *
+ * The selected handle is stored in the agent's [AgentInstance.strategyConfig] under
+ * the field's [StrategyConfigField.key].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExternalReferenceSelector(
+    field: asareon.raam.feature.agent.StrategyConfigField,
+    strategyHandle: String?,
+    agent: AgentInstance,
+    agentState: AgentRuntimeState,
+    onUpdate: (AgentInstance) -> Unit,
+    store: Store,
+) {
+    val storageKey = remember(strategyHandle, field.key) {
+        if (strategyHandle == null) null
+        else asareon.raam.feature.agent.externalRefOptionsKey(strategyHandle, field.key)
+    }
+    val options = storageKey?.let { agentState.externalReferenceOptions[it] }.orEmpty()
+
+    // Fetch on first compose. The handling feature responds with its declared
+    // options-response action; the agent reducer captures it generically.
+    val requestAction = field.optionsRequestActionName
+    LaunchedEffect(requestAction, storageKey) {
+        if (requestAction != null) {
+            val basePayload = field.optionsRequestPayload ?: JsonObject(emptyMap())
+            store.dispatch("agent", Action(requestAction, basePayload))
+        }
+    }
+
+    val selectedHandle = agent.strategyConfig[field.key]?.jsonPrimitive?.contentOrNull
+    val selectedLabel = options.find { it.handle == selectedHandle }?.label
+        ?: selectedHandle
+        ?: "None"
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val isMissingRequired = field.isRequired && selectedHandle.isNullOrBlank()
+
+    Column(Modifier.fillMaxWidth()) {
+        ExposedDropdownMenuBox(expanded = isExpanded, onExpandedChange = { isExpanded = !isExpanded }) {
+            OutlinedTextField(
+                value = selectedLabel,
+                onValueChange = {},
+                readOnly = true,
+                label = {
+                    Text(if (field.isRequired) "${field.displayName} *" else field.displayName)
+                },
+                isError = isMissingRequired,
+                supportingText = when {
+                    isMissingRequired -> {
+                        { Text("Required", color = MaterialTheme.colorScheme.error) }
+                    }
+                    field.description.isNotBlank() -> {
+                        { Text(field.description) }
+                    }
+                    else -> null
+                },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(isExpanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth()
+            )
+            ExposedDropdownMenu(expanded = isExpanded, onDismissRequest = { isExpanded = false }) {
+                if (!field.isRequired) {
+                    DropdownMenuItem(
+                        text = { Text("None") },
+                        onClick = {
+                            onUpdate(agent.copy(strategyConfig = JsonObject(agent.strategyConfig - field.key)))
+                            isExpanded = false
+                        },
+                    )
+                }
+                if (options.isEmpty()) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "No options available",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        onClick = { isExpanded = false },
+                        enabled = false,
+                    )
+                } else {
+                    options.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(option.label)
+                                    if (!option.description.isNullOrBlank()) {
+                                        Text(
+                                            option.description!!,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                val updatedConfig = JsonObject(
+                                    agent.strategyConfig + (field.key to JsonPrimitive(option.handle))
+                                )
+                                onUpdate(agent.copy(strategyConfig = updatedConfig))
+                                isExpanded = false
+                            },
+                        )
+                    }
+                }
             }
         }
     }

@@ -10,19 +10,44 @@ import kotlinx.serialization.json.JsonObject
  * Analogous to [ResourceSlot] but for config values stored in cognitiveState.
  *
  * The core UI renders these generically — it never inspects which strategy is active.
+ *
+ * For [StrategyConfigFieldType.EXTERNAL_REFERENCE] fields, the dropdown options are
+ * sourced via the action bus from the registering feature. The agent feature stays
+ * decoupled — it only knows the action names declared at registration time.
  */
 data class StrategyConfigField(
     val key: String,
     val type: StrategyConfigFieldType,
     val displayName: String,
-    val description: String = ""
+    val description: String = "",
+    val isRequired: Boolean = false,
+    /**
+     * For [StrategyConfigFieldType.EXTERNAL_REFERENCE]: the action the UI dispatches
+     * to request available options. The handling feature must respond with
+     * [optionsResponseActionName] and a payload of shape `{options: [{handle, label, ...}]}`.
+     */
+    val optionsRequestActionName: String? = null,
+    /** Optional payload to merge into the request (e.g. filter params). */
+    val optionsRequestPayload: JsonObject? = null,
+    /** The action the UI listens for to populate options. */
+    val optionsResponseActionName: String? = null,
 )
 
 enum class StrategyConfigFieldType {
     /** Rendered as a Knowledge Graph dropdown selector. */
     KNOWLEDGE_GRAPH,
     /** Rendered as a dropdown of the agent's subscribed sessions to select the output target. */
-    OUTPUT_SESSION
+    OUTPUT_SESSION,
+    /**
+     * Rendered as a dropdown whose options come from another feature via the action bus.
+     * Selection is stored as an identity handle string in [AgentInstance.strategyConfig]
+     * under the field's [StrategyConfigField.key].
+     *
+     * The registering feature declares [StrategyConfigField.optionsRequestActionName] /
+     * [StrategyConfigField.optionsResponseActionName] / [StrategyConfigField.optionsRequestPayload]
+     * so the agent feature never imports anything from the option provider.
+     */
+    EXTERNAL_REFERENCE
 }
 
 /**

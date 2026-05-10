@@ -73,9 +73,15 @@ end
     /**
      * Default template for an agent CognitiveStrategy script.
      * Used as the built-in resource for agent.strategy.lua.
+     *
+     * Recognised as a strategy script by the script manager because it defines
+     * `on_turn(ctx)` — the manager's grouping is content-derived, so renaming
+     * the file or its identity is fine, but removing `on_turn` reclassifies it.
      */
-    val agentStrategyScript: String = """
--- Lua Agent Strategy Script
+    fun strategyScript(name: String, localHandle: String): String = """
+-- $name
+-- Asareon Raam Lua Strategy Script (identity: lua.$localHandle)
+--
 -- This script serves as a CognitiveStrategy for an Asareon Raam agent.
 --
 -- The pipeline assembles context partitions normally, then sends them here

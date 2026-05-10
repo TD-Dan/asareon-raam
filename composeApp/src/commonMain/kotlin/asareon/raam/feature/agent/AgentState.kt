@@ -363,8 +363,33 @@ data class AgentRuntimeState(
     /** Maps correlationId → AgentPendingCommand for in-flight agent commands.
      *  Used to route targeted RETURN_* data to the session via DELIVER_TO_SESSION. */
     @Transient
-    val pendingCommands: Map<String, AgentPendingCommand> = emptyMap()
+    val pendingCommands: Map<String, AgentPendingCommand> = emptyMap(),
+
+    /**
+     * Transient cache of options for [StrategyConfigFieldType.EXTERNAL_REFERENCE] fields,
+     * populated by responses to the registering feature's options-request action.
+     * Key = strategyId + "::" + fieldKey (so two strategies can use the same key safely).
+     */
+    @Transient
+    val externalReferenceOptions: Map<String, List<ExternalReferenceOption>> = emptyMap()
 ) : FeatureState
+
+/**
+ * One selectable option in an [StrategyConfigFieldType.EXTERNAL_REFERENCE] dropdown,
+ * extracted generically from the registering feature's response payload.
+ */
+data class ExternalReferenceOption(
+    /** The identity handle stored in [AgentInstance.strategyConfig] when selected. */
+    val handle: String,
+    /** Human-readable label shown in the dropdown. Falls back to handle. */
+    val label: String,
+    /** Optional secondary description. */
+    val description: String? = null,
+)
+
+/** Composes the storage key used by [AgentRuntimeState.externalReferenceOptions]. */
+fun externalRefOptionsKey(strategyHandle: String, fieldKey: String): String =
+    "$strategyHandle::$fieldKey"
 
 
 

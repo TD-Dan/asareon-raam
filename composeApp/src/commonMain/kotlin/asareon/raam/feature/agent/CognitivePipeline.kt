@@ -1055,6 +1055,7 @@ object CognitivePipeline {
                         put("agentHandle", agent.identity.handle)
                         put("systemPrompt", result.systemPrompt)
                         put("state", agent.cognitiveState)
+                        put("strategyConfig", agent.strategyConfig)
                         put("modelProvider", agent.modelProvider)
                         put("modelName", agent.modelName)
                     },

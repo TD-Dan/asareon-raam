@@ -240,6 +240,7 @@ class LuaFeature(
             ActionRegistry.Names.LUA_RELOAD_SCRIPT -> handleReloadScript(action, store)
             ActionRegistry.Names.LUA_EVAL -> handleEval(action, store)
             ActionRegistry.Names.LUA_LIST_SCRIPTS -> handleListScripts(action, store)
+            ActionRegistry.Names.LUA_LIST_STRATEGY_SCRIPT_OPTIONS -> handleListStrategyScriptOptions(action, store)
             ActionRegistry.Names.LUA_CREATE_SCRIPT -> handleCreateScript(action, store)
             ActionRegistry.Names.LUA_DELETE_SCRIPT -> { handleDeleteScript(action, store, previousState); persistScriptsConfig(store) }
             ActionRegistry.Names.LUA_CLONE_SCRIPT -> handleCloneScript(action, store)
@@ -554,33 +555,37 @@ class LuaFeature(
 
     private companion object {
         const val DISCOVER_CORRELATION_ID = "lua:discover"
+        /** Key under which an agent's chosen Lua strategy script handle lives in [strategyConfig]. */
+        const val STRATEGY_SCRIPT_CONFIG_KEY = "strategyScriptHandle"
     }
 
     private fun handleAppStartup(store: Store) {
         // Register Lua as an external cognitive strategy via the action bus.
         // Done here (not in init()) because init() runs during BOOTING when
         // cross-feature dispatches are blocked by the lifecycle guard.
+        // No resource slots are declared — strategy scripts that need extra context
+        // can fetch it themselves via the raam.* API.
         store.deferredDispatch(identity.handle, Action(
             name = ActionRegistry.Names.AGENT_REGISTER_EXTERNAL_STRATEGY,
             payload = buildJsonObject {
                 put("strategyId", "agent.strategy.lua")
                 put("displayName", "Lua Script")
                 put("featureHandle", identity.handle)
-                put("resourceSlots", buildJsonArray {
-                    add(buildJsonObject {
-                        put("slotId", "system_instruction")
-                        put("type", "SYSTEM_INSTRUCTION")
-                        put("displayName", "System Instructions")
-                        put("description", "Context instructions passed to the Lua script via ctx.resources.")
-                        put("isRequired", false)
-                    })
-                })
                 put("configFields", buildJsonArray {
                     add(buildJsonObject {
                         put("key", "outputSessionId")
                         put("type", "OUTPUT_SESSION")
                         put("displayName", "Output Session")
                         put("description", "The session where the Lua agent's responses are posted.")
+                    })
+                    add(buildJsonObject {
+                        put("key", STRATEGY_SCRIPT_CONFIG_KEY)
+                        put("type", "EXTERNAL_REFERENCE")
+                        put("displayName", "Strategy Script")
+                        put("description", "The Lua script (defining on_turn) that powers this agent's turns.")
+                        put("isRequired", true)
+                        put("optionsRequestActionName", ActionRegistry.Names.LUA_LIST_STRATEGY_SCRIPT_OPTIONS)
+                        put("optionsResponseActionName", ActionRegistry.Names.LUA_RETURN_STRATEGY_SCRIPT_OPTIONS)
                     })
                 })
                 put("initialState", buildJsonObject {
@@ -657,24 +662,25 @@ class LuaFeature(
             "modelName" to payload["modelName"]?.jsonPrimitive?.contentOrNull
         )
 
-        // Find a loaded script that can handle this turn.
-        // For now, look for a script whose handle matches "lua.agent-*" or
-        // use the first script that defines on_turn().
-        // TODO: The agent's resource assignment should specify which script to use.
-        val scriptHandle = findAgentScript(correlationId)
+        // Resolve the operator-selected strategy script via agent.strategyConfig.
+        val configuredHandle = (payload["strategyConfig"] as? JsonObject)
+            ?.get(STRATEGY_SCRIPT_CONFIG_KEY)
+            ?.jsonPrimitive
+            ?.contentOrNull
 
-        if (scriptHandle == null) {
-            // No script available — return error
+        val errorMessage = resolveStrategyScriptError(configuredHandle)
+        if (errorMessage != null) {
             store.deferredDispatch(identity.handle, Action(
                 name = ActionRegistry.Names.AGENT_EXTERNAL_TURN_RESULT,
                 payload = buildJsonObject {
                     put("correlationId", correlationId)
                     put("mode", "error")
-                    put("error", "No Lua script loaded for this agent. Load a script with on_turn() defined.")
+                    put("error", errorMessage)
                 }
             ))
             return
         }
+        val scriptHandle = configuredHandle!!
 
         // Execute the script's on_turn(ctx)
         val result = runtime.executeTurn(scriptHandle, ctx)
@@ -727,19 +733,64 @@ class LuaFeature(
     }
 
     /**
-     * Finds a loaded script that can serve as the cognitive strategy for an agent.
-     * Looks for scripts with handle "lua.agent-{agentUUID}" first, then any script
-     * that has on_turn defined.
+     * Validates that [configuredHandle] points at a Lua strategy script that's
+     * currently loaded and runnable. Returns null on success, or a human-readable
+     * error message describing why the turn cannot proceed.
      */
-    private fun findAgentScript(agentUUID: String): String? {
-        val directHandle = "lua.agent-$agentUUID"
-        if (runtime.isScriptLoaded(directHandle)) return directHandle
+    private fun resolveStrategyScriptError(configuredHandle: String?): String? {
+        if (configuredHandle.isNullOrBlank()) {
+            return "No Lua strategy script selected. Pick one in the agent's strategy settings."
+        }
+        val luaState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return "Lua feature state unavailable."
+        val script = luaState.scripts[configuredHandle]
+            ?: return "Configured Lua strategy script '$configuredHandle' was not found. It may have been deleted."
+        if (script.status != ScriptStatus.RUNNING) {
+            return "Lua strategy script '$configuredHandle' is not running (status: ${script.status}). Toggle it on in Lua Scripts."
+        }
+        if (!runtime.isScriptLoaded(configuredHandle)) {
+            return "Lua strategy script '$configuredHandle' is not loaded into the runtime."
+        }
+        if (!script.isStrategyScript()) {
+            return "Lua script '$configuredHandle' does not define on_turn() and cannot serve as a strategy."
+        }
+        return null
+    }
 
-        // Fallback: find any loaded script (TODO: improve with resource-based mapping)
-        val currentState = store.state.value.featureStates[identity.handle] as? LuaState ?: return null
-        return currentState.scripts.values
-            .firstOrNull { it.status == ScriptStatus.RUNNING }
-            ?.handle
+    /**
+     * Responds with the catalog of Lua strategy scripts (those defining on_turn) for
+     * the Agent Manager's EXTERNAL_REFERENCE selector. Targeted back to the originator.
+     */
+    private fun handleListStrategyScriptOptions(action: Action, store: Store) {
+        val originator = action.originator
+            ?: return logMissingField("LIST_STRATEGY_SCRIPT_OPTIONS", "originator")
+        val luaState = store.state.value.featureStates[identity.handle] as? LuaState
+            ?: return logMissingState("LIST_STRATEGY_SCRIPT_OPTIONS")
+
+        store.deferredDispatch(identity.handle, Action(
+            name = ActionRegistry.Names.LUA_RETURN_STRATEGY_SCRIPT_OPTIONS,
+            payload = buildJsonObject {
+                put("options", buildJsonArray {
+                    luaState.scripts.values
+                        .filter { it.isStrategyScript() }
+                        .sortedBy { it.name.lowercase() }
+                        .forEach { script ->
+                            add(buildJsonObject {
+                                put("handle", script.handle)
+                                put("label", script.name)
+                                val statusHint = when (script.status) {
+                                    ScriptStatus.RUNNING -> null
+                                    ScriptStatus.LOADING -> "loading"
+                                    ScriptStatus.STOPPED -> "off — toggle on before use"
+                                    ScriptStatus.ERRORED -> "error: ${script.lastError ?: "unknown"}"
+                                }
+                                if (statusHint != null) put("description", statusHint)
+                            })
+                        }
+                })
+            },
+            targetRecipient = originator,
+        ))
     }
 
     // ========================================================================

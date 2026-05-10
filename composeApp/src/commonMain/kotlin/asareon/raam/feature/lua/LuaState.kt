@@ -32,7 +32,19 @@ data class ScriptInfo(
     val loadedAt: Long = 0,
     /** The last-known source code of the script (populated on load/save). */
     val sourceContent: String? = null
-)
+) {
+    /**
+     * A script counts as a strategy script if its source defines `on_turn(...)`.
+     * Detection is purely textual against [sourceContent]; if the source has not
+     * been read yet (e.g. just discovered) the script is treated as application.
+     */
+    fun isStrategyScript(): Boolean {
+        val src = sourceContent ?: return false
+        return ON_TURN_REGEX.containsMatchIn(src)
+    }
+}
+
+private val ON_TURN_REGEX = Regex("""(?m)^\s*function\s+on_turn\s*\(""")
 
 /**
  * A single console output entry from a script.

@@ -126,6 +126,43 @@
       "required_permissions": ["lua:execute"]
     },
     {
+      "action_name": "lua.LIST_STRATEGY_SCRIPT_OPTIONS",
+      "summary": "Request the catalog of Lua strategy scripts (those defining on_turn). Used by the Agent Manager to populate the EXTERNAL_REFERENCE selector for agent.strategy.lua.",
+      "public": true,
+      "broadcast": false,
+      "targeted": false,
+      "payload_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "required_permissions": ["lua:execute"]
+    },
+    {
+      "action_name": "lua.RETURN_STRATEGY_SCRIPT_OPTIONS",
+      "summary": "Targeted response to LIST_STRATEGY_SCRIPT_OPTIONS. Conforms to the EXTERNAL_REFERENCE options contract: { options: [{ handle, label, description? }, ...] }.",
+      "public": false,
+      "broadcast": false,
+      "targeted": true,
+      "payload_schema": {
+        "type": "object",
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "handle": { "type": "string" },
+                "label": { "type": "string" },
+                "description": { "type": ["string", "null"] }
+              },
+              "required": ["handle", "label"]
+            }
+          }
+        },
+        "required": ["options"]
+      }
+    },
+    {
       "action_name": "lua.CREATE_SCRIPT",
       "summary": "Create a new Lua script file in the workspace. If content is omitted the default app-script template is used. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied at identity registration time.",
       "public": true,
