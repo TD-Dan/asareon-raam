@@ -226,7 +226,9 @@ object ContextCollapseLogic {
             }
         }
 
-        // Partition summary
+        // Partition summary. Indent reflects parent/child structure:
+        // by convention, child partition keys contain ':' (e.g. "actions:agent",
+        // "session:session.handle") while top-level keys don't.
         appendLine()
         appendLine("Partitions:")
         for (partition in result.partitions) {
@@ -237,7 +239,8 @@ object ContextCollapseLogic {
                 partition.state == CollapseState.EXPANDED -> ContextDelimiters.EXPANDED
                 else -> ContextDelimiters.COLLAPSED
             }
-            appendLine("  ${partition.key}: [$stateTag] (~$tokens tokens)")
+            val indent = if (partition.key.contains(':')) "    " else "  "
+            appendLine("$indent${partition.key}: [$stateTag] (~$tokens tokens)")
         }
 
         appendLine()

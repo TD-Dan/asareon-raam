@@ -22,6 +22,7 @@
     {
       "action_name": "backup.CREATE",
       "summary": "Creates a manual on-demand backup of the current application data.",
+      "agent_summary": "Create a manual on-demand backup of application data.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -30,7 +31,8 @@
         "properties": {
           "label": {
             "type": "string",
-            "description": "Optional human-readable label for the backup (e.g., 'before-migration')."
+            "description": "Optional human-readable label for the backup (e.g., 'before-migration').",
+            "agent_description": "Optional label (e.g. 'before-migration')."
           },
           "correlationId": {
             "type": [
@@ -38,7 +40,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         }
       },
@@ -49,6 +52,7 @@
     {
       "action_name": "backup.RESTORE",
       "summary": "Initiates the restore workflow. Dispatches a CoreFeature confirmation dialog before proceeding. The payload must contain the filename of the backup to restore.",
+      "agent_summary": "Restore from a backup file. Triggers a confirmation dialog before proceeding.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -57,7 +61,8 @@
         "properties": {
           "filename": {
             "type": "string",
-            "description": "The filename of the backup zip to restore (e.g., 'raam-backup-20260404T150000Z.zip')."
+            "description": "The filename of the backup zip to restore (e.g., 'raam-backup-20260404T150000Z.zip').",
+            "agent_description": "Backup zip filename (e.g. 'raam-backup-20260404T150000Z.zip')."
           },
           "correlationId": {
             "type": [
@@ -65,7 +70,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -97,6 +103,7 @@
     {
       "action_name": "backup.DELETE",
       "summary": "Deletes a specific backup file.",
+      "agent_summary": "Delete a backup file.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -105,7 +112,8 @@
         "properties": {
           "filename": {
             "type": "string",
-            "description": "The filename of the backup to delete."
+            "description": "The filename of the backup to delete.",
+            "agent_description": "Backup filename to delete."
           },
           "correlationId": {
             "type": [
@@ -113,7 +121,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -127,6 +136,7 @@
     {
       "action_name": "backup.PRUNE",
       "summary": "Manually triggers retention pruning. Deletes the oldest backups beyond the maxBackups threshold.",
+      "agent_summary": "Manually prune backups (delete oldest beyond the retention threshold).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -142,7 +152,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         }
       }
@@ -150,6 +161,7 @@
     {
       "action_name": "backup.OPEN_FOLDER",
       "summary": "Opens the _backups directory in the native OS file explorer.",
+      "agent_summary": "Open the backups folder in the OS file explorer.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -165,7 +177,8 @@
               "null"
             ],
             "description": "Optional correlation ID passed through to the ACTION_RESULT for CommandBot matching.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         }
       }

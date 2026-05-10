@@ -22,6 +22,7 @@
     {
       "action_name": "lua.LOAD_SCRIPT",
       "summary": "Load a Lua script from the workspace and register its identity on the bus.",
+      "agent_summary": "Load a Lua script from the workspace and register its identity.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -30,16 +31,19 @@
         "properties": {
           "scriptPath": {
             "type": "string",
-            "description": "Relative path to the .lua file within the lua workspace."
+            "description": "Relative path to the .lua file within the lua workspace.",
+            "agent_description": "Relative path to the .lua file in the lua workspace."
           },
           "localHandle": {
             "type": ["string", "null"],
-            "description": "Optional explicit local handle for the script identity. Derived from filename if omitted."
+            "description": "Optional explicit local handle for the script identity. Derived from filename if omitted.",
+            "agent_description": "Optional local handle. Derived from filename if omitted."
           },
           "autostart": {
             "type": "boolean",
             "description": "If true, script will auto-load on next app startup.",
-            "default": false
+            "default": false,
+            "agent_description": "Auto-load on next app startup."
           }
         },
         "required": ["scriptPath"]
@@ -49,6 +53,7 @@
     {
       "action_name": "lua.UNLOAD_SCRIPT",
       "summary": "Unload a running Lua script and unregister its identity.",
+      "agent_summary": "Unload a running Lua script and unregister its identity.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -57,7 +62,8 @@
         "properties": {
           "scriptHandle": {
             "type": "string",
-            "description": "The full handle of the script identity to unload (e.g., 'lua.my-script')."
+            "description": "The full handle of the script identity to unload (e.g., 'lua.my-script').",
+            "agent_description": "Script ref to unload (e.g. 'lua.my-script')."
           }
         },
         "required": ["scriptHandle"]
@@ -67,6 +73,7 @@
     {
       "action_name": "lua.RELOAD_SCRIPT",
       "summary": "Hot-reload the source code of a running Lua script without changing its identity or subscriptions.",
+      "agent_summary": "Hot-reload a script's source. Identity and subscriptions are preserved.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -75,7 +82,8 @@
         "properties": {
           "scriptHandle": {
             "type": "string",
-            "description": "The full handle of the script identity to reload."
+            "description": "The full handle of the script identity to reload.",
+            "agent_description": "Script ref to reload."
           }
         },
         "required": ["scriptHandle"]
@@ -85,6 +93,7 @@
     {
       "action_name": "lua.EVAL",
       "summary": "Execute a Lua code string in the context of a loaded script (REPL/debugging).",
+      "agent_summary": "Eval a Lua snippet in the context of a loaded script (REPL).",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -93,15 +102,18 @@
         "properties": {
           "scriptHandle": {
             "type": "string",
-            "description": "The script context to evaluate in."
+            "description": "The script context to evaluate in.",
+            "agent_description": "Script ref to evaluate in."
           },
           "code": {
             "type": "string",
-            "description": "Lua source code to evaluate."
+            "description": "Lua source code to evaluate.",
+            "agent_description": "Lua source to eval."
           },
           "correlationId": {
             "type": ["string", "null"],
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": ["scriptHandle", "code"]
@@ -111,6 +123,7 @@
     {
       "action_name": "lua.LIST_SCRIPTS",
       "summary": "Query all loaded scripts and their current status.",
+      "agent_summary": "List all loaded scripts and their status.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -119,7 +132,8 @@
         "properties": {
           "correlationId": {
             "type": ["string", "null"],
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         }
       },
@@ -128,6 +142,7 @@
     {
       "action_name": "lua.LIST_STRATEGY_SCRIPT_OPTIONS",
       "summary": "Request the catalog of Lua strategy scripts (those defining on_turn). Used by the Agent Manager to populate the EXTERNAL_REFERENCE selector for agent.strategy.lua.",
+      "agent_summary": "List Lua strategy scripts (those defining on_turn).",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -165,6 +180,7 @@
     {
       "action_name": "lua.CREATE_SCRIPT",
       "summary": "Create a new Lua script file in the workspace. If content is omitted the default app-script template is used. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied at identity registration time.",
+      "agent_summary": "Create a new Lua script. Default app-script template is used if content is omitted.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -173,23 +189,28 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Display name for the new script."
+            "description": "Display name for the new script.",
+            "agent_description": "Display name."
           },
           "content": {
             "type": ["string", "null"],
-            "description": "Optional initial script content. If absent or null, the default app-script template is used."
+            "description": "Optional initial script content. If absent or null, the default app-script template is used.",
+            "agent_description": "Optional initial source. Default template used if omitted."
           },
           "displayColor": {
             "type": ["string", "null"],
-            "description": "Optional '#RRGGBB' display color for the script's identity."
+            "description": "Optional '#RRGGBB' display color for the script's identity.",
+            "agent_description": "Optional '#RRGGBB' color."
           },
           "displayIcon": {
             "type": ["string", "null"],
-            "description": "Optional Material icon key for the script's identity."
+            "description": "Optional Material icon key for the script's identity.",
+            "agent_description": "Optional Material icon key."
           },
           "displayEmoji": {
             "type": ["string", "null"],
-            "description": "Optional emoji override for the script's identity."
+            "description": "Optional emoji override for the script's identity.",
+            "agent_description": "Optional emoji override."
           }
         },
         "required": ["name"]
@@ -199,6 +220,7 @@
     {
       "action_name": "lua.DELETE_SCRIPT",
       "summary": "Delete a Lua script file from disk and unload it if running.",
+      "agent_summary": "Delete a Lua script from disk (and unload it if running).",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -206,7 +228,8 @@
         "type": "object",
         "properties": {
           "scriptHandle": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Script ref to delete."
           }
         },
         "required": ["scriptHandle"]
@@ -216,6 +239,7 @@
     {
       "action_name": "lua.CLONE_SCRIPT",
       "summary": "Clone an existing Lua script to a new file with a new identity.",
+      "agent_summary": "Clone a Lua script (new file, new identity).",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -224,11 +248,13 @@
         "properties": {
           "scriptHandle": {
             "type": "string",
-            "description": "The handle of the script to clone."
+            "description": "The handle of the script to clone.",
+            "agent_description": "Script ref to clone."
           },
           "newName": {
             "type": ["string", "null"],
-            "description": "Optional name for the clone. Defaults to 'Copy of <original>'."
+            "description": "Optional name for the clone. Defaults to 'Copy of <original>'.",
+            "agent_description": "Optional clone name. Defaults to 'Copy of <original>'."
           }
         },
         "required": ["scriptHandle"]
@@ -238,6 +264,7 @@
     {
       "action_name": "lua.RENAME_SCRIPT",
       "summary": "Rename a Lua script (updates display name and file).",
+      "agent_summary": "Rename a Lua script (updates display name and file).",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -245,10 +272,12 @@
         "type": "object",
         "properties": {
           "scriptHandle": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Script ref to rename."
           },
           "newName": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "New display name."
           }
         },
         "required": ["scriptHandle", "newName"]
@@ -258,6 +287,7 @@
     {
       "action_name": "lua.TOGGLE_SCRIPT",
       "summary": "Toggle a script between active (running) and inactive (off) states.",
+      "agent_summary": "Toggle a script between running and off.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -265,7 +295,8 @@
         "type": "object",
         "properties": {
           "scriptHandle": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Script ref to toggle."
           }
         },
         "required": ["scriptHandle"]
@@ -275,6 +306,7 @@
     {
       "action_name": "lua.SAVE_SCRIPT",
       "summary": "Save edited script content to disk and hot-reload if running.",
+      "agent_summary": "Save edited script source to disk. Hot-reloads if the script is running.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -282,11 +314,13 @@
         "type": "object",
         "properties": {
           "scriptHandle": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Script ref to save."
           },
           "content": {
             "type": "string",
-            "description": "The new Lua source code to persist."
+            "description": "The new Lua source code to persist.",
+            "agent_description": "New Lua source."
           }
         },
         "required": ["scriptHandle", "content"]

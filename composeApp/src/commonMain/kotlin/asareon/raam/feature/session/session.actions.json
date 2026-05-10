@@ -32,6 +32,7 @@
     {
       "action_name": "session.CREATE",
       "summary": "Creates a new, empty session. If the name exists, a numeric suffix will be added. displayColor/displayIcon/displayEmoji are optional identity-visual fields applied to the session's identity at registration.",
+      "agent_summary": "Create a new empty session. Numeric suffix added if the name collides.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -40,30 +41,36 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "An optional user-friendly name for the new session."
+            "description": "An optional user-friendly name for the new session.",
+            "agent_description": "Optional display name."
           },
           "isHidden": {
             "type": "boolean",
-            "description": "If true, the session is created in a hidden state. Defaults to false."
+            "description": "If true, the session is created in a hidden state. Defaults to false.",
+            "agent_description": "Create hidden. Defaults to false."
           },
           "isPrivateTo": {
             "type": [
               "string",
               "null"
             ],
-            "description": "If non-null, the identity handle of the owner. The session is private to that identity. Defaults to null."
+            "description": "If non-null, the identity handle of the owner. The session is private to that identity. Defaults to null.",
+            "agent_description": "Identity ref of the owner if private. Defaults to null (public)."
           },
           "displayColor": {
             "type": ["string", "null"],
-            "description": "Optional '#RRGGBB' display color for the session's identity."
+            "description": "Optional '#RRGGBB' display color for the session's identity.",
+            "agent_description": "Optional '#RRGGBB' color."
           },
           "displayIcon": {
             "type": ["string", "null"],
-            "description": "Optional Material icon key for the session's identity."
+            "description": "Optional Material icon key for the session's identity.",
+            "agent_description": "Optional Material icon key."
           },
           "displayEmoji": {
             "type": ["string", "null"],
-            "description": "Optional emoji override for the session's identity."
+            "description": "Optional emoji override for the session's identity.",
+            "agent_description": "Optional emoji override."
           }
         }
       },
@@ -74,6 +81,7 @@
     {
       "action_name": "session.CLONE",
       "summary": "Creates a new session by cloning an existing one, including its entire ledger. The clone is always non-hidden regardless of source.",
+      "agent_summary": "Clone a session including its ledger. The clone is always non-hidden.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -82,7 +90,8 @@
         "properties": {
           "sessionId": {
             "type": "string",
-            "description": "The session's uuid, localHandle, full handle, or display name of the session to clone"
+            "description": "The session's uuid, localHandle, full handle, or display name of the session to clone",
+            "agent_description": "Session ref to clone."
           }
         },
         "required": [
@@ -96,6 +105,7 @@
     {
       "action_name": "session.UPDATE_CONFIG",
       "summary": "Updates the configuration of an existing session. displayColor/displayIcon/displayEmoji are optional identity-visual fields propagated to CORE_UPDATE_IDENTITY.",
+      "agent_summary": "Update a session's name and/or visual fields.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -104,23 +114,28 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name of the session to update."
+            "description": "The session's localHandle, full handle, or display name of the session to update.",
+            "agent_description": "Session ref to update."
           },
           "name": {
             "type": "string",
-            "description": "The new name for the session. Will be de-duplicated if necessary."
+            "description": "The new name for the session. Will be de-duplicated if necessary.",
+            "agent_description": "New display name (de-duplicated if needed)."
           },
           "displayColor": {
             "type": ["string", "null"],
-            "description": "Optional '#RRGGBB' display color for the session's identity."
+            "description": "Optional '#RRGGBB' display color for the session's identity.",
+            "agent_description": "Optional '#RRGGBB' color."
           },
           "displayIcon": {
             "type": ["string", "null"],
-            "description": "Optional Material icon key for the session's identity."
+            "description": "Optional Material icon key for the session's identity.",
+            "agent_description": "Optional Material icon key."
           },
           "displayEmoji": {
             "type": ["string", "null"],
-            "description": "Optional emoji override for the session's identity."
+            "description": "Optional emoji override for the session's identity.",
+            "agent_description": "Optional emoji override."
           }
         },
         "required": [
@@ -135,6 +150,7 @@
     {
       "action_name": "session.DELETE",
       "summary": "Deletes an entire session. Targets the session via the 'session' property (ID or name).",
+      "agent_summary": "Delete an entire session.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -143,7 +159,8 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to delete."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to delete.",
+            "agent_description": "Session ref to delete."
           }
         },
         "required": [
@@ -166,12 +183,12 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name.",
-            "agent_description": "Target session reference (handle or name)."
+            "description": "Session reference (localHandle, full handle, UUID, or display name).",
+            "agent_description": "Target session ref."
           },
           "senderId": {
             "type": "string",
-            "description": "The identity handle of the message sender. For agent-originated POSTs the system always overwrites this with the agent's own handle — agents cannot impersonate.",
+            "description": "Identity reference of the message sender. Auto-filled to the originator for agent dispatches — agents cannot impersonate.",
             "agent_autofill": "{originatorId}"
           },
           "message": {
@@ -214,6 +231,7 @@
     {
       "action_name": "session.UPDATE_MESSAGE",
       "summary": "Updates the raw content and metadata of an existing message. Blocked if the target message is locked.",
+      "agent_summary": "Update an existing message's content/metadata. Blocked if the message is locked.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -222,17 +240,21 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's uuid, localHandle, full handle, or display name."
+            "description": "The session's uuid, localHandle, full handle, or display name.",
+            "agent_description": "Session ref containing the message."
           },
           "messageId": {
             "type": "string",
-            "description": "The messages's uuid or poster+timestamp"
+            "description": "The messages's uuid or poster+timestamp",
+            "agent_description": "Target message UUID, or '<senderId>+<timestamp>'."
           },
           "newContent": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Replacement message text."
           },
           "newMetadata": {
-            "type": "object"
+            "type": "object",
+            "agent_description": "Replacement metadata object."
           }
         },
         "required": [
@@ -247,6 +269,7 @@
     {
       "action_name": "session.DELETE_MESSAGE",
       "summary": "Deletes a single message from a session's ledger. Blocked if the target message is locked.",
+      "agent_summary": "Delete a message from a session's ledger. Blocked if the message is locked.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -255,10 +278,12 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle, or display name of the session to delete."
+            "description": "The session's localHandle, full handle, or display name of the session to delete.",
+            "agent_description": "Session ref containing the message."
           },
           "messageId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Message ID to delete."
           }
         },
         "required": [
@@ -354,6 +379,7 @@
     {
       "action_name": "session.TOGGLE_MESSAGE_COLLAPSED",
       "summary": "Toggles the collapsed/expanded state for a single message, or all messages in the session when messageId is omitted. Bulk toggle collapses all if any message is expanded, otherwise expands all.",
+      "agent_summary": "Toggle a message's collapsed/expanded state (or all messages if messageId omitted).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -361,21 +387,24 @@
         "type": "object",
         "properties": {
           "sessionId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Session ref."
           },
           "messageId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The ID of the message to toggle. If omitted or null, toggles all messages in the session."
+            "description": "The ID of the message to toggle. If omitted or null, toggles all messages in the session.",
+            "agent_description": "Message to toggle. Omit/null for bulk toggle."
           },
           "targetCollapsed": {
             "type": [
               "boolean",
               "null"
             ],
-            "description": "If provided, sets the collapsed state directly instead of toggling. true = collapse, false = expand. When omitted, the action toggles: single messages flip their state; bulk (no messageId) collapses all if any is expanded, otherwise expands all."
+            "description": "If provided, sets the collapsed state directly instead of toggling. true = collapse, false = expand. When omitted, the action toggles: single messages flip their state; bulk (no messageId) collapses all if any is expanded, otherwise expands all.",
+            "agent_description": "Set state directly: true=collapse, false=expand. Omit to toggle."
           }
         },
         "required": [
@@ -457,6 +486,7 @@
     {
       "action_name": "session.TOGGLE_SESSION_HIDDEN",
       "summary": "Toggles the isHidden flag on a specific session.",
+      "agent_summary": "Toggle a session's hidden flag.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -465,7 +495,8 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to toggle."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to toggle.",
+            "agent_description": "Session ref to toggle."
           }
         },
         "required": [
@@ -501,6 +532,7 @@
     {
       "action_name": "session.CLEAR",
       "summary": "Removes all messages from a session's ledger that are not locked (marked [\ud83d\udd12]).",
+      "agent_summary": "Clear a session's ledger. Locked messages and doNotClear entries survive.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -509,7 +541,8 @@
         "properties": {
           "session": {
             "type": "string",
-            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to clear."
+            "description": "The session's localHandle, full handle (e.g. session.cats-chat), or display name of the session to clear.",
+            "agent_description": "Session ref to clear."
           }
         },
         "required": [
@@ -558,8 +591,8 @@
           },
           "senderId": {
             "type": "string",
-            "description": "The display name or ID of the message sender.",
-            "agent_description": "Identity handle of the target message's sender."
+            "description": "Identity reference of the target message's sender.",
+            "agent_description": "Sender ref of the target message."
           },
           "timestamp": {
             "type": "string",

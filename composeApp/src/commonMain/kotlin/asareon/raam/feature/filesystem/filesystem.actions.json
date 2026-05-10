@@ -250,6 +250,7 @@
     {
       "action_name": "filesystem.OPEN_SYSTEM_FOLDER",
       "summary": "[SYSTEM] Open any system folder in the native OS file explorer.",
+      "agent_summary": "Open a system folder in the OS file explorer.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -259,7 +260,8 @@
           "path": {
             "type": "string",
             "description": "relative (\"app:\", \"user:\") or complete path in the OS filesystem.",
-            "default": ""
+            "default": "",
+            "agent_description": "Path: 'app:<rel>', 'user:<rel>', or absolute OS path."
           }
         }
       },

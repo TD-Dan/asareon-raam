@@ -22,6 +22,7 @@
     {
       "action_name": "agent.CREATE",
       "summary": "Creates a new agent instance with the specified configuration.",
+      "agent_summary": "Create a new agent instance.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -80,7 +81,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -94,6 +96,7 @@
     {
       "action_name": "agent.CLONE",
       "summary": "Creates a new agent instance by cloning an existing one.",
+      "agent_summary": "Clone an existing agent.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -102,7 +105,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -110,7 +114,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -124,6 +129,7 @@
     {
       "action_name": "agent.UPDATE_CONFIG",
       "summary": "Updates the configuration of an existing agent instance. All payload properties are optional.",
+      "agent_summary": "Update an agent's configuration. All fields except agentId are optional.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -132,7 +138,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "name": {
             "type": "string"
@@ -179,7 +186,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -193,6 +201,7 @@
     {
       "action_name": "agent.DELETE",
       "summary": "Deletes an agent instance.",
+      "agent_summary": "Delete an agent instance.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -201,7 +210,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -209,7 +219,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -223,6 +234,7 @@
     {
       "action_name": "agent.TOGGLE_AUTOMATIC_MODE",
       "summary": "Toggles the automatic processing mode for a specific agent.",
+      "agent_summary": "Toggle an agent's automatic processing mode.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -231,7 +243,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -239,7 +252,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -253,6 +267,7 @@
     {
       "action_name": "agent.TOGGLE_ACTIVE",
       "summary": "Toggles the master active/paused state for a specific agent.",
+      "agent_summary": "Toggle an agent's master active/paused state.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -261,7 +276,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -269,7 +285,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -283,6 +300,7 @@
     {
       "action_name": "agent.INITIATE_TURN",
       "summary": "A unified action to start an agent's turn, either directly or by first entering a preview mode.",
+      "agent_summary": "Start an agent's turn (direct or preview mode).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -291,7 +309,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "preview": {
             "type": "boolean",
@@ -303,7 +322,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -317,6 +337,7 @@
     {
       "action_name": "agent.EXECUTE_MANAGED_TURN",
       "summary": "Executes the turn that was previously staged for managed context.",
+      "agent_summary": "Execute the turn previously staged via managed context.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -325,7 +346,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -333,7 +355,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -347,6 +370,7 @@
     {
       "action_name": "agent.DISCARD_MANAGED_CONTEXT",
       "summary": "Discards a turn that was staged for managed context and navigates back.",
+      "agent_summary": "Discard the staged managed-context turn.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -355,7 +379,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -363,7 +388,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -377,6 +403,7 @@
     {
       "action_name": "agent.CANCEL_TURN",
       "summary": "Cancels an agent's currently in-flight, processing turn.",
+      "agent_summary": "Cancel an agent's in-flight turn.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -385,7 +412,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "correlationId": {
             "type": [
@@ -393,7 +421,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -407,6 +436,7 @@
     {
       "action_name": "agent.SAVE_RESOURCE",
       "summary": "Saves changes to a system resource.",
+      "agent_summary": "Save changes to a system resource.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -425,7 +455,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -440,6 +471,7 @@
     {
       "action_name": "agent.CREATE_RESOURCE",
       "summary": "Creates a new user-defined system resource.",
+      "agent_summary": "Create a new user-defined system resource.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -464,7 +496,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -479,6 +512,7 @@
     {
       "action_name": "agent.RENAME_RESOURCE",
       "summary": "Renames a user-defined system resource.",
+      "agent_summary": "Rename a user-defined system resource.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -497,7 +531,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -512,6 +547,7 @@
     {
       "action_name": "agent.DELETE_RESOURCE",
       "summary": "Deletes a user-defined system resource.",
+      "agent_summary": "Delete a user-defined system resource.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -527,7 +563,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -550,8 +587,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
-            "agent_description": "Target agent (UUID, handle, or name). Defaults to self.",
+            "description": "Target agent reference. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
+            "agent_description": "Target agent ref. Defaults to self.",
             "agent_requires_permission": "agent:manage"
           },
           "updates": {
@@ -1041,6 +1078,7 @@
     {
       "action_name": "agent.SET_SESSION_SUBSCRIPTION",
       "summary": "Subscribes or unsubscribes an agent from a session. Idempotent: re-subscribing an already-subscribed agent (or vice versa) is a no-op.",
+      "agent_summary": "Subscribe or unsubscribe an agent from a session. Idempotent.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -1049,15 +1087,18 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name."
+            "description": "Agent identifier. Accepts UUID, handle, localHandle, or display name.",
+            "agent_description": "Target agent ref."
           },
           "sessionId": {
             "type": "string",
-            "description": "Session UUID to subscribe or unsubscribe."
+            "description": "Session UUID to subscribe or unsubscribe.",
+            "agent_description": "Target session UUID."
           },
           "subscribed": {
             "type": "boolean",
-            "description": "true to subscribe, false to unsubscribe."
+            "description": "true to subscribe, false to unsubscribe.",
+            "agent_description": "true to subscribe, false to unsubscribe."
           },
           "correlationId": {
             "type": [
@@ -1065,7 +1106,8 @@
               "null"
             ],
             "description": "Optional correlation ID for command-dispatch feedback via agent.ACTION_RESULT.",
-            "default": null
+            "default": null,
+            "agent_internal": true
           }
         },
         "required": [
@@ -1134,8 +1176,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
-            "agent_description": "Target agent (UUID, handle, or name). Defaults to self.",
+            "description": "Target agent reference. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
+            "agent_description": "Target agent ref. Defaults to self.",
             "agent_requires_permission": "agent:manage"
           },
           "partitionKey": {
@@ -1175,8 +1217,8 @@
         "properties": {
           "agentId": {
             "type": "string",
-            "description": "Target agent identifier. Accepts UUID, handle, localHandle, or display name. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
-            "agent_description": "Target agent (UUID, handle, or name). Defaults to self.",
+            "description": "Target agent reference. Optional \u2014 defaults to the calling agent (self-target). Cross-agent targeting requires agent:manage permission; callers with only agent:cognition are rejected with an error if targeting another agent.",
+            "agent_description": "Target agent ref. Defaults to self.",
             "agent_requires_permission": "agent:manage"
           },
           "partitionKey": {
@@ -1529,6 +1571,7 @@
     {
       "action_name": "agent.REGISTER_EXTERNAL_STRATEGY",
       "summary": "Register an external CognitiveStrategy provided by another feature. The registering feature handles turn execution via EXTERNAL_TURN_REQUEST/RESULT.",
+      "agent_summary": "Register an external cognitive strategy. The registering feature handles turn execution.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -1590,6 +1633,7 @@
     {
       "action_name": "agent.UNREGISTER_EXTERNAL_STRATEGY",
       "summary": "Unregister a previously registered external strategy. Agents using it fall back to the default strategy.",
+      "agent_summary": "Unregister an external strategy. Agents using it fall back to the default.",
       "public": true,
       "broadcast": false,
       "targeted": false,

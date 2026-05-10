@@ -64,6 +64,7 @@
     {
       "action_name": "core.SHOW_TOAST",
       "summary": "Displays a short-lived message at the bottom of the screen.",
+      "agent_summary": "Show a short-lived toast at the bottom of the screen.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -71,7 +72,8 @@
         "type": "object",
         "properties": {
           "message": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Toast text."
           }
         },
         "required": [
@@ -92,6 +94,7 @@
     {
       "action_name": "core.OPEN_LOGS_FOLDER",
       "summary": "Requests that the application's logs folder be opened in the native file explorer.",
+      "agent_summary": "Open the application logs folder in the OS file explorer.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -100,6 +103,7 @@
     {
       "action_name": "core.COPY_TO_CLIPBOARD",
       "summary": "Copies the provided text to the system clipboard.",
+      "agent_summary": "Copy text to the system clipboard.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -107,7 +111,8 @@
         "type": "object",
         "properties": {
           "text": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Text to copy."
           }
         },
         "required": [
@@ -119,6 +124,7 @@
     {
       "action_name": "core.ADD_USER_IDENTITY",
       "summary": "Adds a new user identity to the application. displayColor/displayIcon/displayEmoji are optional identity-visual fields set atomically at creation time.",
+      "agent_summary": "Add a new user identity. Visual fields (color/icon/emoji) are optional.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -126,16 +132,20 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Display name."
           },
           "displayColor": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Optional '#RRGGBB' color."
           },
           "displayIcon": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Optional Material icon key."
           },
           "displayEmoji": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Optional emoji override."
           }
         },
         "required": [
@@ -147,6 +157,7 @@
     {
       "action_name": "core.REMOVE_USER_IDENTITY",
       "summary": "Removes an existing user identity.",
+      "agent_summary": "Remove a user identity.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -154,7 +165,8 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Identity ref to remove."
           }
         },
         "required": [
@@ -166,6 +178,7 @@
     {
       "action_name": "core.SET_ACTIVE_USER_IDENTITY",
       "summary": "Sets the specified user identity as the active one for the application.",
+      "agent_summary": "Set the active user identity.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -173,7 +186,8 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Identity ref to activate."
           }
         },
         "required": [
@@ -329,6 +343,7 @@
     {
       "action_name": "core.REGISTER_IDENTITY",
       "summary": "Register a new identity in the universal registry. If localHandle is omitted, CoreFeature generates one from the name via slugification. If a UUID is provided and valid, it is used instead of auto-generating one (useful for correlation). The originator automatically becomes the parent. CoreFeature validates localHandle format if provided, deduplicates among siblings, and returns the approved identity via a targeted RETURN_REGISTER_IDENTITY.",
+      "agent_summary": "Register a new identity in the universal registry. The originator becomes its parent. The approved identity is returned privately via RETURN_REGISTER_IDENTITY.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -337,27 +352,33 @@
         "properties": {
           "localHandle": {
             "type": ["string", "null"],
-            "description": "Optional leaf-level handle. If provided, must match [a-z][a-z0-9-]*. If omitted, generated from name."
+            "description": "Optional leaf-level handle. If provided, must match [a-z][a-z0-9-]*. If omitted, generated from name.",
+            "agent_description": "Optional leaf handle. Pattern: [a-z][a-z0-9-]*. Auto-generated from name if omitted."
           },
           "name": {
             "type": "string",
-            "description": "Human-readable display name (full Unicode allowed). Required."
+            "description": "Human-readable display name (full Unicode allowed). Required.",
+            "agent_description": "Display name (full Unicode allowed)."
           },
           "uuid": {
             "type": ["string", "null"],
-            "description": "Optional caller-provided UUID. Must be valid UUID format (8-4-4-4-12 hex). If omitted, auto-generated."
+            "description": "Optional caller-provided UUID. Must be valid UUID format (8-4-4-4-12 hex). If omitted, auto-generated.",
+            "agent_description": "Optional UUID (8-4-4-4-12 hex). Auto-generated if omitted."
           },
           "displayColor": {
             "type": ["string", "null"],
-            "description": "Optional display color as '#RRGGBB' hex. Used for accent borders and name coloring in session cards."
+            "description": "Optional display color as '#RRGGBB' hex. Used for accent borders and name coloring in session cards.",
+            "agent_description": "Optional '#RRGGBB' color."
           },
           "displayIcon": {
             "type": ["string", "null"],
-            "description": "Optional Material icon key (e.g., 'bolt', 'pets', 'science'). Tinted with displayColor when rendered."
+            "description": "Optional Material icon key (e.g., 'bolt', 'pets', 'science'). Tinted with displayColor when rendered.",
+            "agent_description": "Optional Material icon key."
           },
           "displayEmoji": {
             "type": ["string", "null"],
-            "description": "Optional emoji override (e.g., '🦊'). Takes precedence over displayIcon, renders full-color."
+            "description": "Optional emoji override (e.g., '🦊'). Takes precedence over displayIcon, renders full-color.",
+            "agent_description": "Optional emoji override (precedence over icon)."
           }
         },
         "required": ["name"]
@@ -389,6 +410,7 @@
     {
       "action_name": "core.UNREGISTER_IDENTITY",
       "summary": "Remove an identity from the registry. Cascades: all descendants are also removed. Namespace enforcement: the originator can only unregister identities within its own namespace.",
+      "agent_summary": "Remove an identity (and all descendants) from the registry. Restricted to your namespace.",
       "public": true,
       "broadcast": false,
       "targeted": false,
@@ -397,7 +419,8 @@
         "properties": {
           "handle": {
             "type": "string",
-            "description": "Full handle of the identity to remove."
+            "description": "Full handle of the identity to remove.",
+            "agent_description": "Full handle of the identity to remove."
           }
         },
         "required": ["handle"]
@@ -415,25 +438,35 @@
     {
       "action_name": "core.UPDATE_IDENTITY",
       "summary": "Update the name (and consequently the handle/slug) of an existing identity.",
+      "agent_summary": "Update an identity's name (and consequently its handle/slug).",
       "public": true,
       "broadcast": false,
       "targeted": false,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "handle": { "type": "string" },
-          "newName": { "type": "string" },
+          "handle": {
+            "type": "string",
+            "agent_description": "Full handle of the identity to update."
+          },
+          "newName": {
+            "type": "string",
+            "agent_description": "New display name."
+          },
           "displayColor": {
             "type": ["string", "null"],
-            "description": "Optional display color as '#RRGGBB' hex. If key is present, updates the color (null clears it). If key is absent, existing color is preserved."
+            "description": "Optional display color as '#RRGGBB' hex. If key is present, updates the color (null clears it). If key is absent, existing color is preserved.",
+            "agent_description": "Optional '#RRGGBB' color. Present-with-null clears; omit to preserve."
           },
           "displayIcon": {
             "type": ["string", "null"],
-            "description": "Optional Material icon key. Same presence semantics as displayColor."
+            "description": "Optional Material icon key. Same presence semantics as displayColor.",
+            "agent_description": "Optional icon key. Present-with-null clears; omit to preserve."
           },
           "displayEmoji": {
             "type": ["string", "null"],
-            "description": "Optional emoji override. Same presence semantics as displayColor."
+            "description": "Optional emoji override. Same presence semantics as displayColor.",
+            "agent_description": "Optional emoji. Present-with-null clears; omit to preserve."
           }
         },
         "required": ["handle", "newName"]
@@ -567,15 +600,29 @@
     {
       "action_name": "core.REQUEST_PERMISSION_ESCALATION",
       "summary": "Paved action name for future runtime permission escalation requests. Analogous to Android's runtime permission request flow. NOT YET IMPLEMENTED — dispatching this action is a no-op until a use case emerges.",
+      "agent_summary": "Request elevated permissions at runtime (NOT YET IMPLEMENTED — currently a no-op).",
       "public": true,
       "broadcast": false,
       "targeted": true,
       "payload_schema": {
         "type": "object",
         "properties": {
-          "requestingHandle": { "type": "string", "description": "Identity handle requesting elevated permissions." },
-          "requestedPermissions": { "type": "array", "items": { "type": "string" }, "description": "Permission keys being requested." },
-          "reason": { "type": "string", "description": "Human-readable justification for the escalation." }
+          "requestingHandle": {
+            "type": "string",
+            "description": "Identity handle requesting elevated permissions.",
+            "agent_description": "Identity ref requesting elevation."
+          },
+          "requestedPermissions": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Permission keys being requested.",
+            "agent_description": "Permission keys being requested."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Human-readable justification for the escalation.",
+            "agent_description": "Justification."
+          }
         },
         "required": ["requestingHandle", "requestedPermissions"]
       },

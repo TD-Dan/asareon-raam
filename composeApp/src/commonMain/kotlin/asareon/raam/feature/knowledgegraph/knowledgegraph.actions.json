@@ -57,6 +57,7 @@
     {
       "action_name": "knowledgegraph.REQUEST_CONTEXT",
       "summary": "The public, universal action for any feature to request the full context of a specific HKG. The response will be delivered privately to the originator.",
+      "agent_summary": "Request the full context of an HKG. Response is delivered privately to you.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -65,11 +66,13 @@
         "properties": {
           "personaId": {
             "type": "string",
-            "description": "The root holon ID of the requested HKG."
+            "description": "The root holon ID of the requested HKG.",
+            "agent_description": "Root holon ID of the HKG."
           },
           "correlationId": {
             "type": "string",
-            "description": "An ID for the requester to track the response."
+            "description": "An ID for the requester to track the response.",
+            "agent_internal": true
           }
         },
         "required": [
@@ -84,6 +87,7 @@
     {
       "action_name": "knowledgegraph.RESERVE_HKG",
       "summary": "An action to acquire an exclusive lock on an HKG, preventing modification by others.",
+      "agent_summary": "Acquire an exclusive lock on an HKG (blocks others from modifying it).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -91,7 +95,8 @@
         "type": "object",
         "properties": {
           "personaId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "HKG persona ID."
           }
         },
         "required": [
@@ -105,6 +110,7 @@
     {
       "action_name": "knowledgegraph.RELEASE_HKG",
       "summary": "An action to release an exclusive lock on an HKG.",
+      "agent_summary": "Release your exclusive lock on an HKG.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -112,7 +118,8 @@
         "type": "object",
         "properties": {
           "personaId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "HKG persona ID."
           }
         },
         "required": [
@@ -258,6 +265,7 @@
     {
       "action_name": "knowledgegraph.CREATE_PERSONA",
       "summary": "Creates a new AI Persona Root holon, establishing a new, empty HKG.",
+      "agent_summary": "Create a new persona root holon (a new, empty HKG).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -265,7 +273,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Display name for the new persona."
           }
         },
         "required": [
@@ -279,6 +288,7 @@
     {
       "action_name": "knowledgegraph.DELETE_PERSONA",
       "summary": "Deletes an entire HKG by deleting its root persona directory.",
+      "agent_summary": "Delete an entire HKG (the root persona and all its holons).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -286,7 +296,8 @@
         "type": "object",
         "properties": {
           "personaId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Persona to delete."
           }
         },
         "required": [
@@ -362,6 +373,7 @@
     {
       "action_name": "knowledgegraph.CREATE_HOLON",
       "summary": "Creates a new holon as a child of an existing parent within a loaded HKG. The system generates the ID, timestamps, and file path, and wires the parent's sub_holons list.",
+      "agent_summary": "Create a child holon under a parent. ID, timestamps, file path, and parent wiring are auto-generated.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -370,27 +382,33 @@
         "properties": {
           "parentId": {
             "type": "string",
-            "description": "The ID of the existing parent holon. Must be loaded in state."
+            "description": "The ID of the existing parent holon. Must be loaded in state.",
+            "agent_description": "Parent holon ID. Must be loaded in your context."
           },
           "type": {
             "type": "string",
-            "description": "The holon archetype (e.g., 'Project', 'System_File', 'Log_Entry')."
+            "description": "The holon archetype (e.g., 'Project', 'System_File', 'Log_Entry').",
+            "agent_description": "Holon archetype, e.g. 'Project', 'System_File', 'Log_Entry'."
           },
           "name": {
             "type": "string",
-            "description": "Human-readable display name for the new holon."
+            "description": "Human-readable display name for the new holon.",
+            "agent_description": "Display name."
           },
           "summary": {
             "type": "string",
-            "description": "A one-line summary of the holon's purpose."
+            "description": "A one-line summary of the holon's purpose.",
+            "agent_description": "One-line summary of the holon's purpose."
           },
           "payload": {
             "type": "object",
-            "description": "The cognitive content of the new holon."
+            "description": "The cognitive content of the new holon.",
+            "agent_description": "Cognitive content (JSON object)."
           },
           "execute": {
             "type": "object",
-            "description": "Optional agentic behavior block."
+            "description": "Optional agentic behavior block.",
+            "agent_description": "Optional agentic behavior block."
           }
         },
         "required": [
@@ -407,6 +425,7 @@
     {
       "action_name": "knowledgegraph.PATCH_HOLON",
       "summary": "Performs surgical, path-targeted modifications to an existing holon using JSON Pointer (RFC 6901) paths and a subset of JSON Patch (RFC 6902) operations. Supports 'replace', 'add', and 'remove' ops with validate-then-apply atomicity. Protected structural fields (id, filePath, parentId, depth, sub_holons, created_at) cannot be modified. The agent must have the holon expanded in context.",
+      "agent_summary": "Surgically patch a holon. Atomic (validate-then-apply). Holon must be expanded in your context. Structural fields (id, filePath, parentId, depth, sub_holons, created_at) cannot be modified.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -415,11 +434,13 @@
         "properties": {
           "holonId": {
             "type": "string",
-            "description": "The ID of the holon to patch. Must be loaded in state."
+            "description": "The ID of the holon to patch. Must be loaded in state.",
+            "agent_description": "Holon to patch. Must be expanded in your context."
           },
           "operations": {
             "type": "array",
             "description": "An array of patch operations to apply atomically (all-or-nothing).",
+            "agent_description": "Array of patch ops, applied atomically. Each op: { op: 'replace'|'add'|'remove', path: '<JSON Pointer, e.g. /payload/foo or /payload/items/- to append>', value: <new value, omit for remove> }.",
             "items": {
               "type": "object",
               "properties": {
@@ -447,6 +468,7 @@
     {
       "action_name": "knowledgegraph.REPLACE_HOLON",
       "summary": "Performs a full content replacement of an existing holon. Preserves structural integrity fields (id, filePath, parentId, depth, sub_holons) and stamps modified_at. The agent must have the holon expanded in context.",
+      "agent_summary": "Replace a holon's content fully. Holon must be expanded in your context. Structural fields (id, filePath, parentId, depth, sub_holons) are preserved.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -455,35 +477,43 @@
         "properties": {
           "holonId": {
             "type": "string",
-            "description": "The ID of the holon to replace."
+            "description": "The ID of the holon to replace.",
+            "agent_description": "Holon to replace."
           },
           "type": {
             "type": "string",
-            "description": "The holon archetype. If omitted, preserves the existing type."
+            "description": "The holon archetype. If omitted, preserves the existing type.",
+            "agent_description": "Archetype. Omit to preserve existing."
           },
           "name": {
             "type": "string",
-            "description": "The new display name. If omitted, preserves the existing name."
+            "description": "The new display name. If omitted, preserves the existing name.",
+            "agent_description": "New display name. Omit to preserve."
           },
           "summary": {
             "type": "string",
-            "description": "The new summary. If omitted, preserves the existing summary."
+            "description": "The new summary. If omitted, preserves the existing summary.",
+            "agent_description": "New one-line summary. Omit to preserve."
           },
           "version": {
             "type": "string",
-            "description": "The new version string. If omitted, preserves the existing version."
+            "description": "The new version string. If omitted, preserves the existing version.",
+            "agent_description": "New version. Omit to preserve."
           },
           "relationships": {
             "type": "array",
-            "description": "The new relationships list. If omitted, preserves existing."
+            "description": "The new relationships list. If omitted, preserves existing.",
+            "agent_description": "New relationships list. Omit to preserve."
           },
           "payload": {
             "type": "object",
-            "description": "The complete new payload object. Required."
+            "description": "The complete new payload object. Required.",
+            "agent_description": "Complete new payload (JSON object)."
           },
           "execute": {
             "type": ["object", "null"],
-            "description": "The complete new execute block. Pass null to remove. If key is omitted, preserves existing."
+            "description": "The complete new execute block. Pass null to remove. If key is omitted, preserves existing.",
+            "agent_description": "New execute block. null to remove; omit to preserve."
           }
         },
         "required": [
@@ -497,7 +527,8 @@
     },
     {
       "action_name": "knowledgegraph.RENAME_HOLON",
-      "summary": "A managed command to safely update the 'name' field in a holon's header.",
+      "summary": "A managed command to safely update the 'name' field in a holon's header. Renames all internal links.",
+      "agent_summary": "Rename a holon (updates the 'name' in its header and related holons).",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -505,10 +536,12 @@
         "type": "object",
         "properties": {
           "holonId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Holon to rename."
           },
           "newName": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "New display name."
           }
         },
         "required": [
@@ -523,6 +556,7 @@
     {
       "action_name": "knowledgegraph.DELETE_HOLON",
       "summary": "Deletes a holon file from a loaded HKG.",
+      "agent_summary": "Delete a holon.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -530,7 +564,8 @@
         "type": "object",
         "properties": {
           "holonId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Holon to delete."
           }
         },
         "required": [

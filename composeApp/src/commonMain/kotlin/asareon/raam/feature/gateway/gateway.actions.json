@@ -12,6 +12,7 @@
     {
       "action_name": "gateway.GENERATE_CONTENT",
       "summary": "Requests content generation from a specific provider.",
+      "agent_summary": "Request content generation from an LLM provider.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -19,17 +20,21 @@
         "type": "object",
         "properties": {
           "providerId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "LLM provider id (e.g. 'openai', 'gemini', 'inception')."
           },
           "modelName": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Provider model name."
           },
           "correlationId": {
-            "type": "string"
+            "type": "string",
+            "agent_internal": true
           },
           "contents": {
             "type": "array",
             "description": "The provider-agnostic prompt content as a list of GatewayMessage objects.",
+            "agent_description": "Prompt as an array of { role, content } messages.",
             "items": {
               "type": "object",
               "properties": {
@@ -47,7 +52,8 @@
             }
           },
           "systemPrompt": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Optional system prompt prefix."
           }
         },
         "required": [
@@ -115,6 +121,7 @@
     {
       "action_name": "gateway.REQUEST_AVAILABLE_MODELS",
       "summary": "Requests that the GatewayFeature broadcast the current list of available models.",
+      "agent_summary": "Request a broadcast of the current list of available LLM models.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -123,6 +130,7 @@
     {
       "action_name": "gateway.CANCEL_REQUEST",
       "summary": "Cancels an in-flight content generation request identified by its correlation ID.",
+      "agent_summary": "Cancel an in-flight content-generation request by correlation ID.",
       "public": true,
       "broadcast": true,
       "targeted": false,
@@ -130,7 +138,8 @@
         "type": "object",
         "properties": {
           "correlationId": {
-            "type": "string"
+            "type": "string",
+            "agent_description": "Correlation ID of the in-flight request to cancel."
           }
         },
         "required": [
