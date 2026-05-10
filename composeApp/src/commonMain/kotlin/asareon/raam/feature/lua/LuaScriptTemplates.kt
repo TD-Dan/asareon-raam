@@ -57,6 +57,7 @@ end
 -- raam.log(msg)               — info log
 -- raam.warn(msg)              — warning log
 -- raam.error(msg)             — error log
+-- raam.inspect(value)         — pretty-print any value to a string (incl. nested tables)
 -- raam.delay(ms, fn)          — one-shot timer
 -- raam.interval(ms, fn)       — recurring timer, returns cancel ID
 -- raam.time()                 — current epoch milliseconds
@@ -159,6 +160,7 @@ end
 -- raam.log(msg)                 — info log
 -- raam.warn(msg)                — warning log
 -- raam.error(msg)               — error log
+-- raam.inspect(value)           — pretty-print any value to a string (incl. nested tables)
 -- raam.delay(ms, fn)            — one-shot timer
 -- raam.identities()             — list all registered identities
 -- raam.permissions()            — this script's effective permissions

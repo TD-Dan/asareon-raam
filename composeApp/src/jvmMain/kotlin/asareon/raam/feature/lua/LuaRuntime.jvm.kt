@@ -344,6 +344,17 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
             }
         })
 
+        // raam.inspect(value) → string
+        // Pretty-prints any Lua value into a human-readable string.
+        // Recurses into nested tables, detects cycles, sorts dict keys for stable
+        // output. The classic missing tostring(table) replacement — paired with
+        // raam.log it gives `raam.log(raam.inspect(t))`.
+        raam.set("inspect", object : OneArgFunction() {
+            override fun call(value: LuaValue): LuaValue {
+                return LuaValue.valueOf(luaInspect(value, 0, mutableSetOf()))
+            }
+        })
+
         // raam.delay(ms, callback) → callbackId
         raam.set("delay", object : TwoArgFunction() {
             override fun call(ms: LuaValue, callback: LuaValue): LuaValue {
@@ -661,6 +672,95 @@ actual class LuaRuntime actual constructor(private val config: LuaRuntimeConfig)
             }
             else -> LuaValue.valueOf(value.toString())
         }
+    }
+
+    /**
+     * Recursive pretty-printer for [raam.inspect]. The algorithm follows the
+     * widely-circulated Lua snippets (see e.g. https://gist.github.com/hashmal/874792
+     * and https://github.com/kikito/inspect.lua) — recurse, indent, detect cycles,
+     * stable-sort dict keys — but is implemented in Kotlin against the LuaJ API to
+     * stay inside the existing bridge layer rather than embedding Lua source.
+     *
+     * Behaviour:
+     *  - Empty table → `{}`
+     *  - Sequence-only table → entries listed by index, no key prefix
+     *  - Hybrid → sequence first, then sorted dict keys with `key = value`
+     *  - Bare-identifier keys render unquoted; everything else gets `["…"]`
+     *  - Strings are quoted with backslash escapes
+     *  - Functions / userdata / threads render as `<typename>` placeholders
+     *  - Cycles render as `<cycle>` instead of recursing
+     */
+    private fun luaInspect(v: LuaValue, indent: Int, seen: MutableSet<LuaTable>): String {
+        if (v.istable()) {
+            val tbl = v.checktable()
+            if (tbl in seen) return "<cycle>"
+            seen += tbl
+            val pad = "  ".repeat(indent + 1)
+            val closePad = "  ".repeat(indent)
+            val lines = mutableListOf<String>()
+            // Sequence portion: 1..n contiguous integer keys.
+            var n = 0
+            var i = 1
+            while (true) {
+                val item = tbl.get(i)
+                if (item.isnil()) break
+                lines += pad + luaInspect(item, indent + 1, seen)
+                n = i
+                i++
+            }
+            // Dict portion: every other key.
+            val extras = mutableListOf<LuaValue>()
+            var k: LuaValue = LuaValue.NIL
+            while (true) {
+                val pair = tbl.next(k)
+                k = pair.arg1()
+                if (k.isnil()) break
+                val isSeqKey = k.isint() && k.toint() in 1..n
+                if (!isSeqKey) extras += k
+            }
+            extras.sortBy { it.tojstring() }
+            for (key in extras) {
+                val keyStr = renderKey(key, indent, seen)
+                val value = tbl.get(key)
+                lines += pad + keyStr + " = " + luaInspect(value, indent + 1, seen)
+            }
+            seen -= tbl
+            return if (lines.isEmpty()) "{}" else "{\n" + lines.joinToString(",\n") + "\n" + closePad + "}"
+        }
+        return when {
+            v.isnil() -> "nil"
+            v.isboolean() -> if (v.toboolean()) "true" else "false"
+            v.isint() -> v.toint().toString()
+            v.isnumber() -> v.todouble().toString()
+            v.isstring() -> "\"" + escapeString(v.tojstring()) + "\""
+            v.isfunction() -> "<function>"
+            v.isuserdata() -> "<userdata>"
+            v.isthread() -> "<thread>"
+            else -> "<" + v.typename() + ">"
+        }
+    }
+
+    private fun renderKey(key: LuaValue, indent: Int, seen: MutableSet<LuaTable>): String {
+        if (key.isstring() && key.type() == LuaValue.TSTRING) {
+            val s = key.tojstring()
+            if (s.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*$"))) return s
+        }
+        return "[" + luaInspect(key, indent + 1, seen) + "]"
+    }
+
+    private fun escapeString(s: String): String {
+        val sb = StringBuilder(s.length + 2)
+        for (ch in s) {
+            when (ch) {
+                '\\' -> sb.append("\\\\")
+                '"' -> sb.append("\\\"")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString()
     }
 
     private fun luaTableToKotlinMap(table: LuaTable): Map<String, Any?> {

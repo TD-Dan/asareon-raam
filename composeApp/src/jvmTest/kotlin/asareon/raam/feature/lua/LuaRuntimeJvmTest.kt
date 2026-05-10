@@ -970,4 +970,114 @@ class LuaRuntimeJvmTest {
         assertEquals(1, subs.size, "log.listen should create a subscription")
         assertTrue(subs[0].startsWith("log:"), "Subscription pattern should have log: prefix")
     }
+
+    // ========================================================================
+    // raam.inspect — pretty-print any Lua value
+    // ========================================================================
+
+    /** Captures the last value passed to raam.log so tests can assert on it. */
+    private fun lastLog(): String? = capturedLogs.lastOrNull()?.third
+
+    @Test
+    fun `raam_inspect renders primitives faithfully`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect(nil))
+            raam.log(raam.inspect(true))
+            raam.log(raam.inspect(42))
+            raam.log(raam.inspect("hi"))
+        """.trimIndent())
+        val msgs = capturedLogs.map { it.third }
+        assertTrue("nil" in msgs, "nil → 'nil', got: $msgs")
+        assertTrue("true" in msgs, "boolean → 'true', got: $msgs")
+        assertTrue(msgs.any { it == "42" || it == "42.0" }, "number rendered, got: $msgs")
+        assertTrue("\"hi\"" in msgs, "string is quoted, got: $msgs")
+    }
+
+    @Test
+    fun `raam_inspect renders sequence-only tables without keys`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect({"a", "b", "c"}))
+        """.trimIndent())
+        val out = lastLog() ?: ""
+        // Order is preserved, no key prefixes
+        assertTrue(out.contains("\"a\"") && out.contains("\"b\"") && out.contains("\"c\""),
+            "Sequence elements should appear; got: $out")
+        assertFalse(out.contains("[1]"),
+            "Sequence keys should NOT be rendered as [1]/[2]/...; got: $out")
+        assertTrue(out.startsWith("{") && out.trimEnd().endsWith("}"),
+            "Output should be brace-wrapped; got: $out")
+    }
+
+    @Test
+    fun `raam_inspect renders dict tables with sorted bare-identifier keys`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect({zebra = 1, apple = 2}))
+        """.trimIndent())
+        val out = lastLog() ?: ""
+        // Keys should be unquoted, sorted alphabetically (apple before zebra)
+        val appleIdx = out.indexOf("apple = 2")
+        val zebraIdx = out.indexOf("zebra = 1")
+        assertTrue(appleIdx >= 0 && zebraIdx >= 0,
+            "Both keys should appear unquoted; got: $out")
+        assertTrue(appleIdx < zebraIdx,
+            "Dict keys should be sorted; got: $out")
+    }
+
+    @Test
+    fun `raam_inspect quotes non-identifier keys with brackets`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect({["with space"] = 1, [42] = "answer"}))
+        """.trimIndent())
+        val out = lastLog() ?: ""
+        assertTrue(out.contains("[\"with space\"]"),
+            "String key with space should render as [\"with space\"]; got: $out")
+        assertTrue(out.contains("[42]"),
+            "Numeric non-sequence key should render as [42]; got: $out")
+    }
+
+    @Test
+    fun `raam_inspect recurses into nested tables with indentation`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect({outer = {inner = {leaf = 1}}}))
+        """.trimIndent())
+        val out = lastLog() ?: ""
+        assertTrue(out.contains("outer = {"))
+        assertTrue(out.contains("inner = {"))
+        assertTrue(out.contains("leaf = 1"))
+        // Indentation grows with depth
+        assertTrue(out.contains("    inner = {") || out.contains("  inner = {"),
+            "Nested table should be indented; got: $out")
+    }
+
+    @Test
+    fun `raam_inspect detects cycles instead of infinite recursion`() {
+        runtime.loadScript("lua.test", "test", """
+            local t = {name = "self"}
+            t.me = t
+            raam.log(raam.inspect(t))
+        """.trimIndent())
+        val out = lastLog() ?: ""
+        assertTrue(out.contains("<cycle>"),
+            "Self-referencing table should produce <cycle> placeholder; got: $out")
+        assertTrue(out.contains("name = \"self\""),
+            "Non-cycle entries should still render; got: $out")
+    }
+
+    @Test
+    fun `raam_inspect renders empty table compactly`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect({}))
+        """.trimIndent())
+        assertEquals("{}", lastLog())
+    }
+
+    @Test
+    fun `raam_inspect escapes special characters in strings`() {
+        runtime.loadScript("lua.test", "test", """
+            raam.log(raam.inspect("line1\nline2\ttab"))
+        """.trimIndent())
+        val out = lastLog() ?: ""
+        assertTrue(out.contains("\\n") && out.contains("\\t"),
+            "Newline and tab should be backslash-escaped; got: $out")
+    }
 }
